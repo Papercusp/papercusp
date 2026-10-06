@@ -3,7 +3,7 @@
  * GitHub Issues provider (plan generalized-integrations-google-migration-cupboard-workflows-2026-10-05,
  * P-010 / D-015 / D-009).
  *
- * A read-only ticket provider on the integration provider contract. The host's connector driver
+ * A ticket provider on the integration provider contract. The host's connector driver
  * calls `syncPage` and owns everything stateful (lease, cursor commit, dedupe, retry, routing);
  * this module only maps GitHub's REST API into canonical records:
  *   - an issue               -> `ticket` (nativeId `owner/repo#N`)
@@ -11,6 +11,11 @@
  *   - close / reopen event   -> `ticket-status-change` (nativeId `event:<event id>`)
  *   - an issue comment       -> `ticket-comment` (nativeId `comment:<comment id>`)
  * Pull requests come back from the same endpoints and are skipped, with their events and comments.
+ *
+ * Writes (linear-asana-task-sync P-002; WI-10006212): `ticket.comment` posts a comment on the
+ * issue and returns `updateId` = `comment:<id>`, the same nativeId the comment sync phase reports,
+ * so the host recognises its own comment when it comes back. GitHub has no workflow columns, so
+ * `ticket.transition` is not declared and the host refuses it by name.
  *
  * The only network path is `host.fetch`, which enforces the declared egress hosts and injects the
  * source account's token. Nothing here sees a credential, imports host code, or writes a table.
@@ -330,15 +335,61 @@ function parseTicketRef(args) {
   throw new Error('ticket_ref_invalid: pass { externalId: "owner/repo#N" } or { owner, repo, number }');
 }
 
-async function invoke(request, host) {
-  if (!DESCRIPTOR.capabilities.includes(request.capability)) {
-    throw new Error(`provider_capability_unsupported:${request.capability}`);
+/** POST one JSON body to GitHub through host.fetch; a non-2xx reply is a named write failure. */
+async function postJson(host, source, url, payload) {
+  const response = await host.fetch({
+    source,
+    request: {
+      url,
+      method: 'POST',
+      headers: {
+        accept: 'application/vnd.github+json',
+        'content-type': 'application/json',
+        'x-github-api-version': '2022-11-28',
+        'user-agent': 'papercusp-github-issues',
+      },
+      body: JSON.stringify(payload),
+    },
+  });
+  const status = Number(response.status);
+  if (status < 200 || status >= 300) throw new Error(`github_write_failed:${status} ${url}`);
+  const body = response.bodyEncoding === 'base64' ? Buffer.from(response.body, 'base64').toString('utf8') : response.body;
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw new Error(`github_body_not_json ${url}`);
   }
+}
+
+async function readTicket(request, host) {
   const { owner, repo, number } = parseTicketRef(request.args);
   const url = `${repoPath(owner, repo)}/issues/${number}`;
   const issue = await getJson(host, request.source, url);
   if (!issue || typeof issue !== 'object' || issue.pull_request) throw new Error(`ticket_not_found:${owner}/${repo}#${number}`);
   return { ticket: issueToTicket(owner, repo, issue) };
+}
+
+/** `ticket.comment { externalId, text }`: one plain comment; only the text is sent. */
+async function commentOnTicket(request, host) {
+  const { owner, repo, number } = parseTicketRef(request.args);
+  const body = typeof (request.args && request.args.text) === 'string' ? request.args.text.trim() : '';
+  if (!body) throw new Error('ticket_comment_text_required');
+  const url = `${repoPath(owner, repo)}/issues/${number}/comments`;
+  const comment = await postJson(host, request.source, url, { body });
+  if (!comment || comment.id == null) throw new Error(`github_comment_id_missing ${url}`);
+  return {
+    externalRef: text(comment.html_url) || String(comment.id),
+    // The nativeId the comment sync phase reports for this same comment (readComments).
+    updateId: `comment:${comment.id}`,
+  };
+}
+
+const INVOKERS = { 'ticket.read': readTicket, 'ticket.comment': commentOnTicket };
+
+async function invoke(request, host) {
+  const handler = DESCRIPTOR.capabilities.includes(request.capability) ? INVOKERS[request.capability] : undefined;
+  if (!handler) throw new Error(`provider_capability_unsupported:${request.capability}`);
+  return handler(request, host);
 }
 
 module.exports = {

@@ -3,7 +3,7 @@
   "name": "github-issues",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "GitHub Issues as a read-only ticket provider: issues become ticket records, open/close/reopen become ticket-status-change events, issue comments become ticket-comment documents. Synced by the host's connector driver; the plugin only maps GitHub's REST API.",
+  "description": "GitHub Issues as a ticket provider: issues become ticket records, open/close/reopen become ticket-status-change events, issue comments become ticket-comment documents, and the host can post a comment on an issue (ticket.comment). Synced by the host's connector driver; the plugin only maps GitHub's REST API.",
   "author": "Papercusp",
   "license": "MIT",
   "main": "./index.cjs",
@@ -14,7 +14,7 @@
     "contractVersion": 1,
     "displayName": "GitHub Issues",
     "datatypes": ["ticket", "ticket-status-change", "ticket-comment"],
-    "capabilities": ["ticket.read"],
+    "capabilities": ["ticket.read", "ticket.comment"],
     "oauth": {
       "authorizeUrl": "https://github.com/login/oauth/authorize",
       "tokenUrl": "https://github.com/login/oauth/access_token",
