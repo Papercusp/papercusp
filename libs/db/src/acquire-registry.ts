@@ -147,6 +147,11 @@ export const PG_DIAGNOSTIC_STAGES = [
   'key-provider', 'keychain', 'native-loader', 'serialize', 'native-encrypt',
   'epoch-encrypt', 'hypercore-append', 'mark-drained',
 ] as const;
+/** Source-defined query legs retained only as bounded diagnostic labels. */
+export const PG_DIAGNOSTIC_QUERY_LEGS = [
+  'work-items-page', 'work-items-presentation',
+] as const;
+export type PgDiagnosticQueryLeg = (typeof PG_DIAGNOSTIC_QUERY_LEGS)[number];
 
 /**
  * Optional local-only attribution captured at query construction time.
@@ -165,6 +170,8 @@ export interface PgResultDiagnosticCorrelation {
   /** Server-created request identity and source-registered operation; never caller args. */
   requestId?: string;
   operation?: string;
+  /** Fixed source labels distinguish same-table query legs without retaining SQL. */
+  queryLeg?: PgDiagnosticQueryLeg;
 }
 
 export type PgDiagnosticCorrelationState = 'linked' | 'unobserved' | 'unknown';
@@ -287,6 +294,9 @@ function sanitizePgCorrelation(
     ? value.requestId : null;
   const operation = requestId && typeof value.operation === 'string' &&
     /^[a-z][a-z0-9_.-]{0,119}$/i.test(value.operation) ? value.operation : null;
+  const queryLeg = PG_DIAGNOSTIC_QUERY_LEGS.includes(value.queryLeg as PgDiagnosticQueryLeg)
+    ? value.queryLeg!
+    : null;
   return Object.freeze({
     processInstanceId,
     buildSha,
@@ -297,6 +307,7 @@ function sanitizePgCorrelation(
     boundary,
     ...(requestId ? { requestId } : {}),
     ...(operation ? { operation } : {}),
+    ...(queryLeg ? { queryLeg } : {}),
   });
 }
 
