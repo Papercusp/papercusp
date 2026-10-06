@@ -60,4 +60,13 @@ describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
       /await withFsMutex\(\s*`papercusp-db-pull-schema:\$\{REAL_DB_ROOT\}`\s*,\s*runPullSchema\s*,/,
     );
   });
+
+  it('excludes drizzle-kit intermediate TypeScript files from the database package typecheck', () => {
+    const tsconfig = JSON.parse(readFileSync(new URL('../tsconfig.json', import.meta.url), 'utf8'));
+
+    expect(tsconfig.include).toContain('src/**/*.ts');
+    expect(tsconfig.exclude).toEqual(
+      expect.arrayContaining(['src/schema/schema.ts', 'src/schema/relations.ts']),
+    );
+  });
 });

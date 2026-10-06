@@ -19,6 +19,8 @@
 -- identical uniqueness the dropped one did; the new column is nullable with no default
 -- and the new CHECKs only constrain a column that release never sets.
 --
+-- lint-migrations: allow-index-swap Verified on this check's own hazard model (2026-10-06, WI-10006481): no ON CONFLICT anywhere targets desktop_sessions — not the working tree, not the deployed papercup-release checkout, not the bundled desktop sidecar serve.mjs (its only scope_ref ON CONFLICT is agent_facts). desktop-session-registry.ts inserts with a plain INSERT and never matches this index's name; the deployed release never writes name, and for name-NULL rows COALESCE(name,'') reproduces the dropped index's uniqueness exactly.
+--
 -- The index is dropped and recreated under the SAME name inside this migration's
 -- transaction (the runner wraps each file), so no window exists where neither
 -- uniqueness rule holds, and every comment/test that names the index stays accurate.
