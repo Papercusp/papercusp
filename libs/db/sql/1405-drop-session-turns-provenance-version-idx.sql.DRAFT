@@ -1,0 +1,31 @@
+-- 1405: drop session_turns_provenance_version_idx so turn-provenance
+-- re-derivation can update rows HOT (WI-10006788).
+--
+-- WHY. The re-derivation pass (session-ingest.ts, backfillTurnProvenanceOnce)
+-- rewrites turn_origin, turn_origin_verdict and turn_origin_classifier_version.
+-- The last one was indexed (migration 794), and Postgres can only do a HOT
+-- update when no indexed column changes. So every rewritten row was a non-HOT
+-- update that inserted a new entry into ALL session_turns indexes, including
+-- the 5.5 GB HNSW on text_embedding and the 1.5 GB trigram GIN. Measured
+-- 2026-10-06 on the live database:
+--   * 1,347,175 rows queued at catalogue version 6 (the current one is 7);
+--   * the 100-row rewrite statement: 4 calls, mean 84.6 s, max 95.7 s,
+--     ~70,000 shared blocks read per call (~700 per row);
+--   * n_tup_hot_upd 727 of n_tup_upd 227,393 on session_turns (0.3%).
+-- At that rate the backlog takes days and competes for disk with the embed
+-- backfill sweep that has to keep up with ingest.
+--
+-- After this drop none of the columns the pass writes is indexed. A rewrite
+-- whose new tuple fits on the same heap page touches no index at all. The pass
+-- no longer needs the index to find its backlog: it walks the heap in physical
+-- order with a TID range scan (same WI).
+--
+-- WHY A PLAIN `DROP INDEX`. The runner applies each file as one transaction
+-- (db-boot-migrate.ts), so DROP INDEX CONCURRENTLY is unavailable; see 836 for
+-- the same reasoning. The runner's lock_timeout (15 s) means a drop that cannot
+-- get its lock promptly aborts and retries on the next boot instead of queuing
+-- in front of live traffic. The index is 22 MB, so the drop itself is quick.
+--
+-- FORWARD-COMPAT: the currently-deployed release reads this index only through the old re-derivation SELECT (WHERE turn_origin_classifier_version IS NULL OR < N ORDER BY turn_origin_classifier_version DESC NULLS LAST LIMIT n), which returns the same rows without it via a sequential scan and top-N sort; no query, constraint or ON CONFLICT arbiter depends on the index existing, so dropping it slows that one pass on the old build but cannot make anything fail.
+
+DROP INDEX IF EXISTS harness_shared.session_turns_provenance_version_idx;
