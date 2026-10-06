@@ -54,6 +54,8 @@ const migration1180Sql = readFileSync(migrationPath('1180-completion-identity-ou
 const migration1207Sql = readFileSync(migrationPath('1207-completion-identity-history-attestation-floor.sql'), 'utf8');
 /** WI-10006322: v2 sibling-checkout proofs bind the same path by root and close HEAD. */
 const migration1390Sql = readFileSync(migrationPath('1390-completion-history-attestation-v2-settlement-floor.sql'), 'utf8');
+/** WI-10006322: v2 close-head proof must survive an exact post-commit tree refresh. */
+const migration1396Sql = readFileSync(migrationPath('1396-completion-history-attestation-v2-refreshed-tree.sql'), 'utf8');
 
 /**
  * Exact semantic shape observed in production before migration 1144: 1044's
@@ -148,6 +150,8 @@ let lastBatchCommands = '[]';
 let lastSeedPid = -1;
 /** The production-shaped failure must be present before 1144 repairs it. */
 let historicalPre1144Probe: { deletionOk: boolean; artifactMixOk: boolean } | undefined;
+/** The pre-repair SQL floor must reject the exact refreshed-tree shape. */
+let refreshedTreeFloorBefore1396: boolean | undefined;
 
 /** Minimal stand-in for harness_shared.work_items: just the columns the trigger reads/writes. */
 async function createWorkItemsFixture(): Promise<void> {
@@ -276,6 +280,57 @@ function historyEvidence({
   };
 }
 
+function refreshedTreeEvidenceV2(): Record<string, unknown> {
+  const path = 'src/fix.ts';
+  const generation = 9;
+  const evidenceHash = 'f'.repeat(64);
+  const currentIdentity = [{
+    path,
+    repositoryRoot: '/repo',
+    headSha: SHA_D,
+    workingTreeBlobSha: SHA_B,
+    headBlobSha: SHA_B,
+  }];
+  const evidence = evidenceWith(currentIdentity);
+  return {
+    ...evidence,
+    treeStamp: { ...evidence.treeStamp, headSha: SHA_D },
+    settlementManifest: {
+      version: 1,
+      generation,
+      evidenceHash,
+      repositoryRoot: '/repo',
+      headSha: SHA_A,
+      normalizedPaths: [path],
+      contentIdentity: [{
+        path,
+        repositoryRoot: '/repo',
+        headSha: SHA_A,
+        workingTreeBlobSha: SHA_B,
+        headBlobSha: SHA_C,
+      }],
+      residualPaths: [],
+    },
+    historyAttestation: {
+      version: 2,
+      generation,
+      evidenceHash,
+      checkouts: [{
+        repositoryRoot: '/repo',
+        closeHeadSha: SHA_A,
+        emittedCommitSha: SHA_D,
+        paths: [{
+          path,
+          workingTreeBlobSha: SHA_B,
+          fromHeadSha: SHA_A,
+          toCommitSha: SHA_D,
+          proof: 'exact-path-blob-history',
+        }],
+      }],
+    },
+  };
+}
+
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'floor972' });
   sql = postgres(db.url, {
@@ -318,6 +373,12 @@ beforeAll(async () => {
   await applyMigrationFile(migration1180Sql);
   await applyMigrationFile(migration1207Sql);
   await applyMigrationFile(migration1390Sql);
+  const [pre1396Proof] = await sql.unsafe<{ proven: boolean }[]>(
+    'SELECT harness_shared.completion_content_identity_proven($1::jsonb) AS proven',
+    [sql.json(refreshedTreeEvidenceV2() as Parameters<typeof sql.json>[0])],
+  );
+  refreshedTreeFloorBefore1396 = pre1396Proof.proven;
+  await applyMigrationFile(migration1396Sql);
   // A silently-absent or disabled trigger would make every keep-case below pass
   // vacuously, so the definition itself is part of the precondition. The probe
   // dumps unqualified ground truth so a mis-targeted DDL cannot hide behind an
@@ -362,9 +423,15 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
-describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1390 — completion authority content-identity floor', () => {
+describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1390 + 1396 — completion authority content-identity floor', () => {
   it('reproduces the historical live deletion rejection before the 1144 forward repair', () => {
     expect(historicalPre1144Probe).toEqual({ deletionOk: false, artifactMixOk: true });
+  });
+
+  it('accepts an exact current-tree blob after the v2 close HEAD is refreshed', async () => {
+    expect(refreshedTreeFloorBefore1396).toBe(false);
+    await seedOpenItem('WI-CASE-REFRESHED-TREE-HEAD');
+    expect(await closeAsCommitted('WI-CASE-REFRESHED-TREE-HEAD', refreshedTreeEvidenceV2())).toBe('committed');
   });
 
   it('downgrades a frozen-build close whose evidence has NO contentIdentity (the WI-41491 shape)', async () => {
@@ -755,6 +822,7 @@ describe('migrations 972 + 1044 + 1144 + 1180 + 1207 + 1390 — completion autho
     await applyMigrationFile(migration1180Sql);
     await applyMigrationFile(migration1207Sql);
     await applyMigrationFile(migration1390Sql);
+    await applyMigrationFile(migration1396Sql);
     // The current floor must survive its and its predecessors' re-application enabled.
     const rows = await sql<{ tgenabled: string }[]>`
       SELECT tgenabled FROM pg_trigger
