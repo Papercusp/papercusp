@@ -2221,6 +2221,24 @@ END)`),
 	check("connected_apps_token_hash_shape", sql`(token_hash IS NULL) OR (token_hash ~ '^[0-9a-f]{64}$'::text)`),
 ]);
 
+export const connectorPushSecretsInHarnessShared = harnessShared.table("connector_push_secrets", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	sourceId: uuid("source_id").notNull(),
+	secretCt: byteaCustom("secret_ct").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("connector_push_secrets_source_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceId.asc().nullsLast().op("uuid_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.sourceId],
+			foreignColumns: [dataSourcesInHarnessShared.workspaceId, dataSourcesInHarnessShared.id],
+			name: "connector_push_secrets_source_fk"
+		}).onDelete("cascade"),
+	pgPolicy("connector_push_secrets_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.id], name: "connector_push_secrets_pkey"}),
+
+]);
+
 export const consultPostMetaInHarnessShared = harnessShared.table("consult_post_meta", {
 	workspaceId: text("workspace_id").default('default').notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
