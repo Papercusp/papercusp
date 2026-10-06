@@ -3,7 +3,7 @@
   "name": "linear",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "Linear as a ticket provider: issues in the configured teams become ticket records, workflow-state changes become ticket-status-change events, issue comments become ticket-comment documents, and the host can comment on an issue (ticket.comment) and move it to a workflow column (ticket.transition). Installs as a Linear app user (actor=app) so Papercusp is delegated issues instead of being assigned them. Synced by the host's connector driver; the plugin only maps Linear's GraphQL API.",
+  "description": "Linear as a ticket provider: issues in the configured teams become ticket records, workflow-state changes become ticket-status-change events, issue comments become ticket-comment documents, and the host can comment on an issue (ticket.comment), move it to a workflow column (ticket.transition), and list the teams the source can be configured to sync (ticket.containers). Installs as a Linear app user (actor=app) so Papercusp is delegated issues instead of being assigned them. Synced by the host's connector driver; the plugin only maps Linear's GraphQL API.",
   "author": "Papercusp",
   "license": "MIT",
   "main": "./index.cjs",
@@ -14,7 +14,7 @@
     "contractVersion": 1,
     "displayName": "Linear",
     "datatypes": ["ticket", "ticket-status-change", "ticket-comment"],
-    "capabilities": ["ticket.read", "ticket.comment", "ticket.transition"],
+    "capabilities": ["ticket.read", "ticket.comment", "ticket.transition", "ticket.containers"],
     "oauth": {
       "authorizeUrl": "https://linear.app/oauth/authorize?actor=app",
       "tokenUrl": "https://api.linear.app/oauth/token",

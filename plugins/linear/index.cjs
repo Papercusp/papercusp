@@ -23,6 +23,9 @@
  * (by position) of the issue's team whose type maps to that column; an issue already in the
  * column is left alone (`changed: false`).
  *
+ * Configuration read (D-014): `ticket.containers {}` lists the teams the connected app can read,
+ * `{ id, name, kind: 'team', key }`, so the Integrations page can offer them for `teamIds`.
+ *
  * Papercusp installs as a Linear app user (`actor=app`, scopes app:assignable/app:mentionable):
  * work is handed to it by delegation, not assignment (D-005), and the delegate rides on the
  * ticket as `delegates`.
@@ -127,6 +130,15 @@ const COMMENT_CREATE = `mutation PapercuspCommentCreate($input: CommentCreateInp
 const ISSUE_UPDATE = `mutation PapercuspIssueTransition($id: String!, $input: IssueUpdateInput!) {
   issueUpdate(id: $id, input: $input) { success issue { id updatedAt state { ${STATE_FIELDS} } } }
 }`;
+
+const TEAMS_QUERY = `query PapercuspTeams($after: String) {
+  teams(first: ${PAGE_SIZE}, after: $after) {
+    nodes { id key name }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+/** Team pages `ticket.containers` reads before it stops and says the list is truncated. */
+const CONTAINER_PAGES = 20;
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -577,7 +589,39 @@ async function transitionTicket(request, host) {
   return { changed: true, externalRef: text(issue.id), toStatusName: text(target.name) || undefined };
 }
 
-const INVOKERS = { 'ticket.read': readTicket, 'ticket.comment': commentOnTicket, 'ticket.transition': transitionTicket };
+/**
+ * `ticket.containers {}`: the teams the connected app can read, for the source's team picker
+ * (D-014). Each team's `id` is the UUID `teamIds` holds (the issue filter matches `team.id`). A
+ * read of Linear's catalogue only: it syncs nothing, writes nothing, and ignores the source config.
+ */
+async function listContainers(request, host) {
+  const byId = new Map();
+  let after = null;
+  let truncated = true;
+  for (let page = 0; page < CONTAINER_PAGES; page++) {
+    const conn = connectionOf(await gql(host, request.source, TEAMS_QUERY, { after }), 'teams');
+    for (const team of conn.nodes) {
+      const id = text(team && team.id);
+      if (!id || byId.has(id)) continue;
+      const key = text(team.key);
+      byId.set(id, { id, name: text(team.name) || key || id, kind: 'team', ...(key ? { key } : {}) });
+    }
+    if (!conn.hasNextPage) {
+      truncated = false;
+      break;
+    }
+    after = conn.endCursor;
+  }
+  const containers = [...byId.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  return { containers, truncated };
+}
+
+const INVOKERS = {
+  'ticket.read': readTicket,
+  'ticket.comment': commentOnTicket,
+  'ticket.transition': transitionTicket,
+  'ticket.containers': listContainers,
+};
 
 async function invoke(request, host) {
   const handler = DESCRIPTOR.capabilities.includes(request.capability) ? INVOKERS[request.capability] : undefined;

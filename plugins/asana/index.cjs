@@ -34,6 +34,10 @@
  * project mapped to that column. Asana has no state for an open column no section is mapped to, so
  * that move is a no-op (`changed: false`).
  *
+ * Configuration read (D-014): `ticket.containers` lists the account's workspaces and their projects,
+ * with sections for the configured (or requested) projects, so the Integrations page can offer them
+ * for `workspaceGid`, `projectGids` and `sectionCategories`.
+ *
  * The only network path is `host.fetch` (https://app.asana.com/api/1.0), which enforces the
  * declared egress host and injects the source account's token. Nothing here sees a credential,
  * imports host code, or writes a table.
@@ -63,6 +67,13 @@ const TASK_FIELDS = [
 const STORY_FIELDS = ['created_at', 'created_by.name', 'resource_subtype', 'text', 'old_section.name', 'new_section.name'].join(',');
 const EVENT_FIELDS = ['action', 'created_at', 'resource', 'parent', 'type'].join(',');
 const SECTION_FIELDS = 'name';
+const WORKSPACE_FIELDS = 'name';
+const PROJECT_FIELDS = 'name';
+/** `ticket.containers`: items per list page, pages per list before it says `truncated`. */
+const CONTAINER_PAGE = 100;
+const CONTAINER_PAGES = 20;
+/** At most this many projects get their sections listed in one `ticket.containers` call. */
+const SECTION_PROJECTS_MAX = 25;
 
 function text(value) {
   return typeof value === 'string' ? value.trim() : '';
@@ -577,7 +588,70 @@ async function transitionTicket(request, host) {
   return { changed, externalRef: gid, ...(toStatusName ? { toStatusName } : {}) };
 }
 
-const INVOKERS = { 'ticket.read': readTicket, 'ticket.comment': commentOnTicket, 'ticket.transition': transitionTicket };
+/** Every page of one Asana list endpoint, up to CONTAINER_PAGES; `truncated` when more remained. */
+async function readList(host, source, path, query) {
+  const items = [];
+  let offset;
+  for (let page = 0; page < CONTAINER_PAGES; page++) {
+    const res = await rest(host, source, 'GET', path, { query: { ...query, limit: CONTAINER_PAGE, offset } });
+    items.push(...(Array.isArray(res.body.data) ? res.body.data.filter((item) => item && text(item.gid)) : []));
+    offset = text(res.body.next_page && res.body.next_page.offset);
+    if (!offset) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
+function containerOf(item, kind, parentId) {
+  const id = text(item.gid);
+  return { id, name: nameOf(item) || id, kind, ...(parentId ? { parentId } : {}) };
+}
+
+/**
+ * `ticket.containers { workspaceGid?, projectGids? }`: what the source can be configured to sync,
+ * for the Integrations page's pickers (D-014). Lists the connected account's workspaces (only
+ * `workspaceGid` when given) and each one's unarchived projects. The projects in `projectGids`
+ * (default: the source's configured `projectGids`) also carry their sections, in Asana's order,
+ * which is what `sectionCategories` maps. A read of Asana's catalogue only: it syncs nothing and
+ * writes nothing.
+ */
+async function listContainers(request, host) {
+  const args = request.args || {};
+  const onlyWorkspace = text(args.workspaceGid);
+  const workspaces = await readList(host, request.source, '/workspaces', { opt_fields: WORKSPACE_FIELDS });
+  let truncated = workspaces.truncated;
+  const containers = [];
+  const projects = new Map();
+  for (const workspace of workspaces.items) {
+    if (onlyWorkspace && text(workspace.gid) !== onlyWorkspace) continue;
+    containers.push(containerOf(workspace, 'workspace'));
+    const listed = await readList(host, request.source, '/projects', {
+      workspace: text(workspace.gid), archived: false, opt_fields: PROJECT_FIELDS,
+    });
+    truncated = truncated || listed.truncated;
+    for (const project of listed.items) {
+      if (projects.has(text(project.gid))) continue;
+      const container = containerOf(project, 'project', text(workspace.gid));
+      projects.set(container.id, container);
+      containers.push(container);
+    }
+  }
+  const wanted = Array.isArray(args.projectGids) ? [...new Set(args.projectGids.map(text).filter(Boolean))] : projectsOf(request.config);
+  const withSections = wanted.filter((gid) => projects.has(gid));
+  if (withSections.length > SECTION_PROJECTS_MAX) truncated = true;
+  for (const gid of withSections.slice(0, SECTION_PROJECTS_MAX)) {
+    const sections = await readList(host, request.source, `/projects/${encodeURIComponent(gid)}/sections`, { opt_fields: SECTION_FIELDS });
+    truncated = truncated || sections.truncated;
+    projects.get(gid).sections = sections.items.map((section) => ({ id: text(section.gid), name: nameOf(section) || text(section.gid) }));
+  }
+  return { containers, truncated };
+}
+
+const INVOKERS = {
+  'ticket.read': readTicket,
+  'ticket.comment': commentOnTicket,
+  'ticket.transition': transitionTicket,
+  'ticket.containers': listContainers,
+};
 
 async function invoke(request, host) {
   const handler = DESCRIPTOR.capabilities.includes(request.capability) ? INVOKERS[request.capability] : undefined;
@@ -598,6 +672,9 @@ module.exports = {
   // Pure mappers and the requested field lists, exported for the tests only (no network, no host).
   _internal: {
     configOf, sectionCategory, taskToTicket, storyRecord, touchedTasks, decodeCursor, transitionBetween,
-    fields: { task: TASK_FIELDS, story: STORY_FIELDS, event: EVENT_FIELDS, section: SECTION_FIELDS },
+    fields: {
+      task: TASK_FIELDS, story: STORY_FIELDS, event: EVENT_FIELDS, section: SECTION_FIELDS,
+      workspace: WORKSPACE_FIELDS, project: PROJECT_FIELDS,
+    },
   },
 };

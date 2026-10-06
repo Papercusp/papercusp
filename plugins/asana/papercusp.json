@@ -3,7 +3,7 @@
   "name": "asana",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "Asana as a ticket provider: tasks in the configured projects become ticket records, completion and section moves become ticket-status-change events, task comments become ticket-comment documents, and the host can comment on a task (ticket.comment) and move it to a workflow column (ticket.transition: complete/reopen, or a section mapped to that column). Synced by the host's connector driver: a full crawl per project, then that project's Events API sync token; the plugin only maps Asana's REST API.",
+  "description": "Asana as a ticket provider: tasks in the configured projects become ticket records, completion and section moves become ticket-status-change events, task comments become ticket-comment documents, and the host can comment on a task (ticket.comment) and move it to a workflow column (ticket.transition: complete/reopen, or a section mapped to that column), and list the workspaces, projects and sections the source can be configured with (ticket.containers). Synced by the host's connector driver: a full crawl per project, then that project's Events API sync token; the plugin only maps Asana's REST API.",
   "author": "Papercusp",
   "license": "MIT",
   "main": "./index.cjs",
@@ -14,7 +14,7 @@
     "contractVersion": 1,
     "displayName": "Asana",
     "datatypes": ["ticket", "ticket-status-change", "ticket-comment"],
-    "capabilities": ["ticket.read", "ticket.comment", "ticket.transition"],
+    "capabilities": ["ticket.read", "ticket.comment", "ticket.transition", "ticket.containers"],
     "oauth": {
       "authorizeUrl": "https://app.asana.com/-/oauth_authorize",
       "tokenUrl": "https://app.asana.com/-/oauth_token",
