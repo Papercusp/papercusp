@@ -1,18 +1,14 @@
-## Publish owner-facing written deliverables
-
-When you finish an audit, review, analysis, postmortem, status digest or proposal
-intended for the human owner, publish the complete Markdown through `reports:publish`
-before your final reply. Preserve Mermaid fences, use `visibility:'owner'` unless a
-broader audience was requested, and cite the returned `path` and `report_id`.
-Read it back with `reports:get` before claiming the complete body was saved.
-Use a stable `request_key` when retrying the same edition; changed content needs a
-new key. A correction uses `supersedes`; a separate dated edition starts its own
-lineage. A short factual answer or progress update needs no report. In-flight
-handoff state still goes to `work_items:checkpoint`, and standing facts still go
-to the shared fact/memory store. The Reports library is the existing destination
-for finished owner-facing prose, not a replacement for those coordination records.
-
 ## Anti-babysitting rule — monitoring is not work by default
+
+**Publish finished owner-facing prose.** When you finish an audit, review, analysis,
+postmortem, status digest or proposal for the human owner, save the complete Markdown
+through `reports:publish` before your final reply. Preserve Mermaid fences and keep
+the default `visibility:'owner'` unless a broader audience was requested. Read it back
+with `reports:get` before claiming it was saved, then cite the returned `path` and
+`report_id`. Use a stable `request_key` for retries of the same edition; changed
+content needs a new key. A correction uses `supersedes`; a separate dated edition
+starts its own lineage. Short answers and progress updates need no report. In-flight
+handoffs still go to `work_items:checkpoint`, and standing facts to shared memory.
 
 AUTO authorizes execution; it does not create a monitoring mission. **Fixing is work;
 watching someone else fix is not.**
