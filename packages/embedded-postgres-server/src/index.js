@@ -957,228 +957,239 @@ export async function startEmbeddedPostgresServer(opts = {}) {
   // just fresh initdb — self-heals an already-installed broken data dir.
   await normalizePortableLocaleConf(dataDir, log);
 
-  log(`starting postgres on localhost:${port}`);
-  await pg.start();
-
-  // Create the target database if missing. embedded-postgres always
-  // creates `postgres` as superuser; we add `papercusp` separately so
-  // it has the same name across web + desktop deployments.
-  const sysSql = hostCredentials
-    ? await openOwnerClient({
-        port,
-        database: 'postgres',
-        password: secrets.owner,
-        fallback: DEFAULT_OWNER_PWD,
-        log,
-      })
-    : postgres({
-        host: 'localhost',
-        port,
-        user: DEFAULT_OWNER,
-        password: secrets.owner,
-        database: 'postgres',
-        max: 1,
-      });
   try {
-    const exists = await sysSql`SELECT 1 FROM pg_database WHERE datname = ${dbName}`;
-    if (exists.length === 0) {
-      log(`creating database ${dbName}`);
-      await sysSql.unsafe(`CREATE DATABASE ${dbName}`);
-    }
-  } finally {
-    await sysSql.end({ timeout: 2 }).catch(() => {});
-  }
+    log(`starting postgres on localhost:${port}`);
+    await pg.start();
 
-  // Connect to the target DB to set up framework roles + apply migrations.
-  const sql = postgres({
-    host: 'localhost',
-    port,
-    user: DEFAULT_OWNER,
-    password: secrets.owner,
-    database: dbName,
-    max: 1,
-  });
-
-  try {
-    // Framework roles. Without host credentials these are the documented DEV
-    // defaults libs/db/src/connection.ts falls back to; with them (a multi-account
-    // host, WI-10003627) every role is re-keyed to this host's generated password
-    // on every boot, so a cluster first keyed to the defaults converges.
-    // harness_zero needs CREATE on the database — zero-cache creates a
-    // _zero_metadata_<app>_<shard>/cdc schema for change-streamer state on
-    // first boot. Without the grant, change-streamer crashes with
-    // "permission denied for database papercusp".
-    await sql.unsafe(
-      hostCredentials
-        ? `${QUIET_STATEMENT_LOGGING_SQL}${roleBootstrapSql(secrets, { rekey: true })}`
-        : roleBootstrapSql(secrets),
-    );
-
-    // Extensions the baseline schema depends on, created BEFORE migrations.
-    // The squashed 000-baseline.sql (self-contained-migration-baseline-2026-06-02)
-    // is a schema-only dump of harness_shared + papercusp_shared: it references
-    // gen_random_uuid()/digest() (pgcrypto), trigram ops (pg_trgm), and vector(N)
-    // columns (vector) but does NOT itself CREATE EXTENSION. Previously these came
-    // from migrations 027/039/059/060, now archived. pgcrypto + pg_trgm are trusted
-    // and always succeed; vector needs the compiled .so — tolerated-if-missing
-    // (mirrors the old 060), in which case mem0 degrades to its in-memory fallback.
-    await sql.unsafe(`
-      CREATE EXTENSION IF NOT EXISTS pgcrypto;
-      CREATE EXTENSION IF NOT EXISTS pg_trgm;
-      DO LANGUAGE plpgsql $body$ BEGIN
-        CREATE EXTENSION IF NOT EXISTS vector;
-      EXCEPTION WHEN OTHERS THEN
-        RAISE NOTICE 'pgvector not available on this server (%); embedding features degrade to in-memory.', SQLERRM;
-      END $body$;
-    `);
-
-    // The current seed format is a logical pg_dump custom archive. Restore it
-    // only into the fresh database created above, after roles/extensions exist
-    // and before migration deltas/publication setup. The physical cluster came
-    // from THIS install's initdb, so its system_identifier remains unique. A
-    // transactional restore failure leaves the database at the clean preamble
-    // state and the normal full migration replay below becomes the safe fallback.
-    if (logicalSeedPath) {
-      try {
-        log(`restoring logical seed ${logicalSeedPath} into unique per-install cluster`);
-        const pgRestoreBin = opts.pgRestoreBin ?? process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore';
-        // Roles are cluster-global, so the dump carries GRANTs/policies naming roles a
-        // migration created on the build cluster but this fresh cluster lacks (WI-10004427).
-        const createdRoles = await createMissingSeedRoles(
-          sql,
-          logicalSeedGranteeRoles(logicalSeedPath, { pgRestoreBin }),
-        );
-        if (createdRoles.length) {
-          log(`created ${createdRoles.length} seed-referenced role(s) before restore: ${createdRoles.join(', ')}`);
-        }
-        restoreLogicalSeed(logicalSeedPath, {
+    // Create the target database if missing. embedded-postgres always
+    // creates `postgres` as superuser; we add `papercusp` separately so
+    // it has the same name across web + desktop deployments.
+    const sysSql = hostCredentials
+      ? await openOwnerClient({
           port,
-          dbName,
-          pgRestoreBin,
-          ownerSecret: secrets.owner,
+          database: 'postgres',
+          password: secrets.owner,
+          fallback: DEFAULT_OWNER_PWD,
+          log,
+        })
+      : postgres({
+          host: 'localhost',
+          port,
+          user: DEFAULT_OWNER,
+          password: secrets.owner,
+          database: 'postgres',
+          max: 1,
         });
-        log('logical seed restored — per-install system_identifier retained; applying migration delta');
-      } catch (e) {
-        log(`logical seed failed (${e?.message ?? e}) — falling back to full migration replay`);
+    try {
+      const exists = await sysSql`SELECT 1 FROM pg_database WHERE datname = ${dbName}`;
+      if (exists.length === 0) {
+        log(`creating database ${dbName}`);
+        await sysSql.unsafe(`CREATE DATABASE ${dbName}`);
       }
+    } finally {
+      await sysSql.end({ timeout: 2 }).catch(() => {});
     }
 
-    // This is a logical snapshot of the SAME migration-built database, not the
-    // retired seed-restore mechanism that pre-marked migrations or bypassed the
-    // self-contained baseline. Its schema_migrations ledger is restored verbatim;
-    // the ordinary idempotent runner below remains authoritative for every delta.
+    // Connect to the target DB to set up framework roles + apply migrations.
+    const sql = postgres({
+      host: 'localhost',
+      port,
+      user: DEFAULT_OWNER,
+      password: secrets.owner,
+      database: dbName,
+      max: 1,
+    });
 
-    // Apply migrations FIRST. The publication-creation block below
-    // references schemas (harness_shared, papercusp_shared) that don't
-    // exist on a fresh initdb until 001-shared.sql runs — moving
-    // migrations ahead of the publication step prevents the
-    // "schema does not exist" failure on first boot.
-    if (opts.dbSqlDir && existsSync(opts.dbSqlDir)) {
-      // Migrations are the single source of truth (self-contained-migration-baseline-2026-06-02).
-      // The runner creates schema_migrations itself and applies 000-baseline.sql (+ 107+)
-      // idempotently — no seed pre-marking, and role grants now live in migration 109
-      // (not a boot-time re-grant), so a fresh initdb builds the complete, grant-correct
-      // schema by applying migrations directly.
-      const result = await applyPendingMigrations({
-        client: sql,
-        sqlDir: opts.dbSqlDir,
-        log,
-        dataDirWasReused: !dataDirWasFresh,
-      });
-      log(`migrations: ${result.appliedCount} applied this boot (${result.totalKnown} total known)`);
+    try {
+      // Framework roles. Without host credentials these are the documented DEV
+      // defaults libs/db/src/connection.ts falls back to; with them (a multi-account
+      // host, WI-10003627) every role is re-keyed to this host's generated password
+      // on every boot, so a cluster first keyed to the defaults converges.
+      // harness_zero needs CREATE on the database — zero-cache creates a
+      // _zero_metadata_<app>_<shard>/cdc schema for change-streamer state on
+      // first boot. Without the grant, change-streamer crashes with
+      // "permission denied for database papercusp".
+      await sql.unsafe(
+        hostCredentials
+          ? `${QUIET_STATEMENT_LOGGING_SQL}${roleBootstrapSql(secrets, { rekey: true })}`
+          : roleBootstrapSql(secrets),
+      );
 
-      // Zero replication publication. Extracted to ensureZeroHarnessPublication()
-      // so the boot-path DDL (incl. the WI-2914 publish_generated_columns fix) is
-      // exercised verbatim by the fresh-migrate integration guard — mirroring the
-      // extract-a-shared-helper pattern this file already uses for migrations.
-      // Runs AFTER migrations so the schemas it references exist on a fresh initdb.
-      await ensureZeroHarnessPublication(sql);
+      // Extensions the baseline schema depends on, created BEFORE migrations.
+      // The squashed 000-baseline.sql (self-contained-migration-baseline-2026-06-02)
+      // is a schema-only dump of harness_shared + papercusp_shared: it references
+      // gen_random_uuid()/digest() (pgcrypto), trigram ops (pg_trgm), and vector(N)
+      // columns (vector) but does NOT itself CREATE EXTENSION. Previously these came
+      // from migrations 027/039/059/060, now archived. pgcrypto + pg_trgm are trusted
+      // and always succeed; vector needs the compiled .so — tolerated-if-missing
+      // (mirrors the old 060), in which case mem0 degrades to its in-memory fallback.
+      await sql.unsafe(`
+        CREATE EXTENSION IF NOT EXISTS pgcrypto;
+        CREATE EXTENSION IF NOT EXISTS pg_trgm;
+        DO LANGUAGE plpgsql $body$ BEGIN
+          CREATE EXTENSION IF NOT EXISTS vector;
+        EXCEPTION WHEN OTHERS THEN
+          RAISE NOTICE 'pgvector not available on this server (%); embedding features degrade to in-memory.', SQLERRM;
+        END $body$;
+      `);
 
-      // Per-harness template application RETIRED (harness-state-storage-
-      // unification-2026-06-01, D-007). Per-harness schemas now contain only
-      // auto-updatable views over slug-keyed harness_shared.*_consolidated
-      // tables — created by the migrations above (which loop over existing
-      // harness_* schemas) and by scaffoldHarnessSchema() for new harnesses.
-      // No boot-time per-harness DDL template is applied.
-    } else if (opts.dbSqlDir) {
-      log(`dbSqlDir=${opts.dbSqlDir} does not exist — skipping migrations`);
-    }
-
-    // Multi-account host (WI-10003627): refuse to serve unless every repo-public
-    // default is refused by a REAL login and no co-resident account planted a
-    // privileged role while the defaults were live. Stop the postmaster before
-    // throwing so a refused boot never leaves a reachable cluster behind.
-    if (hostCredentials) {
-      try {
-        await assertNoDefaultRoleCredentials({ port, database: dbName });
-        await assertNoRogueRoles(sql);
-        log('multi-account guard: no role accepts a repo-public default password; no rogue privileged roles');
-      } catch (e) {
-        await sql.end({ timeout: 2 }).catch(() => {});
-        await pg.stop().catch((stopError) => log(`stop error: ${stopError?.message ?? stopError}`));
-        throw e;
+      // The current seed format is a logical pg_dump custom archive. Restore it
+      // only into the fresh database created above, after roles/extensions exist
+      // and before migration deltas/publication setup. The physical cluster came
+      // from THIS install's initdb, so its system_identifier remains unique. A
+      // transactional restore failure leaves the database at the clean preamble
+      // state and the normal full migration replay below becomes the safe fallback.
+      if (logicalSeedPath) {
+        try {
+          log(`restoring logical seed ${logicalSeedPath} into unique per-install cluster`);
+          const pgRestoreBin = opts.pgRestoreBin ?? process.env.PAPERCUSP_PG_RESTORE_BIN ?? 'pg_restore';
+          // Roles are cluster-global, so the dump carries GRANTs/policies naming roles a
+          // migration created on the build cluster but this fresh cluster lacks (WI-10004427).
+          const createdRoles = await createMissingSeedRoles(
+            sql,
+            logicalSeedGranteeRoles(logicalSeedPath, { pgRestoreBin }),
+          );
+          if (createdRoles.length) {
+            log(`created ${createdRoles.length} seed-referenced role(s) before restore: ${createdRoles.join(', ')}`);
+          }
+          restoreLogicalSeed(logicalSeedPath, {
+            port,
+            dbName,
+            pgRestoreBin,
+            ownerSecret: secrets.owner,
+          });
+          log('logical seed restored — per-install system_identifier retained; applying migration delta');
+        } catch (e) {
+          log(`logical seed failed (${e?.message ?? e}) — falling back to full migration replay`);
+        }
       }
+
+      // This is a logical snapshot of the SAME migration-built database, not the
+      // retired seed-restore mechanism that pre-marked migrations or bypassed the
+      // self-contained baseline. Its schema_migrations ledger is restored verbatim;
+      // the ordinary idempotent runner below remains authoritative for every delta.
+
+      // Apply migrations FIRST. The publication-creation block below
+      // references schemas (harness_shared, papercusp_shared) that don't
+      // exist on a fresh initdb until 001-shared.sql runs — moving
+      // migrations ahead of the publication step prevents the
+      // "schema does not exist" failure on first boot.
+      if (opts.dbSqlDir && existsSync(opts.dbSqlDir)) {
+        // Migrations are the single source of truth (self-contained-migration-baseline-2026-06-02).
+        // The runner creates schema_migrations itself and applies 000-baseline.sql (+ 107+)
+        // idempotently — no seed pre-marking, and role grants now live in migration 109
+        // (not a boot-time re-grant), so a fresh initdb builds the complete, grant-correct
+        // schema by applying migrations directly.
+        const result = await applyPendingMigrations({
+          client: sql,
+          sqlDir: opts.dbSqlDir,
+          log,
+          dataDirWasReused: !dataDirWasFresh,
+        });
+        log(`migrations: ${result.appliedCount} applied this boot (${result.totalKnown} total known)`);
+
+        // Zero replication publication. Extracted to ensureZeroHarnessPublication()
+        // so the boot-path DDL (incl. the WI-2914 publish_generated_columns fix) is
+        // exercised verbatim by the fresh-migrate integration guard — mirroring the
+        // extract-a-shared-helper pattern this file already uses for migrations.
+        // Runs AFTER migrations so the schemas it references exist on a fresh initdb.
+        await ensureZeroHarnessPublication(sql);
+
+        // Per-harness template application RETIRED (harness-state-storage-
+        // unification-2026-06-01, D-007). Per-harness schemas now contain only
+        // auto-updatable views over slug-keyed harness_shared.*_consolidated
+        // tables — created by the migrations above (which loop over existing
+        // harness_* schemas) and by scaffoldHarnessSchema() for new harnesses.
+        // No boot-time per-harness DDL template is applied.
+      } else if (opts.dbSqlDir) {
+        log(`dbSqlDir=${opts.dbSqlDir} does not exist — skipping migrations`);
+      }
+
+      // Multi-account host (WI-10003627): refuse to serve unless every repo-public
+      // default is refused by a REAL login and no co-resident account planted a
+      // privileged role while the defaults were live. Stop the postmaster before
+      // throwing so a refused boot never leaves a reachable cluster behind.
+      if (hostCredentials) {
+        try {
+          await assertNoDefaultRoleCredentials({ port, database: dbName });
+          await assertNoRogueRoles(sql);
+          log('multi-account guard: no role accepts a repo-public default password; no rogue privileged roles');
+        } catch (e) {
+          await sql.end({ timeout: 2 }).catch(() => {});
+          throw e;
+        }
+      }
+    } finally {
+      await sql.end({ timeout: 2 }).catch(() => {});
     }
-  } finally {
-    await sql.end({ timeout: 2 }).catch(() => {});
+
+    // Supervise the postmaster from here on: before this point a death fails the boot
+    // loudly, after it nothing else would notice (WI-10003688).
+    const supervisor = opts.supervise === false
+      ? null
+      : superviseEmbeddedPostgres({
+          pg,
+          dataDir,
+          log,
+          recentLines: pgLogWindow.lines,
+          backoffMs: opts.restartBackoffMs,
+          onExit: opts.onPostgresExit,
+          onRestarted: opts.onPostgresRestarted,
+        });
+
+    return {
+      /** TCP port the postmaster is listening on. */
+      port,
+      /** Database name created/used. */
+      dbName,
+      /** Owner credentials. */
+      user: DEFAULT_OWNER,
+      password: secrets.owner,
+      /** True when roles are keyed to per-host generated passwords (`credentialsFile`). */
+      hostCredentials: hostCredentials !== null,
+      /** Connection URLs for common roles (matches connection.ts expectations). */
+      urls: {
+        admin: roleUrl(ROLE_NAMES.admin, secrets.admin, port, dbName),
+        app: roleUrl(ROLE_NAMES.app, secrets.app, port, dbName),
+        zero: roleUrl(ROLE_NAMES.zero, secrets.zero, port, dbName),
+      },
+      /**
+       * Postmaster supervision state (WI-10003688). `null` when started with
+       * `supervise: false`.
+       * @returns {import('./pg-supervisor.js').PostgresSupervisorHealth | null}
+       */
+      health() {
+        return supervisor ? supervisor.health() : null;
+      },
+      async stop() {
+        // Stop supervising FIRST, so this shutdown is not mistaken for a death, and wait
+        // out any restart attempt already in flight before stopping what it started.
+        await supervisor?.stop();
+        log('stopping postgres');
+        // embedded-postgres' stop() waits for an 'exit' event, which a child that already
+        // died will never emit again: stopping a dead postmaster would hang forever.
+        if (childHasExited(/** @type {any} */ (pg).process)) {
+          /** @type {any} */ (pg).process = undefined;
+          log('postgres had already exited; nothing to stop');
+          return;
+        }
+        try {
+          await pg.stop();
+        } catch (error) {
+          log(`stop error: ${error?.message ?? error}`);
+          throw error;
+        }
+      },
+    };
+  } catch (error) {
+    // Startup has not returned a handle yet, so its caller cannot stop the
+    // postmaster. Reap it here on every fatal path (including pg.start() after
+    // it has spawned a child) before rethrowing the original startup error.
+    if (childHasExited(/** @type {any} */ (pg).process)) {
+      /** @type {any} */ (pg).process = undefined;
+    } else {
+      await pg.stop().catch((stopError) => log(`stop error after startup failure: ${stopError?.message ?? stopError}`));
+    }
+    throw error;
   }
-
-  // Supervise the postmaster from here on: before this point a death fails the boot
-  // loudly, after it nothing else would notice (WI-10003688).
-  const supervisor = opts.supervise === false
-    ? null
-    : superviseEmbeddedPostgres({
-        pg,
-        dataDir,
-        log,
-        recentLines: pgLogWindow.lines,
-        backoffMs: opts.restartBackoffMs,
-        onExit: opts.onPostgresExit,
-        onRestarted: opts.onPostgresRestarted,
-      });
-
-  return {
-    /** TCP port the postmaster is listening on. */
-    port,
-    /** Database name created/used. */
-    dbName,
-    /** Owner credentials. */
-    user: DEFAULT_OWNER,
-    password: secrets.owner,
-    /** True when roles are keyed to per-host generated passwords (`credentialsFile`). */
-    hostCredentials: hostCredentials !== null,
-    /** Connection URLs for common roles (matches connection.ts expectations). */
-    urls: {
-      admin: roleUrl(ROLE_NAMES.admin, secrets.admin, port, dbName),
-      app: roleUrl(ROLE_NAMES.app, secrets.app, port, dbName),
-      zero: roleUrl(ROLE_NAMES.zero, secrets.zero, port, dbName),
-    },
-    /**
-     * Postmaster supervision state (WI-10003688). `null` when started with
-     * `supervise: false`.
-     * @returns {import('./pg-supervisor.js').PostgresSupervisorHealth | null}
-     */
-    health() {
-      return supervisor ? supervisor.health() : null;
-    },
-    async stop() {
-      // Stop supervising FIRST, so this shutdown is not mistaken for a death, and wait
-      // out any restart attempt already in flight before stopping what it started.
-      await supervisor?.stop();
-      log('stopping postgres');
-      // embedded-postgres' stop() waits for an 'exit' event, which a child that already
-      // died will never emit again: stopping a dead postmaster would hang forever.
-      if (childHasExited(/** @type {any} */ (pg).process)) {
-        /** @type {any} */ (pg).process = undefined;
-        log('postgres had already exited; nothing to stop');
-        return;
-      }
-      try {
-        await pg.stop();
-      } catch (error) {
-        log(`stop error: ${error?.message ?? error}`);
-        throw error;
-      }
-    },
-  };
 }
