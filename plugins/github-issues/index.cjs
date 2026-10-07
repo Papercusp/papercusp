@@ -20,12 +20,19 @@
  * The only network path is `host.fetch`, which enforces the declared egress hosts and injects the
  * source account's token. Nothing here sees a credential, imports host code, or writes a table.
  *
- * Cursor: one opaque JSON string `{ v, phase, page, since, seen }`. Each `syncPage` reads ONE page
- * of ONE phase (issues, then events, then comments). `since` holds the watermarks the current pass
+ * Cursor: one opaque JSON string `{ v, phase, page, since, seen, members }`. Each `syncPage` reads
+ * ONE page of ONE phase (issues, then events, then comments, then collaborators). `since` holds the watermarks the current pass
  * started from and never moves mid-pass; `seen` collects the newest timestamps read. Only a
  * completed pass folds `seen` into the next pass's `since`, so an interrupted pass resumes from the
  * last committed page and never skips an object. GitHub's `since` is inclusive, so a boundary
  * object is read again; the host's version-scoped dedupe absorbs it.
+ *
+ * Membership (D-015.4): the collaborators phase re-reads the repository's collaborators every pass,
+ * accumulating their GitHub user ids in `members` across pages, and the page that finishes it
+ * carries the complete set as the page's `membership`. The host replaces an organization-scope
+ * source's permission list with it, so only people who can see the repository can read its
+ * comments. A token that may not list collaborators (403/404: listing needs push access) cannot
+ * vouch for anyone, so that pass reports an EMPTY membership: unverifiable readership fails closed.
  */
 
 const manifest = require('./papercusp.json');
@@ -35,7 +42,7 @@ const API = 'https://api.github.com';
 const PAGE_SIZE = 100;
 /** Canonical ticket vocabulary names the issue tracker, not the plugin id. */
 const TICKET_PROVIDER = 'github';
-const PHASES = ['issues', 'events', 'comments'];
+const PHASES = ['issues', 'events', 'comments', 'collaborators'];
 const TRANSITIONS = new Set(['closed', 'reopened']);
 
 function text(value) {
@@ -75,7 +82,7 @@ function ticketExternalId(owner, repo, number) {
 }
 
 function freshCursor(since) {
-  return { v: 1, phase: 'issues', page: 1, since: since || {}, seen: {} };
+  return { v: 1, phase: 'issues', page: 1, since: since || {}, seen: {}, members: [] };
 }
 
 function decodeCursor(raw) {
@@ -90,7 +97,8 @@ function decodeCursor(raw) {
     throw syncError('cursor-expired', 'github_issues_cursor_unrecognised');
   }
   const obj = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {});
-  return { v: 1, phase: parsed.phase, page: parsed.page, since: obj(parsed.since), seen: obj(parsed.seen) };
+  const members = Array.isArray(parsed.members) ? parsed.members.filter((id) => typeof id === 'string' && id !== '') : [];
+  return { v: 1, phase: parsed.phase, page: parsed.page, since: obj(parsed.since), seen: obj(parsed.seen), members };
 }
 
 function lowerHeaders(headers) {
@@ -130,7 +138,7 @@ async function getJson(host, source, url) {
     throw syncError('rate-limited', `github_rate_limited:${retryAfterSeconds}s`, { retryAfterSeconds });
   }
   if (status === 401 || status === 403 || status === 404) {
-    throw syncError('auth', `github_access_denied:${status} ${url}`);
+    throw syncError('auth', `github_access_denied:${status} ${url}`, { status });
   }
   if (status < 200 || status >= 300) throw syncError('transient', `github_http_${status} ${url}`);
   const body = response.bodyEncoding === 'base64' ? Buffer.from(response.body, 'base64').toString('utf8') : response.body;
@@ -302,18 +310,42 @@ async function readComments(host, source, owner, repo, cursor) {
   return { records, done: data.length < PAGE_SIZE };
 }
 
-const READERS = { issues: readIssues, events: readEvents, comments: readComments };
+async function readCollaborators(host, source, owner, repo, cursor) {
+  const url = `${repoPath(owner, repo)}/collaborators?affiliation=all&per_page=${PAGE_SIZE}&page=${cursor.page}`;
+  let data;
+  try {
+    data = listOf(await getJson(host, source, url), url);
+  } catch (err) {
+    // Listing collaborators needs push access; a token without it cannot vouch for anyone.
+    if (err && err.kind === 'auth' && (err.status === 403 || err.status === 404)) {
+      cursor.members = [];
+      return { records: [], done: true, membership: { members: [] } };
+    }
+    throw err;
+  }
+  const ids = new Set(cursor.members);
+  for (const user of data) {
+    if (user && user.id !== null && user.id !== undefined && String(user.id) !== '') ids.add(String(user.id));
+  }
+  cursor.members = [...ids];
+  const done = data.length < PAGE_SIZE;
+  if (!done) return { records: [], done };
+  return { records: [], done, membership: { members: cursor.members.map((id) => ({ providerUserId: id })) } };
+}
+
+const READERS = { issues: readIssues, events: readEvents, comments: readComments, collaborators: readCollaborators };
 
 async function syncPage(request, host) {
   const { owner, repo } = repoOf(request.config);
   const cursor = decodeCursor(request.cursor);
-  const { records, done } = await READERS[cursor.phase](host, request.source, owner, repo, cursor);
+  const { records, done, membership } = await READERS[cursor.phase](host, request.source, owner, repo, cursor);
+  const carried = membership ? { membership } : {};
   if (!done) {
-    return { records, nextCursor: JSON.stringify({ ...cursor, page: cursor.page + 1 }), hasMore: true };
+    return { records, nextCursor: JSON.stringify({ ...cursor, page: cursor.page + 1 }), hasMore: true, ...carried };
   }
   const nextPhase = PHASES[PHASES.indexOf(cursor.phase) + 1];
   if (nextPhase) {
-    return { records, nextCursor: JSON.stringify({ ...cursor, phase: nextPhase, page: 1 }), hasMore: true };
+    return { records, nextCursor: JSON.stringify({ ...cursor, phase: nextPhase, page: 1 }), hasMore: true, ...carried };
   }
   // Pass complete: fold what this pass saw into the next pass's watermarks.
   const since = {};
@@ -321,7 +353,7 @@ async function syncPage(request, host) {
     const value = later(cursor.since[phase], cursor.seen[phase]);
     if (value) since[phase] = value;
   }
-  return { records, nextCursor: JSON.stringify(freshCursor(since)), hasMore: false };
+  return { records, nextCursor: JSON.stringify(freshCursor(since)), hasMore: false, ...carried };
 }
 
 function parseTicketRef(args) {
