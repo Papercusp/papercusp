@@ -353,6 +353,54 @@ describe('migration 864 — guarded execution', () => {
     expect(after).toEqual(before);
   });
 
+  it('creates the empty manifest on a populated database with no classifiable legacy rows', async () => {
+    // Reconstruct 864's pre-first-execution function/table state inside a
+    // transaction. The provisioned DB is populated, but its legacy cohort was
+    // already migrated; 864 must still install an empty manifest for 867/870/950.
+    await sql.unsafe('BEGIN; SET LOCAL statement_timeout = 0;');
+    try {
+      await sql.unsafe(
+        "INSERT INTO harness_shared.harness_registry (workspace_id, payload, updated_at) " +
+          "VALUES ('papercusp-workspace', '{\"projects\":[{\"slug\":\"papercusp\",\"remote_hive\":false}]}'::jsonb, 1) " +
+          'ON CONFLICT (workspace_id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at',
+      );
+      await sql.unsafe(
+        "INSERT INTO harness_shared.work_items " +
+          '(workspace_id, harness_slug, feature_id, title, status, item_kind, origin, created_ts, updated_ts, payload) ' +
+          "VALUES ('papercusp-workspace', 'papercusp', 'ZERO-COHORT-POPULATED', 'Ordinary populated row', 'open', 'bug', 'local', 1, 1, '{}'::jsonb) " +
+          'ON CONFLICT (workspace_id, harness_slug, feature_id) DO NOTHING',
+      );
+      await sql.unsafe(
+        'DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_park_manifest;\n' +
+          'DROP TABLE IF EXISTS harness_shared.bak_20260821_legacy_human_parks;\n' +
+          'DROP VIEW IF EXISTS harness_shared.work_items_claimable;\n' +
+          'DROP FUNCTION harness_shared.work_item_claim_floors(text, text, text, text, text, text, text, jsonb, text);\n' +
+          'ALTER FUNCTION harness_shared.work_item_claim_floors_v16(text, text, text, text, text, text, text, jsonb, text) RENAME TO work_item_claim_floors;',
+      );
+
+      await sql.unsafe(MIGRATION_SQL);
+
+      const [selected] = await sql.unsafe(
+        'SELECT count(*)::int AS rows FROM migration_864_manifest',
+      );
+      const [manifest] = await sql.unsafe(
+        "SELECT to_regclass('harness_shared.bak_20260821_legacy_human_park_manifest') IS NOT NULL AS exists, " +
+          '(SELECT count(*)::int FROM harness_shared.bak_20260821_legacy_human_park_manifest) AS rows, ' +
+          "to_regprocedure('harness_shared.work_item_claim_floors_v16(text,text,text,text,text,text,text,jsonb,text)') IS NOT NULL AS has_v16, " +
+          "to_regprocedure('harness_shared.work_item_claim_floors(text,text,text,text,text,text,text,jsonb,text)') IS NOT NULL AS has_public",
+      );
+      expect(selected.rows).toBe(0);
+      expect(manifest).toMatchObject({
+        exists: true,
+        rows: 0,
+        has_v16: true,
+        has_public: true,
+      });
+    } finally {
+      await sql.unsafe('ROLLBACK').catch(() => {});
+    }
+  });
+
   it('keeps owner census guards strict but admits a variable remote_hive peer through the repair chain', async () => {
     await sql.unsafe(`
       INSERT INTO harness_shared.harness_registry (workspace_id, payload, updated_at)
