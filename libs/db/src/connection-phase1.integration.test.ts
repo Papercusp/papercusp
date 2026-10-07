@@ -61,6 +61,49 @@ afterAll(async () => {
 });
 
 describe('Drizzle migration phase 1 — connection surface', () => {
+  it('refuses the captured live target while allowing the throwaway testcontainer', async () => {
+    expect(process.env.PAPERCUSP_FORBID_LIVE_PG).toBe('1');
+    const protectedTargets = JSON.parse(process.env.PAPERCUSP_FORBID_LIVE_PG_TARGETS ?? '[]') as Array<{
+      host: string;
+      port: string;
+      database: string;
+    }>;
+    const liveTarget = protectedTargets.find((target) => target.database === 'papercusp') ?? protectedTargets[0];
+    expect(liveTarget, 'the integration setup must capture a protected live target').toBeDefined();
+
+    const liveUrl = new URL('postgresql://harness_admin:fixture-only@localhost/placeholder');
+    liveUrl.hostname = liveTarget!.host;
+    liveUrl.port = liveTarget!.port;
+    liveUrl.pathname = `/${encodeURIComponent(liveTarget!.database)}`;
+    const savedSafeEndpoints = process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS;
+    try {
+      // Exercise the unsafe target independently of whether a testcontainer happens
+      // to share its local host/port in this runtime.
+      process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS = '[]';
+      process.env.HARNESS_ADMIN_DATABASE_URL = liveUrl.toString();
+      process.env.HARNESS_DATABASE_URL = liveUrl.toString();
+      await _resetForTests();
+
+      expect(() => getOrgPg()).toThrow(/protected live Postgres target/);
+      expect(() => getHarnessPg('live-guard')).toThrow(/protected live Postgres target/);
+
+      // The same buildClient choke point still allows the per-file throwaway DB.
+      process.env.HARNESS_ADMIN_DATABASE_URL = db.url;
+      process.env.HARNESS_DATABASE_URL = db.url;
+      if (savedSafeEndpoints === undefined) delete process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS;
+      else process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS = savedSafeEndpoints;
+      await _resetForTests();
+      expect(getOrgPg().sql).toBeDefined();
+      expect(getHarnessPg('throwaway').sql).toBeDefined();
+    } finally {
+      process.env.HARNESS_ADMIN_DATABASE_URL = db.url;
+      process.env.HARNESS_DATABASE_URL = db.url;
+      if (savedSafeEndpoints === undefined) delete process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS;
+      else process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS = savedSafeEndpoints;
+      await _resetForTests();
+    }
+  });
+
   it('getOrgPg() exposes both .drizzle (back-compat) and .db (typed full schema)', () => {
     const h = getOrgPg();
     expect(h.sql).toBeDefined();

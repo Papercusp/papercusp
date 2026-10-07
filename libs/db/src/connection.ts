@@ -1234,6 +1234,78 @@ function assertRealPgAllowed(label: string, connectionUrl: string): void {
   );
 }
 
+type PgTarget = { host: string; port: string; database: string };
+
+function pgTargetFromUrl(connectionUrl: string): PgTarget | null {
+  try {
+    const url = new URL(connectionUrl);
+    const database = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+    if (!database) return null;
+    return {
+      host: url.hostname.toLowerCase(),
+      port: url.port || '5432',
+      database,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function readPgTargets(raw: string | undefined): PgTarget[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is PgTarget =>
+      !!value && typeof value === 'object' &&
+      typeof value.host === 'string' && typeof value.port === 'string' &&
+      typeof value.database === 'string');
+  } catch {
+    return [];
+  }
+}
+
+function readPgEndpoints(raw: string | undefined): Array<{ host: string; port: string }> {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is { host: string; port: string } =>
+      !!value && typeof value === 'object' &&
+      typeof value.host === 'string' && typeof value.port === 'string');
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Integration-layer counterpart to the unit-only rail above. The shared Vitest
+ * setup snapshots ambient/live DSN identities before a test can reroute its own
+ * connection env to createOrgTestDb(). A testcontainer endpoint is separately
+ * allowlisted by host+port; every other connection to a captured live target is
+ * refused here, at the common pool builder used by org and harness accessors.
+ */
+function assertLivePgAllowed(label: string, connectionUrl: string): void {
+  if (process.env.VITEST === undefined || process.env.PAPERCUSP_FORBID_LIVE_PG !== '1') return;
+  const target = pgTargetFromUrl(connectionUrl);
+  if (!target) return;
+
+  const safeEndpoints = readPgEndpoints(process.env.PAPERCUSP_SAFE_TEST_PG_ENDPOINTS);
+  if (safeEndpoints.some((endpoint) => endpoint.host === target.host && endpoint.port === target.port)) return;
+
+  const protectedTargets = readPgTargets(process.env.PAPERCUSP_FORBID_LIVE_PG_TARGETS);
+  if (!protectedTargets.some((protectedTarget) =>
+    protectedTarget.host === target.host &&
+    protectedTarget.port === target.port &&
+    protectedTarget.database === target.database)) return;
+
+  const safeTarget = connectionUrl.replace(/\/\/[^@/]*@/, '//<redacted>@');
+  throw new Error(
+    `An INTEGRATION test tried to open the protected live Postgres target (pool "${label}" → ${safeTarget}). ` +
+      `Route the test through its throwaway database fixture instead. [WI-10006585]`,
+  );
+}
+
 function buildClient(
   connectionUrl: string,
   searchPath: string[],
@@ -1251,6 +1323,7 @@ function buildClient(
   typesOverride: any = PG_BIGINT_AS_NUMBER_TYPES,
 ): Sql {
   assertRealPgAllowed(label, connectionUrl);
+  assertLivePgAllowed(label, connectionUrl);
   const sp = searchPath.map((s) => `"${s.replace(/"/g, '""')}"`).join(', ');
   // The desktop ships embedded-postgres-server (real PG over TCP); the URL
   // carries a normal host:port, so no host override is needed. The legacy
