@@ -1,12 +1,12 @@
 {
   "id": "morning-ai-intelligence",
   "extends": "research",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A bounded, repo-less research producer for the owner-approved Papercusp morning AI brief; reuses native blueprint operations and shared Reports.",
   "operations": [
     {
       "id": "daily-ai-brief",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Produce one sourced Papercusp AI Brief and publish it in the shared Reports library.",
       "target": {
         "kind": "work-item",
@@ -267,6 +267,12 @@
           "ref": "blueprint-operation-worker",
           "revision": "0.1.0",
           "contentHash": "386d9cf347be2312a10131c72f485aa5f10eb8b622a097458fc15aea3ac7ebb7"
+        },
+        "model": {
+          "mode": "exact",
+          "models": ["gpt-6.1-sol"],
+          "effort": "medium",
+          "onUnavailable": "fail"
         },
         "requiredTools": [
           "capability:fetch",
