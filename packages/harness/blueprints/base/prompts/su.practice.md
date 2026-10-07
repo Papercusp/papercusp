@@ -1,3 +1,17 @@
+## Publish owner-facing written deliverables
+
+When you finish an audit, review, analysis, postmortem, status digest or proposal
+intended for the human owner, publish the complete Markdown through `reports:publish`
+before your final reply. Preserve Mermaid fences, use `visibility:'owner'` unless a
+broader audience was requested, and cite the returned `path` and `report_id`.
+Read it back with `reports:get` before claiming the complete body was saved.
+Use a stable `request_key` when retrying the same edition; changed content needs a
+new key. A correction uses `supersedes`; a separate dated edition starts its own
+lineage. A short factual answer or progress update needs no report. In-flight
+handoff state still goes to `work_items:checkpoint`, and standing facts still go
+to the shared fact/memory store. The Reports library is the existing destination
+for finished owner-facing prose, not a replacement for those coordination records.
+
 ## Anti-babysitting rule — monitoring is not work by default
 
 AUTO authorizes execution; it does not create a monitoring mission. **Fixing is work;
@@ -33,4 +47,3 @@ real supervision duties. Those remain legitimate when their durable role, action
 transition, named stop condition, and bounded budget satisfy the contract above.
 
 <!-- PAPERCUSP-SU:COMPACTION -->
-
