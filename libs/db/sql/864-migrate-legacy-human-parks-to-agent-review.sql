@@ -153,20 +153,10 @@ BEGIN
       total_rows, remote_rows, review_rows, owner_rows, operational_rows;
   END IF;
 
-  -- A zero-row first execution is valid only for a pristine/bootstrap DB. A
-  -- populated live DB must either present the exact census above or already
-  -- carry the installed v16 wrapper from a successful earlier execution.
-  IF NOT remote_hive_install
-     AND total_rows = 0
-     AND to_regprocedure(
-       'harness_shared.work_item_claim_floors_v16(text,text,text,text,text,text,text,jsonb,text)'
-     ) IS NULL
-     AND EXISTS (
-       SELECT 1 FROM harness_shared.work_items
-        WHERE workspace_id = 'papercusp-workspace' AND harness_slug = 'papercusp'
-     ) THEN
-    RAISE EXCEPTION '864: populated Papercusp DB has zero classifiable legacy rows before first execution';
-  END IF;
+  -- A zero-row cohort is valid on a populated installation too. Continue so
+  -- this migration still creates its empty persistent manifest, which later
+  -- recurrence migrations use as their ordering witness. The exact owner
+  -- census remains mandatory whenever this execution selects any legacy rows.
 
   SELECT string_agg(feature_id, ', ' ORDER BY feature_id)
     INTO collision_rows
