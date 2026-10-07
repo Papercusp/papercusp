@@ -118,17 +118,24 @@ AS $function$
 -- The complete pre-mutation rows remain in migration 826's durable backup; the
 -- same evidence merge is replayed so terminal/completion data is not regressed.
 CREATE TEMP TABLE repair_829_missing_ids (feature_id text PRIMARY KEY) ON COMMIT DROP;
-INSERT INTO repair_829_missing_ids
-SELECT v.feature_id
-FROM (VALUES
+WITH restore_ids(feature_id) AS (
+  SELECT v.feature_id
+  FROM (VALUES
   ('EI-1435'), ('EI-1629'), ('EI-1700'), ('EI-2205'), ('EI-6706'),
   ('EI-6707'), ('EI-6708'), ('EI-6765'), ('EI-7019'), ('EI-7532'),
   ('EI-7690'), ('WI-1993'), ('WI-2017'), ('WI-2063'), ('WI-2124')
-) AS v(feature_id)
--- A fresh installation applied through 826 has an intentionally empty backup;
--- restoration is production incident data, not seed data.
+  ) AS v(feature_id)
+)
+INSERT INTO repair_829_missing_ids
+SELECT restore_ids.feature_id
+FROM restore_ids
+-- Migration 826 may have backed up unrelated twins. Trigger this incident
+-- restore only when at least one of its frozen IDs is present; once triggered,
+-- the guard below still requires the complete, exact twin set.
 WHERE EXISTS (
-  SELECT 1 FROM harness_shared.bak_20260813_work_item_physical_twins LIMIT 1
+  SELECT 1
+  FROM harness_shared.bak_20260813_work_item_physical_twins b
+  JOIN restore_ids expected USING (feature_id)
 );
 
 DO $restore829$
