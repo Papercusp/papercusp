@@ -1,0 +1,49 @@
+-- 1416: CONTRACT for the Personal Vault expand windows opened by 1357 and 1414
+-- (WI-10006996; residue of WI-10006490, plan
+--  generalized-integrations-google-migration-cupboard-workflows-2026-10-05).
+--
+-- 1357 (D-010 datatype routing) and 1414 (gmail -> mail partition) each
+-- installed BEFORE triggers that rewrite writes from a release older than them
+-- into the current shape: the shared database migrates as soon as a
+-- staging-built operator boots, while :3070 keeps serving the previous release
+-- for as long as the green gate holds main. Once every writer runs code that
+-- stamps datatype_id, writes source-scoped dedupe keys and writes the `mail`
+-- partition itself, those triggers are dead weight on every Vault write, and
+-- worse, they would silently repair a regression that reintroduced a legacy
+-- write instead of letting a test see it.
+--
+-- Current writers, checked 2026-10-07 against the canonical tree:
+--   personal-vault/live-sink.ts      always passes datatypeId from VAULT_ROUTES
+--                                    and source-scoped keys (D-010, WI-10006490)
+--   data-sources/chat-retrieval-units.ts  personal/pot rows for chat sources,
+--                                    which 1357's datatype CASE never matched
+--   data-sources/documents-corpus.ts organization rows, likewise unmatched
+--
+-- ARM ONLY when dev:pipeline_position shows :3070 AND bg-host serving a build
+-- that contains the WI-10006490 live-sink.ts change, and after a live read
+-- confirms zero documents with source = 'gmail' and zero live personal_grants
+-- carrying personal:gmail. The arming work-item records the deployed sha.
+--
+-- FORWARD-COMPAT: these triggers only rewrite legacy-shaped writes, and this file is armed only after the release serving :3070 and bg-host is confirmed to stamp datatype_id, write source-scoped keys and write the mail partition itself, so no write that release makes depends on them.
+--
+-- Drops triggers and their trigger functions only; no table, column, index or
+-- data changes. Every statement is IF EXISTS, so re-applying is a no-op.
+
+-- ── 1357: documents legacy routing (datatype stamp + source-scoped key) ──────
+DROP TRIGGER IF EXISTS documents_normalize_legacy_routing ON harness_shared.documents;
+DROP FUNCTION IF EXISTS harness_shared.documents_normalize_legacy_routing();
+
+-- ── 1414: mail partition normalizers ────────────────────────────────────────
+DROP TRIGGER IF EXISTS documents_normalize_mail_partition ON harness_shared.documents;
+DROP FUNCTION IF EXISTS harness_shared.documents_normalize_mail_partition();
+
+DROP TRIGGER IF EXISTS personal_sync_state_normalize_mail_partition ON harness_shared.personal_sync_state;
+DROP TRIGGER IF EXISTS personal_identity_aliases_normalize_mail_partition ON harness_shared.personal_identity_aliases;
+DROP FUNCTION IF EXISTS harness_shared.personal_source_normalize_mail_partition();
+
+DROP TRIGGER IF EXISTS personal_grants_normalize_mail_partition ON harness_shared.personal_grants;
+DROP FUNCTION IF EXISTS harness_shared.personal_grants_normalize_mail_partition();
+
+-- 1414's scope-rewrite helper; used only by its backfill and the grants
+-- normalizer dropped above.
+DROP FUNCTION IF EXISTS harness_shared.personal_mail_partition_scopes(text[]);
