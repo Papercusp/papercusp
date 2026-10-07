@@ -100,3 +100,48 @@ deliberately left unwired to an OAuth provider, because a Threads-configured Met
 own app id and authorization host distinct from Facebook's, and those endpoints are unverified.
 Declaring `provider: "facebook"` for a Threads binding would assert a credential path that was
 examined and explicitly not built. Sources connect through the trigger-source flow.
+## Requirements
+
+**R-1 — Social comment digest.**
+```requirement
+{
+  "intent": {
+    "request": "Produce a useful digest of the triggering social comments and their source posts.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006"
+    ]
+  },
+  "acceptance": {
+    "condition": "The digest faithfully summarizes collected comments with source references and performs no reply or publishing action.",
+    "falsifier": "The digest fabricates comment content, loses source references, or the run replies, posts, or deletes.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006 | tree |

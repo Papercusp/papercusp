@@ -71,3 +71,46 @@ post-capable platforms the tightest derived `post` policy is Instagram's — its
 publishing bucket, which is a hard per-verb cap rather than a share of a general call budget. The
 cap bounds crosspost RUNS, and one run publishes to every destination, so this is not a per-platform
 throttle: it is the rate at which the whole fan-out may repeat.
+## Requirements
+
+**R-1 — Social scheduled crosspost.**
+```requirement
+{
+  "intent": {
+    "request": "Compose and report one crosspost result for every configured destination.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004"
+    ]
+  },
+  "acceptance": {
+    "condition": "Each destination is adapted as specified and has an individually recorded published, withheld, or refused result.",
+    "falsifier": "A destination lacks a result, content violates its platform constraints, or withheld work is reported as published.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004 | tree |

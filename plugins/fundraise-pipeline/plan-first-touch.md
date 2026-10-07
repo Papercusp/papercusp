@@ -61,3 +61,52 @@ to a connector blurb rather than consuming the relationship on a cold send.
 Date: 2026-08-23
 Every number in a first touch is checkable by the recipient. An estimate presented as a fact is
 discovered at exactly the moment it is most expensive, so the draft carries only recorded facts.
+## Requirements
+
+**R-1 — First-touch draft.**
+```requirement
+{
+  "intent": {
+    "request": "Create a fact-checked first-touch draft only for an eligible deal and leave approval pending for a human.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007",
+      "P-008",
+      "P-009",
+      "P-010"
+    ]
+  },
+  "acceptance": {
+    "condition": "The draft uses current research, respects warm-path routing, includes only sourced facts, and remains pending approval and unsent.",
+    "falsifier": "A draft is created without eligible research, contains unsupported facts, self-approves, or is sent.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007, P-008, P-009, P-010 | tree |

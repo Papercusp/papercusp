@@ -57,3 +57,49 @@ well-intentioned outreach becomes spam.
 Date: 2026-08-23
 `lastOutboundAt` only moves when a human sends. Otherwise an unsent draft would silently consume a
 follow-up slot and the next tick would compound the error.
+## Requirements
+
+**R-1 — No-reply follow-up.**
+```requirement
+{
+  "intent": {
+    "request": "Draft only a due, finite follow-up for an eligible deal that has received no newer reply.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007"
+    ]
+  },
+  "acceptance": {
+    "condition": "The plan re-reads current deal state, stops when follow-up is ineligible, and ends the ladder at its configured cap without sending.",
+    "falsifier": "A stale snapshot drives a draft, an ineligible deal is contacted, the cap is exceeded, or a message is sent.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007 | tree |

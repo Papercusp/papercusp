@@ -37,6 +37,8 @@ when you want drafting or digesting.
 
 ## Steps
 
+- **P-001** `todo` Read the triggering payload, use only supplied fields, and record the platform, trigger.event, available author and permalink, and first line of text in the completion. Ask the owner only when the stated escalation condition applies; take no platform write.
+
 1. Call `triggers:read-payload { planRunId: payload.plan_run.runId }` and read its `payload`. Use ONLY fields that are actually present on it —
    an absent field means YouTube did not supply one, not that you should go
    looking for it elsewhere.
@@ -58,3 +60,43 @@ when you want drafting or digesting.
 - **Do not construct a postId** as `youtube:<id>`. A postId is opaque: `social:read`
   and `social:reply` accept one only as `social:search` returned it, verbatim.
   If a later step needs one, get it from `social:search`.
+## Requirements
+
+**R-1 — Record an inbound YouTube event.**
+```requirement
+{
+  "intent": {
+    "request": "Record each inbound YouTube upload, comment, or reply as a concise activity summary.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001"
+    ]
+  },
+  "acceptance": {
+    "condition": "One trigger run records which YouTube event occurred and summarizes only fields supplied by its payload.",
+    "falsifier": "The completion omits the event, invents unavailable payload details, or the run replies, posts, or deletes.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001 | tree |

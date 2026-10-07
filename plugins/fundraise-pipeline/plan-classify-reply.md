@@ -65,3 +65,50 @@ No plan in this pack sends mail. The no-auto-send property is enforced by the ho
 by instruction-following: `mail:reply { planRunId }` refuses a send-mode reply from a triggered run
 while the owner-authority flag `papercusp-gmail-auto-send` is OFF. (The scopes are not the guard:
 Google's `gmail.compose` scope itself permits sending.)
+## Requirements
+
+**R-1 — Investor reply classification and draft.**
+```requirement
+{
+  "intent": {
+    "request": "For a matched investor reply, record an evidence-backed classification and create the appropriate draft; leave unmatched and automated messages untouched.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007",
+      "P-008"
+    ]
+  },
+  "acceptance": {
+    "condition": "Matched messages update only permitted deal fields and produce a reviewable draft; unmatched messages and autoreplies create no trace, and no reply is sent.",
+    "falsifier": "A message is mis-correlated, classified without quoted evidence, an unmatched or automated message is changed, or a reply is sent.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007, P-008 | tree |

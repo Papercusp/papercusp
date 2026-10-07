@@ -36,6 +36,7 @@ when you want drafting or digesting.
   same event carries the same key.
 
 ## Steps
+- **P-001** `todo` Read the triggering payload, use only supplied fields, and record a concise activity summary. Ask the owner only when the stated escalation condition applies; take no platform write.
 
 1. Call `triggers:read-payload { planRunId: payload.plan_run.runId }` and read its `payload`. Use ONLY fields that are actually present on it —
    an absent field means Facebook Pages did not supply one, not that you should go
@@ -58,3 +59,43 @@ when you want drafting or digesting.
 - **Do not construct a postId** as `facebook-pages:<id>`. A postId is opaque: `social:read`
   and `social:reply` accept one only as `social:search` returned it, verbatim.
   If a later step needs one, get it from `social:search`.
+## Requirements
+
+**R-1 — Record an inbound Facebook Pages event.**
+```requirement
+{
+  "intent": {
+    "request": "Record an inbound Facebook Pages event as a concise activity summary.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001"
+    ]
+  },
+  "acceptance": {
+    "condition": "One trigger run identifies the Facebook Pages event and summarizes only payload fields supplied by the platform.",
+    "falsifier": "The completion invents an absent event fact, omits the event, or the run replies, posts, or deletes.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001 | tree |

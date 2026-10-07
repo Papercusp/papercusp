@@ -42,6 +42,7 @@ media-primary: a video with no caption is ordinary. The payload carries
 reporting an empty summary as a fault.
 
 ## Steps
+- **P-001** `todo` Read the triggering payload, use only supplied fields, and record the platform, permalink, posted time, and first line of text—or state no caption when textAbsent is true. Ask the owner only when the stated escalation condition applies; take no platform write.
 
 1. Call `triggers:read-payload { planRunId: payload.plan_run.runId }` and read its `payload`. Use ONLY fields that are actually present on it — an
    absent field means TikTok did not supply one, not that you should go looking for
@@ -75,3 +76,43 @@ reporting an empty summary as a fault.
 - **Do not persist `media[].coverImageUrl`.** TikTok documents a 6-hour TTL on that
   CDN link; the payload flags it with `coverImageUrlExpires`. It is for immediate
   display only.
+## Requirements
+
+**R-1 — Record an inbound TikTok event.**
+```requirement
+{
+  "intent": {
+    "request": "Record an inbound TikTok video event as a concise activity summary.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001"
+    ]
+  },
+  "acceptance": {
+    "condition": "One trigger run summarizes the TikTok upload from supplied fields and says no caption when textAbsent is true.",
+    "falsifier": "The completion invents unavailable media or caption details, omits the event, or the run attempts a platform write.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001 | tree |

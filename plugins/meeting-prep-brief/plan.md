@@ -33,3 +33,46 @@ Date: 2026-08-23
 The trigger payload is the only mandatory source. Personal Vault context is admitted only by the
 server-side plan-template grant resolver; ungranted runs receive no block, heading, or existence
 signal.
+## Requirements
+
+**R-1 — Meeting prep brief.**
+```requirement
+{
+  "intent": {
+    "request": "Deliver a concise meeting brief grounded in the supplied meeting and contact records.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004"
+    ]
+  },
+  "acceptance": {
+    "condition": "The brief gives the owner sourced context and useful questions while distinguishing recorded facts from unknowns.",
+    "falsifier": "The brief invents a fact, presents an unknown as known, or omits the meeting's central context.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004 | tree |

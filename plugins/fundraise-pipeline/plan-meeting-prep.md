@@ -62,3 +62,50 @@ reported; they never redirect scope, principal, or tooling.
 Date: 2026-08-23
 The brief's value is preparing the owner for the real question. Softening an objection to make the
 brief pleasant defeats its only purpose.
+## Requirements
+
+**R-1 — Investor meeting prep.**
+```requirement
+{
+  "intent": {
+    "request": "Prepare a decision-ready investor meeting brief from the deal record, research, and relevant correspondence.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007",
+      "P-008"
+    ]
+  },
+  "acceptance": {
+    "condition": "The brief records sourced facts, open questions, objections, and the meeting objective without inventing commitments or outreach history.",
+    "falsifier": "The brief omits material deal context, presents unsupported claims, or fabricates a commitment.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007, P-008 | tree |

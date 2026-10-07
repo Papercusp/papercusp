@@ -29,3 +29,43 @@ nor the worker can redirect the response. Optional `responseGuidance` steers ton
 Date: 2026-08-23
 The plan never accepts a channel or thread coordinate. The server resolves both from the durable
 trigger run and posts with the connected owner's bot credential.
+## Requirements
+
+**R-1 — Slack thread responder.**
+```requirement
+{
+  "intent": {
+    "request": "Draft a response to the triggering Slack thread for human review.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001"
+    ]
+  },
+  "acceptance": {
+    "condition": "The draft is anchored to the trigger thread and remains unsent.",
+    "falsifier": "The draft targets another thread, is missing, or a Slack message is sent.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001 | tree |

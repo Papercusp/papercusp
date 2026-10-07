@@ -55,3 +55,50 @@ name is the mechanism that keeps the list at 100–150 considered targets instea
 Date: 2026-08-23
 `tier: 1` requires a connection the connector would actually confirm. Upgrading an acquaintance into
 a referral burns both the connector and the target.
+## Requirements
+
+**R-1 — Fund research brief.**
+```requirement
+{
+  "intent": {
+    "request": "Produce and store a sourced fund research brief with an evidence-backed match and warm-path assessment.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007",
+      "P-008"
+    ]
+  },
+  "acceptance": {
+    "condition": "Every quotation has its source URL, conflicts and weak matches are recorded honestly, and the deal points to a dated brief.",
+    "falsifier": "The brief contains uncited quotes, fabricated connections, an inflated match, or no durable dated reference.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007, P-008 | tree |

@@ -53,3 +53,45 @@ the registry records its scope list as empty, and Mastodon registers a client PE
 there is no single provider id that means "Mastodon". Declaring one would name a referent the OAuth
 registry cannot resolve. The social source's credential is acquired through the trigger-source
 connection flow instead, and the README states which registry scopes that connection must carry.
+## Requirements
+
+**R-1 — Social mention triage.**
+```requirement
+{
+  "intent": {
+    "request": "Classify each inbound mention and draft text only when the reply-suggested branch applies.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003"
+    ]
+  },
+  "acceptance": {
+    "condition": "Needs-human mentions stop without a draft, reply-suggested mentions produce reviewable text, and nothing is published.",
+    "falsifier": "A needs-human mention also receives a draft, a no-action mention is misrouted, or the run publishes.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003 | tree |

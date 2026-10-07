@@ -57,3 +57,51 @@ how an approval queue becomes a rubber stamp.
 Date: 2026-08-23
 Stalled momentum reported plainly is the review's most valuable output. A consistently encouraging
 report trains the owner to ignore it, which removes the gate by attrition rather than by decision.
+## Requirements
+
+**R-1 — Weekly pipeline review.**
+```requirement
+{
+  "intent": {
+    "request": "Produce a current weekly pipeline review that surfaces decisions and drift for the owner.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007",
+      "P-008",
+      "P-009"
+    ]
+  },
+  "acceptance": {
+    "condition": "The review uses current deal records, names next actions and due dates for drifting deals, and makes no owner decision.",
+    "falsifier": "The review relies on stale snapshots, hides material drift, invents facts, or approves or sends on the owner's behalf.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007, P-008, P-009 | tree |

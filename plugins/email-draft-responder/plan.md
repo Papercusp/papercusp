@@ -31,3 +31,43 @@ without changing any recipient or thread coordinate.
 Date: 2026-08-23
 The reply verb resolves every mail coordinate and the account from the durable trigger run. The pack
 never accepts a recipient and never sends: it calls `mail:reply` in its default draft mode only.
+## Requirements
+
+**R-1 — Email draft responder.**
+```requirement
+{
+  "intent": {
+    "request": "Draft one response to the triggering email in its existing thread.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001"
+    ]
+  },
+  "acceptance": {
+    "condition": "The trigger run creates exactly one draft anchored to the triggering message and sends nothing.",
+    "falsifier": "The draft is missing, targets another recipient or thread, or is sent.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001 | tree |

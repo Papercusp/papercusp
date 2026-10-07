@@ -60,3 +60,49 @@ where this pack is trying to build it.
 Date: 2026-08-23
 A promise recorded only inside an unsent draft is invisible to the pipeline board. Recording it on
 the deal is what makes an unshipped promise surface during weekly review.
+## Requirements
+
+**R-1 — Post-meeting follow-through.**
+```requirement
+{
+  "intent": {
+    "request": "Record the meeting outcome and owed follow-up from meeting evidence, leaving any email unsent for review.",
+    "constraints": [
+      "Source references name the plan items that implement this outcome."
+    ],
+    "sourceRefs": [
+      "P-001",
+      "P-002",
+      "P-003",
+      "P-004",
+      "P-005",
+      "P-006",
+      "P-007"
+    ]
+  },
+  "acceptance": {
+    "condition": "The deal reflects only commitments actually made, the next action is explicit, and any follow-up remains a draft.",
+    "falsifier": "The deal records an unmade commitment, omits an owed action, or sends a follow-up.",
+    "requiredScope": [
+      "plan-run"
+    ],
+    "evidencePlane": "tree"
+  },
+  "verification": {
+    "method": "Read the installed plan template and trace one representative trigger run against its input, recorded completion, and declared action boundaries.",
+    "check": {
+      "kind": "instrument",
+      "instrumentKey": "none"
+    },
+    "replication": "Repeat the review for every material event or decision branch named by the plan."
+  }
+}
+```
+
+## Design
+
+### Bar-to-work map for this plan
+
+| bar | implementing plan items | evidence plane |
+|---|---|---|
+| R-1 | P-001, P-002, P-003, P-004, P-005, P-006, P-007 | tree |
