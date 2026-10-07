@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { BlueprintSchema } from './schema.js';
 import { loadBuiltinBlueprint } from './loader.js';
 
-const sourcePath = fileURLToPath(new URL('../../../../harness/blueprints/morning-ai-intelligence/blueprint.yaml', import.meta.url));
+const sourcePath = fileURLToPath(new URL('../../../harness/blueprints/morning-ai-intelligence/blueprint.yaml', import.meta.url));
 const child = JSON.parse(readFileSync(sourcePath, 'utf8'));
 const parent = loadBuiltinBlueprint('research').blueprint;
 const resolved = BlueprintSchema.parse({
