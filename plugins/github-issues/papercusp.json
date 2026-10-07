@@ -26,6 +26,7 @@
         "displayNameField": "login"
       }
     },
+    "membership": { "identityProvider": "github" },
     "egressHosts": ["api.github.com", "github.com"],
     "defaultDestinations": {
       "ticket": ["record"],
