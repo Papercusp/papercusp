@@ -146,6 +146,8 @@ export function codexGatewayConfigToml(
       // `--account=auto` sessions even though inference can already serve them.
       `model_catalog_url = "${gatewayBaseUrl}/v1/models"`,
       'wire_api = "responses"',
+      // The gateway owns upstream credentials, not the ambient default ChatGPT login.
+      'requires_openai_auth = false',
       'experimental_bearer_token = "papercusp-gateway"',
       ...httpHeadersLine,
       '# END PAPERCUSP_CODEX_GATEWAY_PROVIDER',

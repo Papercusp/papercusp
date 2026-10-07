@@ -31,6 +31,7 @@ describe('codexGatewayConfigToml model discovery', () => {
     const config = codexGatewayConfigToml(account, opts);
     expect(config.tables).toContain('base_url = "http://127.0.0.1:9876/v1"');
     expect(config.tables).toContain('model_catalog_url = "http://127.0.0.1:9876/v1/models"');
+    expect(config.tables).toContain('requires_openai_auth = false');
     expect(config.tables.join('\n')).toContain('"originator" = "codex_cli_rs"');
   });
 
