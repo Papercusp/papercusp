@@ -53,11 +53,19 @@ afterAll(async () => {
   _resetUrlCacheForTests();
 });
 
-const advisoryLockCount = async (): Promise<number> => {
-  // On a fresh testcontainer DB the only advisory lock present is the one our
-  // leaked transaction holds, so a plain count is an unambiguous signal.
+type AdvisoryLockIdentity = { pid: number; key: string; database: string };
+
+const advisoryLockCount = async (identity: AdvisoryLockIdentity): Promise<number> => {
+  // pg_locks is cluster-wide even when createFreshTestDb isolates a database.
+  // Attribute the granted two-int plan lock to its exact database and backend.
   const r = await obs<{ n: number }[]>`
-    SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory'
+    SELECT count(*)::int AS n FROM pg_locks
+    WHERE locktype = 'advisory'
+      AND database = (SELECT oid FROM pg_database WHERE datname = ${identity.database})
+      AND pid = ${identity.pid}
+      AND classid = hashtext('harness_plans')::oid
+      AND objid = hashtext(${identity.key})::oid
+      AND objsubid = 2 AND mode = 'ExclusiveLock' AND granted
   `;
   return r[0].n;
 };
@@ -73,6 +81,75 @@ describe('idle_in_transaction_session_timeout (EI-49)', () => {
     expect(v).not.toBe('0');
   });
 
+  it('counts only the target lock despite other keys, backends and databases', async () => {
+    const otherDb = await createFreshTestDb({ prefix: 'idletxnoise' });
+    const sameDbNoise = postgres(db.url, { max: 1, onnotice: () => {} });
+    const otherDbNoise = postgres(otherDb.url, { max: 1, onnotice: () => {} });
+    const reserved = await getOrgPgApp().sql.reserve();
+    const key = 'ws-test:papercup:isolated-plan';
+    let waiter: Promise<unknown> | undefined;
+    try {
+      await sameDbNoise`SELECT pg_advisory_lock(hashtext('harness_plans'), hashtext('unrelated-plan'))`;
+      await otherDbNoise`SELECT pg_advisory_lock(hashtext('harness_plans'), hashtext(${key}))`;
+      await reserved.unsafe('BEGIN');
+      await reserved.unsafe('SET LOCAL idle_in_transaction_session_timeout = 0');
+      await reserved`SELECT pg_advisory_xact_lock(hashtext('harness_plans'), hashtext('other-owner-key'))`;
+      const [{ pid }] = await reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      const identity = { pid, key, database: db.name };
+      // Each distracting lock is real; none identifies this transaction's target.
+      expect(await advisoryLockCount(identity)).toBe(0);
+      await reserved`SELECT pg_advisory_xact_lock(hashtext('harness_plans'), hashtext(${key}))`;
+      expect(await advisoryLockCount(identity)).toBe(1);
+      const [{ pid: otherPid }] = await sameDbNoise<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      expect(await advisoryLockCount({ ...identity, pid: otherPid })).toBe(0);
+      expect(await advisoryLockCount({ ...identity, database: otherDb.name })).toBe(0);
+      expect(await advisoryLockCount({ ...identity, key: 'absent-plan' })).toBe(0);
+      waiter = sameDbNoise`SELECT pg_advisory_lock(hashtext('harness_plans'), hashtext(${key}))`.then((rows) => rows);
+      await expect.poll(async () => {
+        const [{ n }] = await obs<{ n: number }[]>`
+          SELECT count(*)::int AS n FROM pg_locks
+          WHERE locktype = 'advisory' AND pid = ${otherPid} AND NOT granted`;
+        return n;
+      }).toBe(1);
+      // A waiter requests the same key but does not hold it yet.
+      expect(await advisoryLockCount({ ...identity, pid: otherPid })).toBe(0);
+      await reserved.unsafe('ROLLBACK');
+      await waiter;
+      expect(await advisoryLockCount(identity)).toBe(0);
+      expect(await advisoryLockCount({ ...identity, pid: otherPid })).toBe(1);
+    } finally {
+      await reserved.unsafe('ROLLBACK').catch(() => {});
+      reserved.release();
+      await waiter?.catch(() => {});
+      await Promise.all([sameDbNoise.end({ timeout: 5 }), otherDbNoise.end({ timeout: 5 })]);
+      await otherDb.drop();
+    }
+  });
+
+  it('retains the target lock with timeout disabled until explicit commit', async () => {
+    const reserved = await getOrgPgApp().sql.reserve();
+    const key = 'ws-test:papercup:no-timeout-plan';
+    try {
+      const [{ pid }] = await reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      const identity = { pid, key, database: db.name };
+      await reserved.unsafe('BEGIN');
+      // Override only this test transaction; buildClient's normal startup stays ON.
+      await reserved.unsafe('SET LOCAL idle_in_transaction_session_timeout = 0');
+      const [{ v }] = await reserved<{ v: string }[]>`
+        SELECT current_setting('idle_in_transaction_session_timeout') AS v`;
+      expect(v).toBe('0');
+      await reserved`SELECT pg_advisory_xact_lock(hashtext('harness_plans'), hashtext(${key}))`;
+      expect(await advisoryLockCount(identity)).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(await advisoryLockCount(identity)).toBe(1);
+      await reserved.unsafe('COMMIT');
+      expect(await advisoryLockCount(identity)).toBe(0);
+    } finally {
+      await reserved.unsafe('ROLLBACK').catch(() => {});
+      reserved.release();
+    }
+  });
+
   it('auto-releases an advisory xact lock leaked by an idle-in-transaction connection', async () => {
     const { sql } = getOrgPgApp();
     // Reproduce the leak: reserve a real pooled connection, BEGIN, take the same
@@ -80,32 +157,24 @@ describe('idle_in_transaction_session_timeout (EI-49)', () => {
     // committing — exactly what a torn-down plans:* write leaves behind.
     const lockKey = 'ws-test:papercup:some-plan';
     const reserved = await sql.reserve();
-    await reserved.unsafe('BEGIN');
-    await reserved`
-      SELECT pg_advisory_xact_lock(hashtext('harness_plans'), hashtext(${lockKey}))
-    `;
-
-    // Sanity: the lock is genuinely held right now.
-    expect(await advisoryLockCount()).toBe(1);
-
-    // With the 1s idle-in-tx budget, Postgres terminates the stuck backend and
-    // the lock disappears on its own — no COMMIT, no process restart. Poll until
-    // it clears (well within the budget + margin). Before the fix the GUC is 0,
-    // the connection stays idle-in-tx forever, and this never reaches 0.
-    const deadline = Date.now() + 12_000;
-    let count = await advisoryLockCount();
-    while (count > 0 && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 200));
-      count = await advisoryLockCount();
-    }
-    expect(count).toBe(0);
-
-    // The reserved handle's backend is gone; release best-effort so the pool
-    // doesn't hold a dead slot for the rest of the suite.
     try {
-      reserved.release();
-    } catch {
-      /* backend already terminated */
+      const [{ pid }] = await reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+      const identity = { pid, key: lockKey, database: db.name };
+      await reserved.unsafe('BEGIN');
+      await reserved`
+        SELECT pg_advisory_xact_lock(hashtext('harness_plans'), hashtext(${lockKey}))
+      `;
+      expect(await advisoryLockCount(identity)).toBe(1);
+
+      // Observe this lock until the 1s idle-in-tx budget kills its backend.
+      // Do not COMMIT or restart the process: the timeout must release it.
+      await expect.poll(() => advisoryLockCount(identity), {
+        timeout: 12_000, interval: 200,
+      }).toBe(0);
+    } finally {
+      await reserved.unsafe('ROLLBACK').catch(() => {});
+      // The backend may already be terminated; always return the reserved slot.
+      try { reserved.release(); } catch { /* backend already terminated */ }
     }
   });
 });
