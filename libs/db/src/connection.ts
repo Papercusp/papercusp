@@ -1325,7 +1325,7 @@ export const REAL_PG_RAIL_STATE_KEY = '@papercusp/db-org.real-pg-rail';
 export interface RealPgRailState {
   /** Blocked attempts since the last reset (test-config resets it per test file). */
   blocked: number;
-  /** Up to REAL_PG_RAIL_CALLER_CAP distinct `pool ← first frame outside this package`. */
+  /** Up to REAL_PG_RAIL_CALLER_CAP distinct `pool ← up to 3 frames outside this package (innermost first)`. */
   callers: string[];
 }
 
@@ -1336,27 +1336,51 @@ const realPgRail = pinModuleState<RealPgRailState>(REAL_PG_RAIL_STATE_KEY, () =>
   callers: [],
 }));
 
-/** First stack frame outside the db package and node_modules: the code that asked. */
-function firstForeignFrame(stack: string | undefined): string | null {
+/** Foreign frames recorded per caller entry. One is not enough: the first frame
+ *  outside this package is usually a GENERIC accessor (operator-state-pg's
+ *  readOperatorState, hive-store's pg()), which names the plumbing rather than
+ *  the code that asked. Observed WI-10007538: 19 blocks all read as
+ *  "readOperatorState", with nothing to say which suite path reached it. */
+const REAL_PG_RAIL_FRAME_DEPTH = 3;
+
+/** The first REAL_PG_RAIL_FRAME_DEPTH frames outside the db package and
+ *  node_modules, innermost first, joined with ' ← '. */
+function foreignFrameChain(stack: string | undefined): string | null {
   if (!stack) return null;
+  const chain: string[] = [];
   for (const raw of stack.split('\n').slice(1)) {
     const frame = raw.trim();
     if (!frame.startsWith('at ')) continue;
     if (frame.includes('node_modules')) continue;
+    // Runtime frames (processTicksAndRejections, …) would spend a slot on noise.
+    if (frame.includes('(node:') || frame.startsWith('at node:')) continue;
     // The db package's own accessors are plumbing; its TEST files are callers.
     if (frame.includes('/libs/db/src/') && !/\.test\.[cm]?ts\b/.test(frame)) continue;
     // Repo-qualify by the first packages/ libs/ apps/ segment; the absolute
     // checkout prefix is noise in a census line.
-    return frame.replace(/(\(|at )\/[^()]*?\/((?:packages|libs|apps)\/)/, '$1$2');
+    chain.push(frame.replace(/(\(|at )\/[^()]*?\/((?:packages|libs|apps)\/)/, '$1$2'));
+    if (chain.length >= REAL_PG_RAIL_FRAME_DEPTH) break;
   }
-  return null;
+  return chain.length > 0 ? chain.join(' ← ') : null;
+}
+
+/** A stack deep enough to get past the db package's own plumbing frames; the
+ *  default limit (10) can be spent entirely inside it. */
+function captureDeepStack(): string | undefined {
+  const previous = Error.stackTraceLimit;
+  Error.stackTraceLimit = 40;
+  try {
+    return new Error().stack;
+  } finally {
+    Error.stackTraceLimit = previous;
+  }
 }
 
 function recordRealPgRailBlock(label: string): void {
   try {
     realPgRail.blocked += 1;
     if (realPgRail.callers.length >= REAL_PG_RAIL_CALLER_CAP) return;
-    const entry = `${label} ← ${firstForeignFrame(new Error().stack) ?? '<caller not resolvable>'}`;
+    const entry = `${label} ← ${foreignFrameChain(captureDeepStack()) ?? '<caller not resolvable>'}`;
     if (!realPgRail.callers.includes(entry)) realPgRail.callers.push(entry);
   } catch {
     // An observation. It must never change whether or how the rail throws.
