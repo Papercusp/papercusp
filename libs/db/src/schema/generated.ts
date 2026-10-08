@@ -2256,7 +2256,7 @@ END)`),
 	check("connected_apps_previous_token_pair", sql`(previous_token_hash IS NULL) = (previous_token_valid_until IS NULL)`),
 	check("connected_apps_scopes_is_object", sql`jsonb_typeof(scopes) = 'object'::text`),
 	check("connected_apps_service_has_spend_cap", sql`(kind <> 'service'::text) OR (spend_cap_cents IS NOT NULL)`),
-	check("connected_apps_spend_cap_positive", sql`(spend_cap_cents IS NULL) OR (spend_cap_cents > 0)`),
+	check("connected_apps_spend_cap_nonnegative", sql`(spend_cap_cents IS NULL) OR (spend_cap_cents >= 0)`),
 	check("connected_apps_spend_cap_window_positive", sql`(spend_cap_window_sec IS NULL) OR (spend_cap_window_sec > 0)`),
 	check("connected_apps_token_hash_shape", sql`(token_hash IS NULL) OR (token_hash ~ '^[0-9a-f]{64}$'::text)`),
 ]);
