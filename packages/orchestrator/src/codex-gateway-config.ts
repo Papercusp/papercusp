@@ -71,6 +71,9 @@ export function codexManagedFeaturesToml(
   opts: { disableMemories?: boolean; headless?: boolean } = {},
 ): string[] {
   return [
+    // CLI versions are managed outside startup. An update dialog can block a
+    // carry-respawn before it creates its native session or accepts wakes.
+    'check_for_update_on_startup = false',
     '# Papercusp owns context carry/restart; Codex native compaction must not cut first.',
     '[features]',
     ...(opts.disableMemories === false ? [] : ['memories = false']),

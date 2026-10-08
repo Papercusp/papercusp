@@ -9,6 +9,14 @@ afterEach(() => {
 });
 
 describe('codexGatewayConfigToml model discovery', () => {
+  it('disables startup update dialogs before feature tables for every managed home', () => {
+    for (const opts of [{}, { disableMemories: false }, { headless: true }]) {
+      const config = codexManagedFeaturesToml(opts);
+      expect(config).toContain('check_for_update_on_startup = false');
+      expect(config.indexOf('check_for_update_on_startup = false')).toBeLessThan(config.indexOf('[features]'));
+    }
+  });
+
   it('enables custom-provider model discovery in every managed Codex home', () => {
     expect(codexManagedFeaturesToml()).toContain('api_key_model_discovery = true');
     expect(codexManagedFeaturesToml({ disableMemories: false })).toContain('api_key_model_discovery = true');
