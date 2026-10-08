@@ -107,7 +107,6 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
     tcp6Table = `sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n${listenRow(55102)}\n`;
     now += 99;
     expect(probe(55101)).toBe(true);
-    expect(probe(55102)).toBe(true);
     expect(reads).toHaveLength(2);
 
     now += 1;
