@@ -61,7 +61,7 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   });
 
   it('adminUrl() invalidates _adminClient when discovery URL changes (pre-existing, locked here)', () => {
-    const fn = SRC.match(/function adminUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    const fn = SRC.match(/function adminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
     expect(fn).toBeTruthy();
     const body = fn![1];
     expect(body).toMatch(/_adminClient\s*=\s*null/);
@@ -163,7 +163,7 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   // (desktop restart / port shuffle) leaves it silently pointed at the stale
   // target forever (the exact bug #33 class, for the new pool).
   it("adminUrl()'s discovery-URL-change invalidation ALSO clears _adminLosslessBigintClient", () => {
-    const fn = SRC.match(/function adminUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    const fn = SRC.match(/function adminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
     expect(fn).toBeTruthy();
     const body = fn![1];
     expect(
