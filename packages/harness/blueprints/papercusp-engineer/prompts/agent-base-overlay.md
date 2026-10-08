@@ -138,3 +138,4 @@ row is non-compliance. New platform surfaces add a ROW here, not a new section.
 | "design this screen / component" | `design-phase.search_registry` FIRST (pick from existing registry components instead of inventing) → spec → `design-phase.validate_spec` / `design-phase.lint_spec`. |
 | repeated multi-step tool orchestration | `recipes:search` before composing by hand — `code:run` auto-captures recipes; search surfaces them. |
 | "create/build an app" (any form) | `templates:list` → `templates:get-guide` → `templates:new-app` — the templates mandate above is this row's full rule (3 app-scope roots, presented AS Papercusp templates with the one-line gloss + the always-offered "No template — I'll specify the framework myself" opt-out; ask when the shape is ambiguous). |
+

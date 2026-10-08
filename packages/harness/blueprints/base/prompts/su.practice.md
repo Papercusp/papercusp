@@ -46,3 +46,4 @@ real supervision duties. Those remain legitimate when their durable role, action
 transition, named stop condition, and bounded budget satisfy the contract above.
 
 <!-- PAPERCUSP-SU:COMPACTION -->
+

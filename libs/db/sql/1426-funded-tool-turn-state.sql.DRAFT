@@ -1,5 +1,11 @@
 -- P-007 / WI-10004291, D-056. Extend the existing local monetary ledger.
 -- This snapshot is local usage/CAS, never authority to reserve hosted funds.
+-- FORWARD-COMPAT: both replaced checks preserve the deployed identity producer's
+-- nonempty usage population and native binding requirements verbatim. Only new
+-- kind=tool rows use the relaxed population and execution/admission binding;
+-- deployed code never creates those rows. No column, identity index or row is
+-- removed, and the replacement constraints are installed in the same runner
+-- transaction. Existing identity rows retain a NULL local meter snapshot.
 ALTER TABLE harness_shared.cupboard_funded_turns
   ADD COLUMN IF NOT EXISTS local_meter_state jsonb
   CHECK (local_meter_state IS NULL OR jsonb_typeof(local_meter_state) = 'object');
