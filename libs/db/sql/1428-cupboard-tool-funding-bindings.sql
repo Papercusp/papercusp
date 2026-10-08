@@ -1,6 +1,12 @@
 -- WI-10004291, agent-economy-flywheel P-007/P-017, D-065.
 -- Reuse the workspace/SKU routing table; bindings never attest funds.
 -- Preserve all legacy identity refs and restrict pricing cache to identities.
+-- FORWARD-COMPAT: replace the SKU check with a strict superset in the migration
+-- transaction. Every legacy identity ref remains accepted, including its old
+-- prefix-only validation. The additional pricing check accepts every legacy
+-- identity row; only new non-identity rows must keep identity pricing NULL.
+-- Both old identity readers/writers and the new checkout bind remain compatible.
+-- No row, column, funding hold or payment authority is deleted or modified.
 ALTER TABLE harness_shared.identity_release_funding
   DROP CONSTRAINT IF EXISTS identity_release_funding_sku_ref_check;
 ALTER TABLE harness_shared.identity_release_funding
