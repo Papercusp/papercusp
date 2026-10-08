@@ -84,6 +84,35 @@ describe('the unit-layer real-Postgres rail', () => {
     expect(after.callers.some((c) => c.startsWith('org-admin ← ') && c.includes('connection-forbid-real-pg.test.ts'))).toBe(true);
   });
 
+  it('records the code BEHIND a generic accessor, not just the accessor (WI-10007538)', async () => {
+    // Its first run reported 19 blocks as "readOperatorState" and nothing else,
+    // because the first frame outside the db package was the generic accessor.
+    // The entry must carry the frames past it, so the census names the caller.
+    const { REAL_PG_RAIL_STATE_KEY, readRealPgRailBlocks } = await import('@papercusp/test-config/silenced-console-census');
+    const { pinModuleState } = await import('@papercusp/module-singleton');
+    const { getOrgPg } = await import('./connection');
+    pinModuleState<{ blocked: number; callers: string[] }>(REAL_PG_RAIL_STATE_KEY, () => ({ blocked: 0, callers: [] })).callers.length = 0;
+    // Like readOperatorState: async, swallows the refusal, returns null.
+    async function genericStateAccessor(): Promise<null> {
+      await Promise.resolve();
+      try {
+        getOrgPg();
+      } catch {
+        return null;
+      }
+      return null;
+    }
+    async function suiteCodeThatAsked(): Promise<null> {
+      return await genericStateAccessor();
+    }
+    await suiteCodeThatAsked();
+    const entry = readRealPgRailBlocks().callers.find((c) => c.includes('genericStateAccessor'));
+    expect(entry, JSON.stringify(readRealPgRailBlocks().callers)).toBeDefined();
+    // Innermost first; the asking function is the NEXT frame (runtime frames skipped).
+    expect(entry).toMatch(/^org-admin ← at genericStateAccessor \([^)]*\) ← at (?:async )?suiteCodeThatAsked /);
+    expect(entry).not.toContain('node:internal');
+  });
+
   it('stands down when the flag is cleared, so an integration run is unaffected', async () => {
     delete process.env.PAPERCUSP_FORBID_REAL_PG;
     const { getOrgPg } = await import('./connection');
