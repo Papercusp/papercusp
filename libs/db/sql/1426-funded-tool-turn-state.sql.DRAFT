@@ -1,0 +1,38 @@
+-- P-007 / WI-10004291, D-056. Extend the existing local monetary ledger.
+-- This snapshot is local usage/CAS, never authority to reserve hosted funds.
+ALTER TABLE harness_shared.cupboard_funded_turns
+  ADD COLUMN IF NOT EXISTS local_meter_state jsonb
+  CHECK (local_meter_state IS NULL OR jsonb_typeof(local_meter_state) = 'object');
+
+-- Preserve the nonempty population requirement on identity rows.
+DO $$ DECLARE c record; BEGIN
+  FOR c IN SELECT conname FROM pg_constraint
+    WHERE conrelid = 'harness_shared.cupboard_funded_turns'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%jsonb_array_length(usage_event_keys)%'
+  LOOP
+    EXECUTE format('ALTER TABLE harness_shared.cupboard_funded_turns DROP CONSTRAINT %I', c.conname);
+  END LOOP;
+END $$;
+ALTER TABLE harness_shared.cupboard_funded_turns
+  ADD CONSTRAINT cupboard_funded_turns_closed_population CHECK (
+    usage_event_keys IS NULL OR jsonb_array_length(usage_event_keys)
+      BETWEEN CASE WHEN binding->>'kind' = 'tool' THEN 0 ELSE 1 END AND 1000
+  );
+ALTER TABLE harness_shared.cupboard_funded_turns
+  DROP CONSTRAINT IF EXISTS cupboard_funded_turns_native_binding;
+ALTER TABLE harness_shared.cupboard_funded_turns
+  ADD CONSTRAINT cupboard_funded_turns_native_binding CHECK (
+    CASE WHEN binding->>'kind' = 'tool' THEN
+      NULLIF(btrim(binding->>'executionId'), '') IS NOT NULL
+      AND NULLIF(btrim(binding->>'admissionId'), '') IS NOT NULL
+    ELSE NULLIF(btrim(binding->>'nativeTurnId'), '') IS NOT NULL
+      OR (NULLIF(btrim(binding->>'admissionId'), '') IS NOT NULL
+          AND state IN ('prepared', 'funded', 'running')) END
+  );
+ALTER TABLE harness_shared.cupboard_funded_turns
+  ADD CONSTRAINT cupboard_funded_turns_tool_snapshot CHECK (
+    CASE WHEN binding->>'kind' = 'tool' THEN
+      (state IN ('prepared', 'funded')) = (local_meter_state IS NULL)
+    ELSE local_meter_state IS NULL END
+  );
