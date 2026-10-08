@@ -62,6 +62,28 @@ describe('the unit-layer real-Postgres rail', () => {
     expect(msg).toContain('127.0.0.1:5432');
   });
 
+  it('COUNTS every blocked attempt at the throw site, readable through test-config (WI-10007538)', async () => {
+    // A fail-open caller that swallows the throw (or logs it via console.log)
+    // leaves nothing for the silenced-console census to count. The throw-site
+    // counter is what still sees it, and test-config reads it through a pinned
+    // globalThis key without importing this package. Driving the real db side and
+    // reading through the real test-config side pins that key contract end to end.
+    const { readRealPgRailBlocks } = await import('@papercusp/test-config/silenced-console-census');
+    const { getOrgPg } = await import('./connection');
+    const before = readRealPgRailBlocks().blocked;
+    for (let i = 0; i < 2; i += 1) {
+      try {
+        getOrgPg();
+      } catch {
+        // Swallowed on purpose: exactly the caller shape the message census cannot see.
+      }
+    }
+    const after = readRealPgRailBlocks();
+    expect(after.blocked - before).toBe(2);
+    // The exemplar names the pool AND the asking frame outside the db package.
+    expect(after.callers.some((c) => c.startsWith('org-admin ← ') && c.includes('connection-forbid-real-pg.test.ts'))).toBe(true);
+  });
+
   it('stands down when the flag is cleared, so an integration run is unaffected', async () => {
     delete process.env.PAPERCUSP_FORBID_REAL_PG;
     const { getOrgPg } = await import('./connection');

@@ -26,6 +26,7 @@
  */
 import { createRequire } from 'node:module';
 import postgres, { type Sql } from 'postgres';
+import { pinModuleState } from '@papercusp/module-singleton';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as sharedSchema from './schema';
 import {
@@ -1285,6 +1286,7 @@ export function buildConnectionOptions(opts: {
  */
 function assertRealPgAllowed(label: string, connectionUrl: string): void {
   if (process.env.PAPERCUSP_FORBID_REAL_PG !== '1') return;
+  recordRealPgRailBlock(label);
   // Redact credentials — this string lands in test output and CI logs.
   const safeTarget = connectionUrl.replace(/\/\/[^@/]*@/, '//<redacted>@');
   // ONE LINE, deliberately. The first measured run of this rail blocked 196 real
@@ -1300,6 +1302,65 @@ function assertRealPgAllowed(label: string, connectionUrl: string): void {
       `Unit tests must not touch a live database — inject the module's own seam double, or ` +
       `rename the file *.integration.test.ts to run it against a testcontainer. [EI-19311807188719573]`,
   );
+}
+
+/**
+ * THROW-SITE census for the rail above (WI-10007538).
+ *
+ * The silenced-console census in @papercusp/test-config counts the rail's message
+ * only when a fail-open caller logs it through console.error / console.warn. A
+ * caller that swallows the throw, or logs it via console.log (the boot-time p2p
+ * host-routine seeder did exactly that), left no count anywhere, so the census
+ * read zero for an attempt that really happened. Counting HERE, at the one choke
+ * point every real pool passes through, sees every blocked attempt whatever the
+ * caller does with the error afterwards.
+ *
+ * Pinned to globalThis so @papercusp/test-config can read and reset it through
+ * `readPinnedModuleState(REAL_PG_RAIL_STATE_KEY)` without importing this module
+ * (a test package must not depend on the database package). The key is a
+ * cross-package contract, pinned end-to-end by connection-forbid-real-pg.test.ts.
+ */
+export const REAL_PG_RAIL_STATE_KEY = '@papercusp/db-org.real-pg-rail';
+
+export interface RealPgRailState {
+  /** Blocked attempts since the last reset (test-config resets it per test file). */
+  blocked: number;
+  /** Up to REAL_PG_RAIL_CALLER_CAP distinct `pool ← first frame outside this package`. */
+  callers: string[];
+}
+
+const REAL_PG_RAIL_CALLER_CAP = 3;
+
+const realPgRail = pinModuleState<RealPgRailState>(REAL_PG_RAIL_STATE_KEY, () => ({
+  blocked: 0,
+  callers: [],
+}));
+
+/** First stack frame outside the db package and node_modules: the code that asked. */
+function firstForeignFrame(stack: string | undefined): string | null {
+  if (!stack) return null;
+  for (const raw of stack.split('\n').slice(1)) {
+    const frame = raw.trim();
+    if (!frame.startsWith('at ')) continue;
+    if (frame.includes('node_modules')) continue;
+    // The db package's own accessors are plumbing; its TEST files are callers.
+    if (frame.includes('/libs/db/src/') && !/\.test\.[cm]?ts\b/.test(frame)) continue;
+    // Repo-qualify by the first packages/ libs/ apps/ segment; the absolute
+    // checkout prefix is noise in a census line.
+    return frame.replace(/(\(|at )\/[^()]*?\/((?:packages|libs|apps)\/)/, '$1$2');
+  }
+  return null;
+}
+
+function recordRealPgRailBlock(label: string): void {
+  try {
+    realPgRail.blocked += 1;
+    if (realPgRail.callers.length >= REAL_PG_RAIL_CALLER_CAP) return;
+    const entry = `${label} ← ${firstForeignFrame(new Error().stack) ?? '<caller not resolvable>'}`;
+    if (!realPgRail.callers.includes(entry)) realPgRail.callers.push(entry);
+  } catch {
+    // An observation. It must never change whether or how the rail throws.
+  }
 }
 
 type PgTarget = { host: string; port: string; database: string };
