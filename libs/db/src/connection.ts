@@ -458,7 +458,12 @@ export function _resetDiscoveryQuarantineForTests(): void {
   _quarantinedDiscoveryEndpoints.clear();
 }
 
-function readDiscoveryFile(opts?: { applyQuarantine?: boolean }): DiscoveryEndpoint | null {
+type DiscoveryPortProbe = (port: number) => boolean;
+
+function readDiscoveryFile(opts?: {
+  applyQuarantine?: boolean;
+  isPortServed?: DiscoveryPortProbe;
+}): DiscoveryEndpoint | null {
   if (process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') return null;
   try {
     // Lazy require so this module can be imported in environments
@@ -474,7 +479,11 @@ function readDiscoveryFile(opts?: { applyQuarantine?: boolean }): DiscoveryEndpo
     // embedded-pg.json, never accidentally pick up the box-canonical one.
     const papercuspDir = process.env.PAPERCUSP_HOME || `${os.homedir()}/.papercusp`;
     const path = `${papercuspDir}/embedded-pg.json`;
-    const endpoint = _parseDiscoveryJson(fs.readFileSync(path, 'utf8'));
+    const endpoint = _parseDiscoveryJson(
+      fs.readFileSync(path, 'utf8'),
+      _defaultIsPidAlive,
+      opts?.isPortServed ?? _defaultIsPortServed,
+    );
     // IDENTITY GATE (the third and last gate, after pid and port). The other two ask
     // whether something is THERE; this one asks whether it is OURS, and it is the only
     // question an alive, listening, schema-complete impostor cannot pass. Skipped when
@@ -626,7 +635,7 @@ function resolveAppUrl(): string {
   // only when PAPERCUSP_PG_PORT is unset (a real native-PG-on-5432 host).
   return `postgresql://harness_app:harness_app_pwd@localhost:${Number(process.env.PAPERCUSP_PG_PORT) || 5432}/papercusp`;
 }
-function adminUrl(): string {
+function adminUrl(opts?: { isPortServed?: DiscoveryPortProbe }): string {
   // Env is stable for process lifetime → safe to cache.
   if (_resolvedAdminUrl && _resolvedAdminUrlSource === 'env') return _resolvedAdminUrl;
   if (process.env.HARNESS_ADMIN_DATABASE_URL) {
@@ -645,7 +654,7 @@ function adminUrl(): string {
   // Discovery file can change (desktop restart / port shuffle) — re-read
   // every call. Never cache the native fallback (poisons pool when
   // operator boots before desktop writes the discovery file).
-  const disc = readDiscoveryFile();
+  const disc = readDiscoveryFile({ isPortServed: opts?.isPortServed });
   // Embedded-pg always uses fixed passwords, so we don't strictly need the
   // password in the discovery file — fall back to the known default.
   // This handles desktops that wrote the discovery file before we added the
@@ -688,6 +697,11 @@ export function _resetUrlCacheForTests(): void {
 /** Test-only — resolve the app/admin URLs through the live chain (env → discovery → fallback). */
 export function _resolveUrlsForTests(): { app: string; admin: string } {
   return { app: appUrl(), admin: adminUrl() };
+}
+
+/** Test-only — resolve the exact admin URL path used by getOrgPg with a controlled port probe. */
+export function _resolveAdminUrlForTests(isPortServed: DiscoveryPortProbe): string {
+  return adminUrl({ isPortServed });
 }
 
 /**
