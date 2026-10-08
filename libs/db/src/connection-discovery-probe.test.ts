@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   _createPortServedProbeForTests,
+  _defaultIsPortServed,
   _resetUrlCacheForTests,
   _resolveAdminUrlForTests,
 } from './connection';
@@ -21,6 +22,7 @@ const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]
 let fixtureHome: string | undefined;
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const key of ENV_KEYS) {
     const value = savedEnv[key];
     if (value === undefined) delete process.env[key];
@@ -32,6 +34,13 @@ afterEach(() => {
 });
 
 describe('discovery port-probe cost on the getOrgPg resolver path', () => {
+  it('uses the lazy Node monotonic clock independently of the global performance object', () => {
+    vi.stubGlobal('performance', { now: () => { throw new Error('global performance is unavailable'); } });
+    _resetUrlCacheForTests();
+    // A listening TCP socket is assigned a nonzero port. On hosts without
+    // procfs the existing permissive fallback remains appropriate.
+    expect(_defaultIsPortServed(0)).toBe(!existsSync('/proc/net/tcp') && !existsSync('/proc/net/tcp6'));
+  });
   it('probes once per repeated admin URL resolution and notices a changed local discovery port', () => {
     fixtureHome = mkdtempSync(join(tmpdir(), 'papercusp-discovery-probe-'));
     process.env.PAPERCUSP_HOME = fixtureHome;

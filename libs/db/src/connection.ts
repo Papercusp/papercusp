@@ -267,9 +267,10 @@ export function _defaultIsPortServed(port: number): boolean {
   try {
     if (!_defaultPortServedProbe) {
       const fs = nodeRequire('node:fs') as typeof import('node:fs');
+      const { performance } = nodeRequire('node:perf_hooks') as typeof import('node:perf_hooks');
       _defaultPortServedProbe = _createPortServedProbeForTests(
         (path) => fs.readFileSync(path, 'utf8'),
-        () => globalThis.performance?.now?.() ?? Date.now(),
+        () => performance.now(),
       );
     }
     return _defaultPortServedProbe(port);
