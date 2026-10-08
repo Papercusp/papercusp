@@ -221,9 +221,11 @@ type PortTableReader = (path: string) => string;
  * still has to be re-read per resolution, but repeating this synchronous scan
  * for every call made that hot path spend tens of milliseconds in filesystem IO.
  * A 100 ms snapshot amortizes bursts while bounding stale-listener detection to
- * the same short interval. Both families are included because dual-stack servers
- * can appear only in tcp6. Null ports means neither table was readable, which
- * preserves the existing "decline to judge" behavior.
+ * the same short interval. A cached miss triggers a fresh scan immediately, so
+ * a listener that starts after the snapshot is not rejected for the rest of the
+ * TTL. Both families are included because dual-stack servers can appear only in
+ * tcp6. Null ports means neither table was readable, which preserves the
+ * existing "decline to judge" behavior.
  */
 export function _createPortServedProbeForTests(
   readTable: PortTableReader,
@@ -231,33 +233,49 @@ export function _createPortServedProbeForTests(
   ttlMs = PORT_LISTENER_SNAPSHOT_TTL_MS,
 ): (port: number) => boolean {
   let snapshot: { expiresAt: number; ports: Set<number> | null } | null = null;
-  return (port) => {
-    if (!snapshot || now() >= snapshot.expiresAt) {
-      let readAny = false;
-      const listeningPorts = new Set<number>();
-      for (const path of ['/proc/net/tcp', '/proc/net/tcp6']) {
-        let raw: string;
-        try {
-          raw = readTable(path);
-        } catch {
-          continue;
-        }
-        readAny = true;
-        for (const line of raw.split('\n').slice(1)) {
-          // sl  local_address rem_address st ... — local_address is HEXIP:HEXPORT
-          const cols = line.trim().split(/\s+/);
-          if (cols.length < 4 || cols[3] !== '0A') continue;
-          const hexPort = cols[1]?.split(':')[1];
-          if (!hexPort) continue;
-          const listeningPort = Number.parseInt(hexPort, 16);
-          if (Number.isFinite(listeningPort)) listeningPorts.add(listeningPort);
-        }
+  const refresh = () => {
+    let readAny = false;
+    const listeningPorts = new Set<number>();
+    for (const path of ['/proc/net/tcp', '/proc/net/tcp6']) {
+      let raw: string;
+      try {
+        raw = readTable(path);
+      } catch {
+        continue;
       }
-      // Start the TTL after the synchronous reads complete, so the snapshot's
-      // freshness window is not consumed by the scan itself.
-      snapshot = { expiresAt: now() + ttlMs, ports: readAny ? listeningPorts : null };
+      readAny = true;
+      for (const line of raw.split('\n').slice(1)) {
+        // sl  local_address rem_address st ... — local_address is HEXIP:HEXPORT
+        const cols = line.trim().split(/\s+/);
+        if (cols.length < 4 || cols[3] !== '0A') continue;
+        const hexPort = cols[1]?.split(':')[1];
+        if (!hexPort) continue;
+        const listeningPort = Number.parseInt(hexPort, 16);
+        if (Number.isFinite(listeningPort)) listeningPorts.add(listeningPort);
+      }
     }
-    return snapshot.ports === null || snapshot.ports.has(port);
+    // Start the TTL after the synchronous reads complete, so the snapshot's
+    // freshness window is not consumed by the scan itself.
+    snapshot = { expiresAt: now() + ttlMs, ports: readAny ? listeningPorts : null };
+  };
+
+  return (port) => {
+    let scannedThisCall = false;
+    if (!snapshot || now() >= snapshot.expiresAt) {
+      refresh();
+      scannedThisCall = true;
+    }
+    if (snapshot!.ports === null || snapshot!.ports.has(port)) return true;
+
+    // Never reuse a negative result from an earlier call: the embedded PG
+    // listener can bind just after a snapshot, and startup discovery must see it
+    // on the next resolution. A miss in a snapshot taken during this same call
+    // is current enough to reject without paying for a duplicate scan.
+    if (!scannedThisCall) {
+      refresh();
+      return snapshot!.ports === null || snapshot!.ports.has(port);
+    }
+    return false;
   };
 }
 

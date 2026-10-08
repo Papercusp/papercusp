@@ -83,7 +83,7 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
     expect(probes.at(-1)).toBe(55102);
   });
 
-  it('reuses a short listener snapshot and sees a changed port after the bound expires', () => {
+  it('reuses positive listener results and refreshes them after the bound expires', () => {
     let now = 1_000;
     let tcpTable = '';
     let tcp6Table = '';
@@ -101,18 +101,41 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
     expect(probe(55101)).toBe(true);
     expect(reads).toEqual(['/proc/net/tcp', '/proc/net/tcp6']);
 
-    // A port change remains invisible only within the explicit 100 ms freshness
-    // window; the resolver still reads the discovery file on every call.
+    // Positive results are reused only within the explicit 100 ms freshness
+    // window; after it expires, the closed old listener is rejected.
     tcpTable = '';
     tcp6Table = `sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n${listenRow(55102)}\n`;
     now += 99;
     expect(probe(55101)).toBe(true);
-    expect(probe(55102)).toBe(false);
+    expect(probe(55102)).toBe(true);
     expect(reads).toHaveLength(2);
 
     now += 1;
     expect(probe(55101)).toBe(false);
     expect(probe(55102)).toBe(true);
+    expect(reads).toHaveLength(4);
+  });
+
+  it('refreshes a cached miss immediately so a newly bound listener is accepted', () => {
+    let now = 1_000;
+    let tcp6Table = 'sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n';
+    const reads: string[] = [];
+    const probe = _createPortServedProbeForTests(
+      (path) => {
+        reads.push(path);
+        if (path.endsWith('tcp6')) return tcp6Table;
+        return 'sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n';
+      },
+      () => now,
+    );
+    const listeningRow = '  0: 00000000000000000000000000000000:D717 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 12345';
+
+    expect(probe(55063)).toBe(false);
+    expect(reads).toHaveLength(2);
+
+    tcp6Table += `${listeningRow}\n`;
+    now += 1;
+    expect(probe(55063)).toBe(true);
     expect(reads).toHaveLength(4);
   });
 
