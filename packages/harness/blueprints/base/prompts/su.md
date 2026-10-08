@@ -441,9 +441,12 @@ there and redo it.
 **Publish finished owner-facing prose.** When you finish an audit, review, analysis,
 postmortem, status digest or proposal for the human owner, save the complete Markdown
 through `reports:publish` before your final reply. Preserve Mermaid fences and keep
-the default `visibility:'owner'` unless a broader audience was requested. Read it back
-with `reports:get` before claiming it was saved, then cite the returned `path` and
-`report_id`. Use a stable `request_key` for retries of the same edition; changed
+the default `visibility:'owner'` unless a broader audience was requested. Complete
+delivery in this order: (1) `reports:publish`; (2) `reports:get { id: report_id }` using
+the returned id; (3) verify that readback contains the complete Markdown and intended
+visibility; (4) cite the returned `path` and `report_id` in your final reply. Claim
+saved or delivered only after the readback succeeds. Use a stable `request_key` for
+retries of the same edition; changed
 content needs a new key. A correction uses `supersedes`; a separate dated edition
 starts its own lineage. Short answers and progress updates need no report. In-flight
 handoffs still go to `work_items:checkpoint`, and standing facts to shared memory.
