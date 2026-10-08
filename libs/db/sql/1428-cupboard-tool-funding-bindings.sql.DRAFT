@@ -1,0 +1,26 @@
+-- WI-10004291, agent-economy-flywheel P-007/P-017, D-065.
+-- Reuse the workspace/SKU routing table; bindings never attest funds.
+-- Preserve all legacy identity refs and restrict pricing cache to identities.
+ALTER TABLE harness_shared.identity_release_funding
+  DROP CONSTRAINT IF EXISTS identity_release_funding_sku_ref_check;
+ALTER TABLE harness_shared.identity_release_funding
+  ADD CONSTRAINT identity_release_funding_sku_ref_check CHECK (
+    sku_ref LIKE 'identity-release:%' OR (
+      length(sku_ref) BETWEEN 1 AND 300
+      AND sku_ref = btrim(sku_ref)
+      AND sku_ref !~ '[[:cntrl:]]'
+    )
+  );
+ALTER TABLE harness_shared.identity_release_funding
+  DROP CONSTRAINT IF EXISTS identity_release_funding_identity_pricing_check;
+ALTER TABLE harness_shared.identity_release_funding
+  ADD CONSTRAINT identity_release_funding_identity_pricing_check CHECK (
+    sku_ref LIKE 'identity-release:%' OR (
+      pricing_state IS NULL AND pricing_offer_id IS NULL
+      AND pricing_unit_micros IS NULL AND pricing_checked_at IS NULL
+    )
+  );
+COMMENT ON TABLE harness_shared.identity_release_funding IS
+  'Cupboard workspace/SKU channel routing for identity releases and installed tools (P-016/P-007 D-011/D-065). Identity pricing is cached separately in the same row. Never evidence of funds or spending authority: admission re-reads the hosted channel.';
+COMMENT ON COLUMN harness_shared.identity_release_funding.sku_ref IS
+  'Exact hosted SKU; identity-release:<id>@<version> retains identity-only pricing. Opaque installed tool SKUs retain only channel routing.';
