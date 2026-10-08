@@ -2,7 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { _resetUrlCacheForTests, _resolveAdminUrlForTests } from './connection';
+import {
+  _createPortServedProbeForTests,
+  _resetUrlCacheForTests,
+  _resolveAdminUrlForTests,
+} from './connection';
 
 const ENV_KEYS = [
   'PAPERCUSP_HOME',
@@ -68,5 +72,47 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
     );
     expect(probes).toHaveLength(33);
     expect(probes.at(-1)).toBe(55102);
+  });
+
+  it('reuses a short listener snapshot and sees a changed port after the bound expires', () => {
+    let now = 1_000;
+    let tcpTable = '';
+    let tcp6Table = '';
+    const reads: string[] = [];
+    const probe = _createPortServedProbeForTests(
+      (path) => {
+        reads.push(path);
+        return path.endsWith('tcp6') ? tcp6Table : tcpTable;
+      },
+      () => now,
+    );
+    const listenRow = (port: number) => `  0: 0100007F:${port.toString(16).toUpperCase().padStart(4, '0')} 00000000:0000 0A 00000000:00000000 00:00000000 00000000 1000 0 12345`;
+
+    tcpTable = `sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n${listenRow(55101)}\n`;
+    expect(probe(55101)).toBe(true);
+    expect(reads).toEqual(['/proc/net/tcp', '/proc/net/tcp6']);
+
+    // A port change remains invisible only within the explicit 100 ms freshness
+    // window; the resolver still reads the discovery file on every call.
+    tcpTable = '';
+    tcp6Table = `sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n${listenRow(55102)}\n`;
+    now += 99;
+    expect(probe(55101)).toBe(true);
+    expect(probe(55102)).toBe(false);
+    expect(reads).toHaveLength(2);
+
+    now += 1;
+    expect(probe(55101)).toBe(false);
+    expect(probe(55102)).toBe(true);
+    expect(reads).toHaveLength(4);
+  });
+
+  it('keeps the permissive fallback when neither /proc table is readable', () => {
+    const probe = _createPortServedProbeForTests(
+      () => { throw new Error('procfs unavailable'); },
+      () => 1_000,
+    );
+
+    expect(probe(55103)).toBe(true);
   });
 });
