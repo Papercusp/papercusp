@@ -365,8 +365,5 @@
       "coord:send"
     ],
     "plugins": []
-  },
-  "knobs": {
-    "maxTurns": 12
   }
 }
