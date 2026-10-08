@@ -212,32 +212,67 @@ export function _defaultIsPidAlive(pid: number): boolean {
  * construction (/proc); everywhere else this declines to judge (returns true) rather than
  * reject a healthy config, matching the generic lib's degradation contract.
  */
+const PORT_LISTENER_SNAPSHOT_TTL_MS = 100;
+type PortTableReader = (path: string) => string;
+
+/**
+ * Read a bounded snapshot of local LISTEN ports. The current /proc/net/tcp file
+ * measured 1.57 MB and took about 30 ms to read on the operator host; discovery
+ * still has to be re-read per resolution, but repeating this synchronous scan
+ * for every call made that hot path spend tens of milliseconds in filesystem IO.
+ * A 100 ms snapshot amortizes bursts while bounding stale-listener detection to
+ * the same short interval. Both families are included because dual-stack servers
+ * can appear only in tcp6. Null ports means neither table was readable, which
+ * preserves the existing "decline to judge" behavior.
+ */
+export function _createPortServedProbeForTests(
+  readTable: PortTableReader,
+  now: () => number,
+  ttlMs = PORT_LISTENER_SNAPSHOT_TTL_MS,
+): (port: number) => boolean {
+  let snapshot: { expiresAt: number; ports: Set<number> | null } | null = null;
+  return (port) => {
+    if (!snapshot || now() >= snapshot.expiresAt) {
+      let readAny = false;
+      const listeningPorts = new Set<number>();
+      for (const path of ['/proc/net/tcp', '/proc/net/tcp6']) {
+        let raw: string;
+        try {
+          raw = readTable(path);
+        } catch {
+          continue;
+        }
+        readAny = true;
+        for (const line of raw.split('\n').slice(1)) {
+          // sl  local_address rem_address st ... — local_address is HEXIP:HEXPORT
+          const cols = line.trim().split(/\s+/);
+          if (cols.length < 4 || cols[3] !== '0A') continue;
+          const hexPort = cols[1]?.split(':')[1];
+          if (!hexPort) continue;
+          const listeningPort = Number.parseInt(hexPort, 16);
+          if (Number.isFinite(listeningPort)) listeningPorts.add(listeningPort);
+        }
+      }
+      // Start the TTL after the synchronous reads complete, so the snapshot's
+      // freshness window is not consumed by the scan itself.
+      snapshot = { expiresAt: now() + ttlMs, ports: readAny ? listeningPorts : null };
+    }
+    return snapshot.ports === null || snapshot.ports.has(port);
+  };
+}
+
+let _defaultPortServedProbe: ((port: number) => boolean) | null = null;
+
 export function _defaultIsPortServed(port: number): boolean {
   try {
-    const fs = nodeRequire('node:fs') as typeof import('node:fs');
-    const TCP_LISTEN = '0A';
-    // Read BOTH tcp and tcp6: a server bound to `::` (dual-stack, the common default)
-    // appears ONLY in tcp6, so checking tcp alone would report a perfectly healthy
-    // port as dead. `readAny` tracks whether /proc was readable at all, distinct
-    // from "readable but the port wasn't in it".
-    let readAny = false;
-    for (const f of ['/proc/net/tcp', '/proc/net/tcp6']) {
-      let raw: string;
-      try {
-        raw = fs.readFileSync(f, 'utf8');
-      } catch {
-        continue;
-      }
-      readAny = true;
-      for (const line of raw.split('\n').slice(1)) {
-        // sl  local_address rem_address st ...  — local_address is HEXIP:HEXPORT
-        const cols = line.trim().split(/\s+/);
-        if (cols.length < 4 || cols[3] !== TCP_LISTEN) continue;
-        const hexPort = cols[1]?.split(':')[1];
-        if (hexPort && parseInt(hexPort, 16) === port) return true;
-      }
+    if (!_defaultPortServedProbe) {
+      const fs = nodeRequire('node:fs') as typeof import('node:fs');
+      _defaultPortServedProbe = _createPortServedProbeForTests(
+        (path) => fs.readFileSync(path, 'utf8'),
+        () => globalThis.performance?.now?.() ?? Date.now(),
+      );
     }
-    return !readAny; // /proc unreadable → decline to judge (true); readable but absent → false
+    return _defaultPortServedProbe(port);
   } catch {
     return true; // /proc unavailable on this platform — decline to judge, never reject
   }
