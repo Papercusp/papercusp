@@ -10,8 +10,8 @@
  * scenario is missing, failing, stale, or run against a different client
  * version." Those FOUR words are the whole contract, so they are the four
  * non-passing states `RealClientScenarioStatus` can take — no more, no fewer.
- * A fifth state would be a claim the clause does not make; a missing one would
- * be a hole the gate cannot see.
+ * Replacement acceptance additionally records `unsupported` limitations, which
+ * never count as passes or produce cutover admission entries.
  *
  * WHY THIS MODULE EXISTS AT ALL. P-007 left the enabling act deliberately
  * unevidenced: `SHIPPED_CUTOVER_STAGING` is `{}` (every family `off`) and its
@@ -30,6 +30,9 @@
  * actually covers. A hand-written scenario list would be a second copy of the
  * policy table and would drift from it silently — which is the precise defect
  * D-012 found in `MANAGED_CAPABILITY_RESTRICTIONS` itself.
+ * P-020 also derives a separate replacement-acceptance manifest from the
+ * disposition inventory and client registry, preserving native features and
+ * the permanent offline-recovery exclusion under D-032/D-033.
  *
  * DEPENDENCY DIRECTION. This module imports the policy; the policy never
  * imports this module. The policy declares the minimal shape it needs
@@ -80,7 +83,13 @@ export type RealClientScenarioKind =
 
 /** Acceptance with native features retained never executes the excluded offline recovery. */
 export const REPLACEMENT_CLIENT_SCENARIO_KINDS = [
-  'launch', 'resume', 'wake', 'lifecycle', 'sandbox', 'native-retention', 'unsupported-controls',
+  'launch',
+  'resume',
+  'wake',
+  'lifecycle',
+  'sandbox',
+  'native-retention',
+  'unsupported-controls',
 ] as const satisfies readonly RealClientScenarioKind[];
 
 export interface RealClientMatrixDeclarationOptions {
@@ -128,7 +137,7 @@ export interface RealClientScenario {
  * Derive the declared matrix from the restriction registry.
  *
  * Only `managed-cutover` restrictions scoped to a contract family can declare
- * scenarios: an owner mandate has no managed replacement to accept, and a
+ * cutover scenarios: an owner mandate has no managed replacement to accept, and a
  * restriction scoped outside the family taxonomy has no disposition to trace
  * (the same two exclusions `resolveCapabilityPolicy` already applies before it
  * consults readiness, so the manifest covers exactly the population the gate
@@ -144,7 +153,8 @@ export function declareRealClientMatrix(
   // Separate ids prevent acceptance evidence from being reused to disable native tools.
   if (options.purpose === 'replacement-acceptance') {
     const dispositions = options.dispositions ?? MANAGED_CAPABILITY_DISPOSITIONS;
-    const clients = options.clients ?? Object.keys(CAPABILITY_CLIENT_ENFORCEMENT) as CapabilityClientFamily[];
+    const clients = options.clients ??
+      (Object.keys(CAPABILITY_CLIENT_ENFORCEMENT) as CapabilityClientFamily[]);
     const surfaces = options.surfaces ?? ['launch', 'resume', 'wake'];
     for (const disposition of dispositions) {
       for (const client of clients) {
@@ -153,10 +163,18 @@ export function declareRealClientMatrix(
           if (surface !== undefined && !surfaces.includes(surface)) continue;
           const id = `replacement-acceptance:${disposition.family}:${client}:${kind}`;
           const declaredBy = [disposition.evidence.path, ...disposition.gaps.map((gap) => gap.id)];
-          byId.set(id, { declaredBy, scenario: {
-            id, family: disposition.family, client, kind, declaredBy,
-            purpose: 'replacement-acceptance', ...(surface ? { surface } : {}),
-          } });
+          byId.set(id, {
+            declaredBy,
+            scenario: {
+              id,
+              family: disposition.family,
+              client,
+              kind,
+              declaredBy,
+              purpose: 'replacement-acceptance',
+              ...(surface ? { surface } : {}),
+            },
+          });
         }
       }
     }
@@ -218,12 +236,14 @@ export interface RealClientScenarioResult {
 /**
  * The canonical fingerprint of a result.
  *
- * Deterministic and derived only from the three facts that decide whether the
+ * Deterministic and derived from the three facts that decide whether the
  * result is evidence for a given enablement: WHICH scenario, on WHICH client
  * version, with WHICH outcome. Time is excluded on purpose — re-observing the
  * same pass on the same version must not invalidate an enablement, or the
  * record would need re-pinning on every run and the comparison would become
  * noise instead of a control.
+ * Optional execution references and unsupported reasons are also bound when
+ * present, so changing the cited evidence cannot retain the same fingerprint.
  *
  * The separator is a NUL escape (never a raw byte, which would make the file
  * unsearchable by ripgrep and binary to git diff) because it is the one byte
@@ -263,8 +283,8 @@ export interface CapabilityDefaultEnablementRecord {
 /**
  * The status of one declared scenario.
  *
- * The four non-passing members are the four words of the falsifier, and
- * nothing else. See the module header.
+ * Cutover retains the four falsifier modes. Replacement acceptance can also
+ * record a measured unsupported result; that outcome is never a pass.
  */
 export type RealClientScenarioStatus =
   | 'passed'
@@ -296,7 +316,7 @@ export interface RealClientMatrixReportOptions {
   readonly scenarios?: readonly RealClientScenario[];
   readonly results?: readonly RealClientScenarioResult[];
   readonly records?: readonly CapabilityDefaultEnablementRecord[];
-  /** Current version per client; an unknown version cannot prove a mismatch. */
+  /** Replacement acceptance requires a current version; legacy cutover retains its unknown-version behavior. */
   readonly clientVersions?: Readonly<Partial<Record<CapabilityClientFamily, string>>>;
   readonly now?: Date;
   /** How long a result stays evidence. Defaults to {@link DEFAULT_SCENARIO_FRESHNESS_MS}. */
@@ -316,7 +336,7 @@ export const DEFAULT_SCENARIO_FRESHNESS_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface RealClientMatrixReport {
   readonly rows: readonly RealClientScenarioRow[];
-  /** Per family/client, in the minimal shape the policy gate consumes. */
+  /** Cutover entries only. Replacement acceptance cannot disable native features. */
   readonly entries: CapabilityMatrixGateSource;
   /** Results whose published fingerprint contradicts their own fields. */
   readonly integrityIssues: readonly string[];
@@ -416,8 +436,8 @@ export function realClientMatrixReport(
         ...base,
         status: 'version-mismatch',
         detail:
-          `'${scenario.id}' passed on client version '${result.clientVersion}', but this client is ` +
-          `'${current}'. A version change can respell the native surface, so the result is not ` +
+          `'${scenario.id}' was observed on client version '${result.clientVersion}', but the current version is ` +
+          `'${current ?? 'unknown'}'. A version change can respell the native surface, so the result is not ` +
           `evidence for this version.${driftNote}`,
       };
     }
@@ -429,8 +449,8 @@ export function realClientMatrixReport(
         ...base,
         status: 'stale',
         detail:
-          `'${scenario.id}' last passed at ${result.observedAt}, which is older than the ` +
-          `${Math.round(freshnessWindowMs / 3_600_000)}h freshness window.${driftNote}`,
+          `'${scenario.id}' has an expired or invalid observation time '${result.observedAt}' ` +
+          `for the ${Math.round(freshnessWindowMs / 3_600_000)}h freshness window.${driftNote}`,
       };
     }
 
