@@ -50,7 +50,7 @@ export interface ManagedCapabilityGap {
   id: string;
   kind: ManagedCapabilityGapKind;
   description: string;
-  /** Plan items which must close this gap; P-001 only inventories it. */
+  /** Current plan items which must verify this gap or preserve an explicit exclusion. */
   owningPlanItems: readonly string[];
   falsifier: string;
 }
@@ -120,13 +120,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         id: 'shell-cross-client-enforcement',
         kind: 'policy',
         description: 'Claude, Codex, and OMP alias/interpreter/SSH bypass coverage is not yet accepted.',
-        owningPlanItems: ['P-005', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'The real-client matrix proves every named bypass is denied or routed through the managed authority.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-005/P-007/P-008 still own cross-client bypass proof and accepted enforcement.',
+    cutoverReason: 'P-020/P-015 own current cross-client authority proof; D-032/D-033 keep native features enabled.',
   },
   {
     family: 'jobs-output-stop-pty',
@@ -169,13 +169,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'unsupported',
         description:
           'The real Claude, Codex, and OMP clients have not yet accepted PTY reattachment and explicit unrecoverable outcomes across an operator restart.',
-        owningPlanItems: ['P-007', 'P-008'],
+        owningPlanItems: ['P-019', 'P-020', 'P-015'],
         falsifier:
           'The real-client matrix covers incremental PTY output, clean exit wake, explicit cancel, live reattachment, and explicit unrecoverable restart truth.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-007/P-008 still own real-client restart/reattachment acceptance before restriction.',
+    cutoverReason: 'P-019/P-020/P-015 own current lifecycle and client acceptance; restriction remains excluded.',
   },
   {
     family: 'script-orchestration-kernels',
@@ -207,13 +207,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'unsupported',
         description:
           'A persistent language-kernel lifecycle with state beyond explicit replay values and restart recovery is not implemented or accepted.',
-        owningPlanItems: ['P-006', 'P-008'],
+        owningPlanItems: ['P-017', 'P-020', 'P-015'],
         falsifier:
           'Persistent-kernel acceptance proves cross-call state lifetime, binary/media transport, cancellation, nested-call authorization, and restart recovery.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-006/P-008 still own a persistent-kernel backend and real-client proof.',
+    cutoverReason: 'P-017 owns the persistent-kernel backend; P-020/P-015 own current client proof.',
   },
   {
     family: 'reads-list-search-lsp',
@@ -255,13 +255,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Read/grep/glob retention, access, symlink, binary, and output accounting are not yet accepted across every client.',
-        owningPlanItems: ['P-006', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Positive and negative real-client controls establish the same access/output rules or a documented retained exception.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-006/P-007/P-008 still own retained-read boundaries and per-client proof.',
+    cutoverReason: 'P-020/P-015 own retained-read authority and current client proof; native reads stay available.',
   },
   {
     family: 'edit-write-patch-notebook',
@@ -321,7 +321,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'evidence',
         description:
           'Registered patch and notebook adapters pass hermetic and single-host real-client checks, but the Claude/Codex/OMP matrix has not yet accepted them against native Edit/MultiEdit/NotebookEdit UX.',
-        owningPlanItems: ['P-007', 'P-008'],
+        owningPlanItems: ['P-019', 'P-020', 'P-015'],
         falsifier:
           'Each client matrix run proves atomic multi-file patch and notebook cell semantics through managed authority and locks, with no native mutation door left unaccounted.',
       },
@@ -329,13 +329,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         id: 'mutation-client-enforcement',
         kind: 'policy',
         description: 'Alias and nested-shell mutation bypasses have not yet passed the Claude/Codex/OMP matrix.',
-        owningPlanItems: ['P-005', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier: 'Every unmanaged file-mutation path is denied or explicitly retained with an accepted boundary.',
       },
     ],
     cutoverReady: false,
     cutoverReason:
-      'P-005/P-007/P-008 still own cross-client mutation enforcement and real-client patch/notebook acceptance.',
+      'P-019/P-020/P-015 own current patch/notebook and mutation authority acceptance; native mutation features stay available.',
   },
   {
     family: 'http-search-browser-computer',
@@ -373,7 +373,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'unsupported',
         description:
           'A managed browser/DOM provider with explicit auth, egress, output, and session-lifetime rules is not yet accepted.',
-        owningPlanItems: ['P-006', 'P-008'],
+        owningPlanItems: ['P-018', 'P-020', 'P-015'],
         falsifier:
           'A real-client test proves browser navigation/DOM work without conflating it with raw HTTP or sandbox pixels.',
       },
@@ -382,13 +382,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Web-search aliases, native fetch, egress overrides, and host-versus-sandbox computer paths are not yet fully enforced.',
-        owningPlanItems: ['P-005', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Positive/negative controls prove provider access, egress, sandbox targeting, and truthful unsupported outcomes per client.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-005/P-006/P-007/P-008 still own browser parity and network/computer enforcement.',
+    cutoverReason: 'P-018 owns browser/DOM implementation; P-020/P-015 own current network/computer authority acceptance.',
   },
   {
     family: 'delegation',
@@ -420,13 +420,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'All client-native spawn aliases and resume/wake transitions have not yet passed one versioned policy matrix.',
-        owningPlanItems: ['P-005', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Claude/Codex/OMP launches, resumes, forks, and wakes show managed identity/policy and reject native bypass controls.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-005/P-007/P-008 still own alias, lifecycle, and real-client enforcement proof.',
+    cutoverReason: 'P-020/P-015 own current delegation identity and lifecycle proof; native cutover remains excluded.',
   },
   {
     family: 'schedules-monitors-wakes',
@@ -468,13 +468,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Client scheduler/monitor aliases, override arguments, lifecycle reset, and duplicate-fire controls are not yet accepted.',
-        owningPlanItems: ['P-005', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'The real-client matrix proves canonical scheduling/wake state and rejects or truthfully retains every native alternative.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-005/P-007/P-008 still own native alias denial and lifecycle/adoption evidence.',
+    cutoverReason: 'P-020/P-015 own current scheduling and wake authority proof; native features stay enabled.',
   },
   {
     family: 'tasks-plans-goals',
@@ -511,13 +511,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Client task/plan panels have not yet proven their writes land in the correct session-local or shared canonical store.',
-        owningPlanItems: ['P-006', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Per-client UI tests show task, work-item, plan, and goal mutations in their intended stores with no shadow backend.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-006/P-007/P-008 still own client-panel/store distinction and acceptance.',
+    cutoverReason: 'P-020/P-015 own current client-panel/store distinction and acceptance.',
   },
   {
     family: 'memory-checkpoint-resume-rewind',
@@ -566,7 +566,8 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'unsupported',
         description:
           'Operator-unreachable bounded local recovery is DELIBERATELY EXCLUDED, not unbuilt: plan decision D-010 retired the feature and dropped its owning item P-004. D-007/D-008 measured that no machine-local authority root can establish human-owner provenance here — a software-only Ed25519 key in sk-ssh-ed25519 wire format with signer-chosen flags 0x05 verifies as hardware-backed, and managed agents hold NOPASSWD root — so a local grant is forgeable by the very agents it constrains. The exclusion stands BECAUSE no weaker substitute is acceptable; there is no managed offline recovery path, and callers must treat operator-unreachable as unrecoverable.',
-        owningPlanItems: ['P-004', 'P-008'],
+        // P-016 preserves this exclusion in closure; it does not implement offline recovery.
+        owningPlanItems: ['P-016'],
         falsifier:
           'This exclusion is falsified if any locally-authorized recovery path ships — i.e. a managed agent obtains a recovery grant without an owner signature rooted outside this machine mutation authority. A re-implementation attempt must first supersede D-007/D-008, never route around them.',
       },
@@ -575,13 +576,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Per-client controls do not yet prove transcript resume, compaction carry, and filesystem rewind remain distinct.',
-        owningPlanItems: ['P-005', 'P-006', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier: 'Versioned client tests exercise each control and observe the correct independent state transition.',
       },
     ],
     cutoverReady: false,
     cutoverReason:
-      'Offline recovery is no longer owned by anyone: D-010 retired the feature and dropped P-004, so it is a permanent documented exclusion rather than outstanding work. P-005 through P-008 still own restriction reset and distinct resume/rewind semantics, which is what keeps this family short of cutover.',
+      'D-010 permanently excludes offline recovery and drops P-004; P-016 preserves that exclusion without rebuilding it. P-020/P-015 own current resume/rewind semantics; native features stay enabled.',
   },
   {
     family: 'questions-approvals',
@@ -613,13 +614,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Each client has not yet proven managed question state while preserving genuine native permission enforcement and delivery truth.',
-        owningPlanItems: ['P-006', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Real-client tests distinguish answered managed choices, owner inbox state, and native security prompts without shadow approvals.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-006/P-007/P-008 still own client dialog, permission, and delivery acceptance.',
+    cutoverReason: 'P-020/P-015 own current managed dialog, native permission, and delivery acceptance.',
   },
   {
     family: 'images-artifacts-skills-discovery',
@@ -657,7 +658,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Retained media, artifact, and skill paths lack one accepted cross-client access/output/auth and lifecycle statement.',
-        owningPlanItems: ['P-006', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Per-client tests prove retained rendering/discovery and authorized side effects, with explicit exclusions for unavailable providers.',
       },
@@ -666,13 +667,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'evidence',
         description:
           'Binary/media retention and exact authorized retrieval across result truncation/restart are not yet evidenced.',
-        owningPlanItems: ['P-003', 'P-006', 'P-008'],
+        owningPlanItems: ['P-017', 'P-019', 'P-015'],
         falsifier:
           'Media/script acceptance recovers the permitted payload after bounded previews and restart without false byte-equivalence claims.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-003/P-006/P-007/P-008 still own retained-provider policy and media recovery evidence.',
+    cutoverReason: 'P-017/P-019 own current media lifecycle; P-020/P-015 own retained-provider policy and acceptance.',
   },
   {
     family: 'pure-tui-presentation',
@@ -708,13 +709,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         kind: 'policy',
         description:
           'Native panels/actions have not yet been exhaustively mapped to managed writes or classified as pure presentation.',
-        owningPlanItems: ['P-006', 'P-007', 'P-008'],
+        owningPlanItems: ['P-020', 'P-015'],
         falsifier:
           'Client acceptance proves retained rendering while every state-changing action reaches its canonical managed store/control.',
       },
     ],
     cutoverReady: false,
-    cutoverReason: 'P-006/P-007/P-008 still own native-panel action mapping and real-client acceptance.',
+    cutoverReason: 'P-020/P-015 own current native-panel authority acceptance, reusing the active PUI lane evidence.',
   },
 ] as const satisfies readonly ManagedCapabilityDisposition[];
 
