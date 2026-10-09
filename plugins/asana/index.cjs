@@ -720,8 +720,40 @@ async function unsubscribePush(request, host) {
   return { deleted };
 }
 
+/** OAuth external.gid is lookup, not an exactly-once POST guarantee. The host
+ * commits an attempt first; later invocations use recoveryOnly and never POST. */
+async function createTicket(request, host) {
+  const args = request.args || {};
+  const correlationId = text(args.correlationId);
+  const projectGid = text(args.projectGid);
+  const title = text(args.title);
+  if (!correlationId || correlationId.length > 1024) throw new Error('ticket_create_correlation_required');
+  if (!projectGid || !projectsOf(request.config).includes(projectGid)) throw new Error('ticket_create_project_out_of_scope');
+  if (!title || title.length > 200 || typeof args.body !== 'string' || args.body.length > 30000) throw new Error('ticket_create_content_invalid');
+  const found = await rest(host, request.source, 'GET', `/tasks/${encodeURIComponent(`external:${correlationId}`)}`, {
+    query: { opt_fields: 'gid,permalink_url,memberships.project.gid' }, allow: [404],
+  });
+  if (found.status !== 404) {
+    const task = found.body.data;
+    if (!task || !text(task.gid) || !Array.isArray(task.memberships)
+      || !task.memberships.some((m) => text(m && m.project && m.project.gid) === projectGid)) {
+      throw new Error('ticket_create_recovery_scope_invalid');
+    }
+    return { externalRef: text(task.gid), url: text(task.permalink_url), recovered: true };
+  }
+  if (args.recoveryOnly === true) return { pendingReconciliation: true };
+  const res = await rest(host, request.source, 'POST', '/tasks', {
+    query: { opt_fields: 'gid,permalink_url' },
+    body: { data: { name: title, notes: args.body, projects: [projectGid], external: { gid: correlationId } } },
+  });
+  const task = res.body.data;
+  if (!task || !text(task.gid)) throw new Error('ticket_create_receipt_missing');
+  return { externalRef: text(task.gid), url: text(task.permalink_url), recovered: false };
+}
+
 const INVOKERS = {
   'ticket.read': readTicket,
+  'ticket.create': createTicket,
   'ticket.comment': commentOnTicket,
   'ticket.transition': transitionTicket,
   'ticket.containers': listContainers,

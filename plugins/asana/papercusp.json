@@ -14,7 +14,7 @@
     "contractVersion": 1,
     "displayName": "Asana",
     "datatypes": ["ticket", "ticket-status-change", "ticket-comment"],
-    "capabilities": ["ticket.read", "ticket.comment", "ticket.transition", "ticket.containers", "push.subscribe", "push.unsubscribe"],
+    "capabilities": ["ticket.read", "ticket.create", "ticket.comment", "ticket.transition", "ticket.containers", "push.subscribe", "push.unsubscribe"],
     "push": {
       "handshake": { "header": "x-hook-secret" },
       "signature": { "header": "x-hook-signature", "algorithm": "hmac-sha256", "encoding": "hex" }
