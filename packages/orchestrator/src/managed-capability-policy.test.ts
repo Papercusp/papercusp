@@ -150,6 +150,42 @@ describe('managed capability policy — overrides', () => {
 });
 
 describe('managed capability policy — replacement-quality gating', () => {
+  it('retains native features on every client and lifecycle surface even when replacement evidence passes', () => {
+    const proven: CapabilityReadinessSource = CONTRACT_CAPABILITY_READINESS.map((entry) => ({
+      ...entry,
+      cutoverReady: true,
+      openGapIds: [],
+    }));
+    for (const client of ['claude', 'codex', 'omp'] as const) {
+      for (const surface of SURFACES) {
+        const baseline = resolveCapabilityPolicy({ client, surface });
+        const decision = resolveCapabilityPolicy({
+          client,
+          surface,
+          readiness: proven,
+          adoption: proven.map((entry) => ({
+            client,
+            family: entry.family,
+            managedPathProven: true,
+            nativeBypassRefused: true,
+          })),
+          matrix: proven.map((entry) => ({
+            client,
+            family: entry.family,
+            allScenariosPassed: true,
+            declaredScenarioCount: 1,
+            unmet: [],
+          })),
+          // Deliberately use the shipped rollout default: proof never enables it.
+        });
+        expect(decision.flags).toEqual(baseline.flags);
+        expect(decision.deniedNames).toEqual(baseline.deniedNames);
+        expect(decision.applied.filter((entry) => entry.authorityKind === 'managed-cutover')).toEqual([]);
+        expect(decision.deniedNames).not.toContain('Bash');
+      }
+    }
+  });
+
   it('withholds a managed-cutover restriction while its replacement is unproven', () => {
     const decision = resolveCapabilityPolicy({ client: 'claude', surface: 'launch' });
     const withheld = decision.withheld.find((entry) => entry.id === 'managed-shell-cutover');

@@ -67,7 +67,8 @@ export interface ManagedCapabilityDisposition {
   /** Additional existing implementation sites to extend rather than duplicate. */
   reuseSites: readonly ManagedCapabilitySourceCitation[];
   gaps: readonly ManagedCapabilityGap[];
-  cutoverReady: false;
+  /** Proven replacement parity; enabling a restriction is a separate rollout decision. */
+  cutoverReady: boolean;
   cutoverReason: string;
 }
 
@@ -749,8 +750,18 @@ export function managedCapabilityContractViolations(entries: readonly ManagedCap
     }
     if (!entry.evidence?.path || !entry.evidence.anchors?.length) violations.push(`missing-evidence:${ref}`);
     if (!entry.reuseSites?.length) violations.push(`missing-reuse-site:${ref}`);
-    if (!entry.gaps?.length) violations.push(`missing-gap:${ref}`);
-    if (entry.cutoverReady !== false) violations.push(`cutover-not-blocked:${ref}`);
+    // An empty, explicit gap ledger is how a proven replacement records closure.
+    // Missing gap data is still unknown, and an unready entry must name what remains.
+    if (!Array.isArray(entry.gaps) || (!entry.cutoverReady && entry.gaps.length === 0)) {
+      violations.push(`missing-gap:${ref}`);
+    }
+    if (typeof entry.cutoverReady !== 'boolean') violations.push(`invalid-cutover-readiness:${ref}`);
+    if (entry.cutoverReady) {
+      if (entry.gaps?.length) violations.push(`cutover-with-open-gaps:${ref}`);
+      if (entry.disposition === 'unsupported-gap' || entry.disposition === 'deliberately-retained-interface') {
+        violations.push(`non-replacement-cutover:${ref}`);
+      }
+    }
   });
 
   return violations;
