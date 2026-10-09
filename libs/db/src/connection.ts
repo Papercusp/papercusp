@@ -44,10 +44,12 @@ import { boundedOrgPoolMax } from '@papercusp/resource-profile';
 // itself queues behind the saturated pool it is meant to diagnose.
 import {
   ACQUIRE_QUEUE_LOCATION_RESIDUAL,
+  acquireTicketSnapshot,
   beginAcquire,
   describeAcquirePressure,
   createPgDiagnosticHooks,
   recordPoolMax,
+  type AcquireTicketSnapshot,
 } from './acquire-registry';
 import { stampedTag } from './build-stamp';
 
@@ -1886,7 +1888,10 @@ export class DbCallDeadlineError extends Error {
    * pool may still be a dead endpoint, so those deadlines stay non-retryable.
    */
   readonly retryable: boolean;
+  /** Bounded local view of active tickets captured before the timed-out ticket is released. */
+  readonly acquisitionTickets: AcquireTicketSnapshot | null;
   constructor(label: string, deadlineMs: number, elapsedMs: number, pool?: string) {
+    const acquisitionTickets = pool ? acquireTicketSnapshot(pool) : null;
     const measured = pool ? describeAcquirePressure(pool) : null;
     // A decisive measurement has already answered "which cause"; re-printing the
     // cause fork after it would bury the answer under the procedure it replaces.
@@ -1915,6 +1920,7 @@ export class DbCallDeadlineError extends Error {
     this.pool = pool ?? null;
     this.measured = measured?.text ?? null;
     this.retryable = measured?.decisive === true;
+    this.acquisitionTickets = acquisitionTickets;
   }
 }
 

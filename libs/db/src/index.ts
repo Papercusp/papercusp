@@ -69,6 +69,7 @@ export {
 // surface wanting live acquire pressure has nowhere else to read it.
 export {
   acquireSnapshot,
+  acquireTicketSnapshot,
   describeAcquirePressure,
   beginAcquire,
   recordPgResult,
@@ -82,6 +83,8 @@ export {
   resetAcquireRegistryForTest,
   ACQUIRE_RECENT_SUCCESS_MS,
   type AcquireSnapshot,
+  type AcquireTicketDiagnostic,
+  type AcquireTicketSnapshot,
   type AcquireTicket,
   type PgResultDiagnostic,
   type PgResultDiagnosticCorrelation,

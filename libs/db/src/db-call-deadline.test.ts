@@ -12,11 +12,18 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   withDbCallDeadline,
+  withAcquisitionDeadline,
   DbCallDeadlineError,
   DEFAULT_DB_CALL_DEADLINE_MS,
   retryOnRetryableDbDeadline,
 } from './connection';
-import { beginAcquire, recordPoolMax, resetAcquireRegistryForTest } from './acquire-registry';
+import {
+  beginAcquire,
+  recordPoolMax,
+  resetAcquireRegistryForTest,
+  resetPgDiagnosticContextResolver,
+  setPgDiagnosticContextResolver,
+} from './acquire-registry';
 
 describe('withDbCallDeadline (WI-7097)', () => {
   afterEach(() => {
@@ -129,5 +136,49 @@ describe('retryOnRetryableDbDeadline', () => {
 
     expect(attempts).toBe(1);
     expect(error.retryable).toBe(false);
+  });
+});
+
+describe('withAcquisitionDeadline ticket diagnostics', () => {
+  afterEach(() => {
+    resetPgDiagnosticContextResolver();
+    resetAcquireRegistryForTest();
+    vi.useRealTimers();
+  });
+
+  it('captures the bounded active-ticket snapshot before releasing the timed-out ticket', async () => {
+    vi.useFakeTimers();
+    const requestId = 'e57ef6b3-46ef-4cc5-8214-fec83f2a463e';
+    setPgDiagnosticContextResolver(() => ({
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      buildSha: 'abcdef0',
+      rowId: null,
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      hopId: null,
+      stage: null,
+      boundary: null,
+      requestId,
+      operation: 'mcp.nativeSessionVerifier',
+    }));
+    const result = withAcquisitionDeadline(
+      () => new Promise<never>(() => {}),
+      { ms: 1_000, label: 'native-session-verifier', pool: 'org-admin' },
+    );
+    const assertion = result.catch(error => error as DbCallDeadlineError);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const error = await assertion;
+
+    expect(error.acquisitionTickets).toMatchObject({
+      pool: 'org-admin',
+      capacity: 8,
+      active: 1,
+      omitted: 0,
+      tickets: [{
+        state: 'waiting',
+        requestId,
+        operation: 'mcp.nativeSessionVerifier',
+      }],
+    });
   });
 });

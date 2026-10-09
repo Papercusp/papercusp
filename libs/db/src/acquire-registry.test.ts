@@ -15,6 +15,7 @@ import { resetBuildStampResolver, setBuildStampResolver } from './build-stamp';
 import {
   ACQUIRE_RECENT_SUCCESS_MS,
   acquireSnapshot,
+  acquireTicketSnapshot,
   beginAcquire,
   describeAcquirePressure,
   PG_RESULT_DIAGNOSTIC_LIMIT,
@@ -109,6 +110,68 @@ describe('acquireSnapshot', () => {
     expect(acquireSnapshot('org-app').held).toBe(1);
     expect(acquireSnapshot('org-admin').held).toBe(0);
     a.release();
+  });
+});
+
+describe('bounded acquisition ticket diagnostics', () => {
+  it('captures sanitized labels for the oldest active tickets within the fixed bound', () => {
+    let sequence = 0;
+    setPgDiagnosticContextResolver(() => {
+      const id = String(++sequence).padStart(12, '0');
+      return {
+        processInstanceId: '11111111-1111-4111-8111-111111111111',
+        buildSha: 'abcdef0',
+        rowId: null,
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        hopId: null,
+        stage: null,
+        boundary: null,
+        requestId: `33333333-3333-4333-8333-${id}`,
+        operation: 'mcp.nativeSessionVerifier',
+      };
+    });
+
+    const tickets = Array.from({ length: 10 }, (_, index) => {
+      const ticket = beginAcquire('org-admin');
+      if (index % 2 === 1) ticket.acquired();
+      return ticket;
+    });
+    const snapshot = acquireTicketSnapshot('org-admin');
+
+    expect(snapshot).toMatchObject({ pool: 'org-admin', capacity: 8, active: 10, omitted: 2 });
+    expect(snapshot.tickets).toHaveLength(8);
+    expect(snapshot.tickets.map(ticket => ticket.requestId)).toEqual(
+      Array.from({ length: 8 }, (_, index) =>
+        `33333333-3333-4333-8333-${String(index + 1).padStart(12, '0')}`),
+    );
+    expect(snapshot.tickets.map(ticket => ticket.state)).toEqual([
+      'waiting', 'held', 'waiting', 'held', 'waiting', 'held', 'waiting', 'held',
+    ]);
+    expect(snapshot.tickets.every(ticket => Number.isFinite(ticket.ageMs) && ticket.ageMs >= 0)).toBe(true);
+    expect(snapshot.tickets.every(ticket => ticket.operation === 'mcp.nativeSessionVerifier')).toBe(true);
+    tickets.forEach(ticket => ticket.release());
+  });
+
+  it('does not retain malformed request or operation labels', () => {
+    const unsafeOperation = 'postgresql://secret:credential@host/db';
+    setPgDiagnosticContextResolver(() => ({
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      buildSha: 'abcdef0',
+      rowId: null,
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      hopId: null,
+      stage: null,
+      boundary: null,
+      requestId: 'not-a-validated-request-id',
+      operation: unsafeOperation,
+    }));
+    const ticket = beginAcquire('org-admin');
+
+    const snapshot = acquireTicketSnapshot('org-admin');
+    expect(snapshot.tickets[0]).toMatchObject({ requestId: null, operation: null });
+    expect(JSON.stringify(snapshot)).not.toContain('not-a-validated-request-id');
+    expect(JSON.stringify(snapshot)).not.toContain('secret');
+    ticket.release();
   });
 });
 
