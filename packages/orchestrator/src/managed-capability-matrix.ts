@@ -40,8 +40,13 @@
 
 import { createHash } from 'node:crypto';
 
-import { type ManagedCapabilityFamilyId } from './managed-capability-contract';
 import {
+  MANAGED_CAPABILITY_DISPOSITIONS,
+  type ManagedCapabilityDisposition,
+  type ManagedCapabilityFamilyId,
+} from './managed-capability-contract';
+import {
+  CAPABILITY_CLIENT_ENFORCEMENT,
   MANAGED_CAPABILITY_RESTRICTIONS,
   type CapabilityClientFamily,
   type CapabilityMatrixEntry,
@@ -67,7 +72,23 @@ export const REAL_CLIENT_SCENARIO_KINDS = [
   'native-disable',
 ] as const;
 
-export type RealClientScenarioKind = (typeof REAL_CLIENT_SCENARIO_KINDS)[number];
+export type RealClientMatrixPurpose = 'cutover' | 'replacement-acceptance';
+export type RealClientScenarioKind =
+  | (typeof REAL_CLIENT_SCENARIO_KINDS)[number]
+  | 'native-retention'
+  | 'unsupported-controls';
+
+/** Acceptance with native features retained never executes the excluded offline recovery. */
+export const REPLACEMENT_CLIENT_SCENARIO_KINDS = [
+  'launch', 'resume', 'wake', 'lifecycle', 'sandbox', 'native-retention', 'unsupported-controls',
+] as const satisfies readonly RealClientScenarioKind[];
+
+export interface RealClientMatrixDeclarationOptions {
+  readonly purpose?: RealClientMatrixPurpose;
+  readonly dispositions?: readonly ManagedCapabilityDisposition[];
+  readonly clients?: readonly CapabilityClientFamily[];
+  readonly surfaces?: readonly CapabilityPolicySurface[];
+}
 
 /**
  * The three scenario kinds that ARE a policy surface.
@@ -99,6 +120,8 @@ export interface RealClientScenario {
   readonly surface?: CapabilityPolicySurface;
   /** The restriction ids that caused this cell to be declared. */
   readonly declaredBy: readonly string[];
+  /** Omitted by legacy manifests, which always mean cutover. */
+  readonly purpose?: RealClientMatrixPurpose;
 }
 
 /**
@@ -113,8 +136,32 @@ export interface RealClientScenario {
  */
 export function declareRealClientMatrix(
   restrictions: readonly ManagedCapabilityRestriction[] = MANAGED_CAPABILITY_RESTRICTIONS,
+  options: RealClientMatrixDeclarationOptions = {},
 ): readonly RealClientScenario[] {
   const byId = new Map<string, { scenario: RealClientScenario; declaredBy: string[] }>();
+
+  // Inventory owns the replacement population; restrictions own only cutover.
+  // Separate ids prevent acceptance evidence from being reused to disable native tools.
+  if (options.purpose === 'replacement-acceptance') {
+    const dispositions = options.dispositions ?? MANAGED_CAPABILITY_DISPOSITIONS;
+    const clients = options.clients ?? Object.keys(CAPABILITY_CLIENT_ENFORCEMENT) as CapabilityClientFamily[];
+    const surfaces = options.surfaces ?? ['launch', 'resume', 'wake'];
+    for (const disposition of dispositions) {
+      for (const client of clients) {
+        for (const kind of REPLACEMENT_CLIENT_SCENARIO_KINDS) {
+          const surface = SURFACE_BOUND_SCENARIO_KINDS[kind];
+          if (surface !== undefined && !surfaces.includes(surface)) continue;
+          const id = `replacement-acceptance:${disposition.family}:${client}:${kind}`;
+          const declaredBy = [disposition.evidence.path, ...disposition.gaps.map((gap) => gap.id)];
+          byId.set(id, { declaredBy, scenario: {
+            id, family: disposition.family, client, kind, declaredBy,
+            purpose: 'replacement-acceptance', ...(surface ? { surface } : {}),
+          } });
+        }
+      }
+    }
+    return [...byId.values()].map(({ scenario }) => scenario).sort((a, b) => a.id.localeCompare(b.id));
+  }
 
   for (const restriction of restrictions) {
     if (restriction.authority.kind !== 'managed-cutover') continue;
@@ -149,7 +196,7 @@ export function declareRealClientMatrix(
 /** What one execution of one scenario, in an isolated client profile, saw. */
 export interface RealClientScenarioResult {
   readonly scenarioId: string;
-  readonly outcome: 'pass' | 'fail';
+  readonly outcome: 'pass' | 'fail' | 'unsupported';
   /** The client version the isolated profile actually ran. */
   readonly clientVersion: string;
   /** ISO-8601. Staleness is measured from here, never from a file mtime. */
@@ -162,6 +209,10 @@ export interface RealClientScenarioResult {
    * record comparison it never actually matched.
    */
   readonly fingerprint?: string;
+  /** Required for replacement acceptance; a help/version probe is not a journey. */
+  readonly evidenceRef?: string;
+  /** An unsupported result records a measured limitation, never a passing scenario. */
+  readonly unsupportedReason?: string;
 }
 
 /**
@@ -180,10 +231,13 @@ export interface RealClientScenarioResult {
  * the concatenation injective.
  */
 export function scenarioResultFingerprint(
-  result: Pick<RealClientScenarioResult, 'scenarioId' | 'clientVersion' | 'outcome'>,
+  result: Pick<RealClientScenarioResult, 'scenarioId' | 'clientVersion' | 'outcome' | 'evidenceRef' | 'unsupportedReason'>,
 ): string {
+  const evidence = result.evidenceRef !== undefined || result.unsupportedReason !== undefined
+    ? `\x00${JSON.stringify([result.evidenceRef ?? null, result.unsupportedReason ?? null])}`
+    : '';
   return createHash('sha256')
-    .update(`${result.scenarioId}\x00${result.clientVersion}\x00${result.outcome}`)
+    .update(`${result.scenarioId}\x00${result.clientVersion}\x00${result.outcome}${evidence}`)
     .digest('hex')
     .slice(0, 32);
 }
@@ -217,7 +271,8 @@ export type RealClientScenarioStatus =
   | 'missing'
   | 'failing'
   | 'stale'
-  | 'version-mismatch';
+  | 'version-mismatch'
+  | 'unsupported';
 
 export interface RealClientScenarioRow {
   readonly scenario: RealClientScenario;
@@ -237,6 +292,7 @@ export interface RealClientScenarioRow {
 }
 
 export interface RealClientMatrixReportOptions {
+  readonly purpose?: RealClientMatrixPurpose;
   readonly scenarios?: readonly RealClientScenario[];
   readonly results?: readonly RealClientScenarioResult[];
   readonly records?: readonly CapabilityDefaultEnablementRecord[];
@@ -266,6 +322,7 @@ export interface RealClientMatrixReport {
   readonly integrityIssues: readonly string[];
   readonly declaredCount: number;
   readonly passedCount: number;
+  readonly unsupportedCount: number;
   /** True only when every declared scenario passed and nothing drifted. */
   readonly allDeclaredScenariosPassed: boolean;
 }
@@ -285,7 +342,7 @@ export interface RealClientMatrixReport {
 export function realClientMatrixReport(
   options: RealClientMatrixReportOptions = {},
 ): RealClientMatrixReport {
-  const scenarios = options.scenarios ?? declareRealClientMatrix();
+  const scenarios = options.scenarios ?? declareRealClientMatrix(undefined, { purpose: options.purpose });
   const results = options.results ?? [];
   const records = options.records ?? [];
   const now = options.now ?? new Date();
@@ -336,6 +393,15 @@ export function realClientMatrixReport(
 
     const base = { scenario, result, fingerprint, enablementDrift } as const;
 
+    if (result.fingerprint !== undefined && result.fingerprint !== fingerprint) {
+      return { ...base, status: 'failing', detail: `'${scenario.id}' has a forged result fingerprint.${driftNote}` };
+    }
+
+    const replacementAcceptance = scenario.purpose === 'replacement-acceptance';
+    if (replacementAcceptance && (!result.evidenceRef?.trim() || !result.clientVersion.trim())) {
+      return { ...base, status: 'failing', detail: `'${scenario.id}' lacks a versioned execution evidence reference.` };
+    }
+
     if (result.outcome === 'fail') {
       return {
         ...base,
@@ -345,7 +411,7 @@ export function realClientMatrixReport(
     }
 
     const current = options.clientVersions?.[scenario.client];
-    if (current !== undefined && current !== result.clientVersion) {
+    if ((replacementAcceptance && !current?.trim()) || (current !== undefined && current !== result.clientVersion)) {
       return {
         ...base,
         status: 'version-mismatch',
@@ -357,7 +423,8 @@ export function realClientMatrixReport(
     }
 
     const ageMs = now.getTime() - Date.parse(result.observedAt);
-    if (Number.isFinite(ageMs) && ageMs > freshnessWindowMs) {
+    if ((replacementAcceptance && (!Number.isFinite(ageMs) || ageMs < 0)) ||
+        (Number.isFinite(ageMs) && ageMs > freshnessWindowMs)) {
       return {
         ...base,
         status: 'stale',
@@ -365,6 +432,13 @@ export function realClientMatrixReport(
           `'${scenario.id}' last passed at ${result.observedAt}, which is older than the ` +
           `${Math.round(freshnessWindowMs / 3_600_000)}h freshness window.${driftNote}`,
       };
+    }
+
+    if (result.outcome === 'unsupported') {
+      if (!replacementAcceptance || !result.unsupportedReason?.trim()) {
+        return { ...base, status: 'failing', detail: `'${scenario.id}' has no valid measured unsupported disposition.` };
+      }
+      return { ...base, status: 'unsupported', detail: result.unsupportedReason };
     }
 
     return {
@@ -383,6 +457,7 @@ export function realClientMatrixReport(
     { family: ManagedCapabilityFamilyId; client: CapabilityClientFamily }
   >();
   for (const scenario of scenarios) {
+    if (scenario.purpose === 'replacement-acceptance') continue;
     entryKeys.set(`${scenario.family}::${scenario.client}`, {
       family: scenario.family,
       client: scenario.client,
@@ -391,7 +466,8 @@ export function realClientMatrixReport(
 
   const entries: CapabilityMatrixEntry[] = [...entryKeys.values()].map(({ family, client }) => {
     const owned = rows.filter(
-      (row) => row.scenario.family === family && row.scenario.client === client,
+      (row) => row.scenario.purpose !== 'replacement-acceptance' &&
+        row.scenario.family === family && row.scenario.client === client,
     );
     const unmet = owned
       .filter((row) => row.status !== 'passed' || row.enablementDrift)
@@ -417,6 +493,7 @@ export function realClientMatrixReport(
     integrityIssues,
     declaredCount: rows.length,
     passedCount,
+    unsupportedCount: rows.filter((row) => row.status === 'unsupported').length,
     allDeclaredScenariosPassed: rows.length > 0 && passedCount === rows.length,
   };
 }

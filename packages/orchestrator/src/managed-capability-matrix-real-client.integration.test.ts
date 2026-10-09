@@ -47,7 +47,7 @@ import {
   declareRealClientMatrix,
   realClientMatrixReport,
 } from './managed-capability-matrix';
-import { capabilityPolicyFlags } from './managed-capability-policy';
+import { CAPABILITY_CLIENT_ENFORCEMENT, capabilityPolicyFlags, type CapabilityClientFamily } from './managed-capability-policy';
 
 const PROBE_TIMEOUT_MS = 60_000;
 
@@ -80,6 +80,50 @@ function probeClient(binary: string, args: readonly string[]) {
 
 beforeAll(() => {
   profile = mkdtempSync(join(tmpdir(), 'p008-real-client-'));
+});
+
+describe('P-020 installed-client preflight with native features retained', () => {
+  const clients = Object.keys(CAPABILITY_CLIENT_ENFORCEMENT) as CapabilityClientFamily[];
+
+  it.each(clients)('%s exposes the installed version and launch/resume interface without claiming a journey ran', (client) => {
+    const versionProbe = probeClient(client, ['--version']);
+    expect(versionProbe.ok, `${client} --version: ${versionProbe.error ?? versionProbe.stderr}`).toBe(true);
+    const version = versionProbe.stdout.trim().match(/\d+\.\d+\.\d+/)?.[0];
+    expect(version, `${client} returned no measurable installed version`).toBeDefined();
+
+    const launchHelp = probeClient(client, client === 'codex' ? ['exec', '--help'] : ['--help']);
+    expect(launchHelp.ok, `${client} launch help: ${launchHelp.error ?? launchHelp.stderr}`).toBe(true);
+    expect(launchHelp.stdout.length).toBeGreaterThan(200);
+    if (client === 'codex') {
+      const resumeHelp = probeClient(client, ['exec', 'resume', '--help']);
+      expect(resumeHelp.ok, resumeHelp.error ?? resumeHelp.stderr).toBe(true);
+      expect(resumeHelp.stdout).toContain('SESSION_ID');
+      expect(launchHelp.stdout).toContain('resume');
+    } else {
+      expect(launchHelp.stdout).toMatch(/--resume\b/);
+      expect(launchHelp.stdout).toMatch(/--print\b|(?:^|\s)-p(?:\s|,)/m);
+    }
+
+    const scenarios = declareRealClientMatrix(undefined, { purpose: 'replacement-acceptance', clients: [client] });
+    expect(scenarios.some((scenario) => scenario.kind === 'launch')).toBe(true);
+    expect(scenarios.some((scenario) => scenario.kind === 'resume')).toBe(true);
+    expect(scenarios.some((scenario) => scenario.kind === 'wake')).toBe(true);
+    const report = realClientMatrixReport({ scenarios, clientVersions: { [client]: version! } });
+    // Version/help are prerequisite evidence. They cannot satisfy actual client journeys.
+    expect(report.rows.every((row) => row.status === 'missing')).toBe(true);
+    expect(report.allDeclaredScenariosPassed).toBe(false);
+    expect(report.entries).toEqual([]);
+    for (const surface of ['launch', 'resume', 'wake'] as const) {
+      const names = capabilityPolicyFlags({ client, surface, clientVersions: { [client]: version! } })
+        .flatMap((flag) => flag.slice(flag.indexOf('=') + 1).split(','));
+      expect(names).not.toContain('Bash');
+      expect(names).not.toContain('Read');
+      expect(names).not.toContain('Edit');
+      expect(names).not.toContain('Write');
+    }
+    console.info('REAL_CLIENT_ACCEPTANCE_PREFLIGHT', JSON.stringify({ client, version, nativeFeaturesRetained: true,
+      inspected: ['version', 'launch-help', 'resume-help'], actualJourneys: 'not-executed' }));
+  }, PROBE_TIMEOUT_MS * 4);
 });
 
 afterAll(() => {

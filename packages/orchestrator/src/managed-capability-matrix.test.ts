@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SCENARIO_FRESHNESS_MS,
   REAL_CLIENT_SCENARIO_KINDS,
+  REPLACEMENT_CLIENT_SCENARIO_KINDS,
   declareRealClientMatrix,
   realClientMatrixReport,
   scenarioResultFingerprint,
@@ -25,7 +26,8 @@ import {
   type RealClientScenario,
   type RealClientScenarioResult,
 } from './managed-capability-matrix';
-import { MANAGED_CAPABILITY_RESTRICTIONS } from './managed-capability-policy';
+import { MANAGED_CAPABILITY_DISPOSITIONS } from './managed-capability-contract';
+import { CAPABILITY_CLIENT_ENFORCEMENT, MANAGED_CAPABILITY_RESTRICTIONS } from './managed-capability-policy';
 
 const NOW = new Date('2026-09-21T12:00:00.000Z');
 const FRESH = new Date(NOW.getTime() - 60_000).toISOString();
@@ -246,6 +248,9 @@ describe('P-008 real-client matrix — fingerprints and the enablement record', 
 
     expect(report.integrityIssues).toHaveLength(1);
     expect(report.integrityIssues[0]).toContain('does not describe its own');
+    expect(report.rows[0]?.status).toBe('failing');
+    expect(report.allDeclaredScenariosPassed).toBe(false);
+    expect(report.entries[0]?.allScenariosPassed).toBe(false);
   });
 
   it('accepts a correctly-published fingerprint without complaint (calibration)', () => {
@@ -333,5 +338,104 @@ describe('P-008 real-client matrix — fingerprints and the enablement record', 
       now: NOW,
     });
     expect(report.rows[0]?.status).toBe('passed');
+  });
+});
+
+describe('P-020 replacement acceptance with native features retained', () => {
+  const scenarios = declareRealClientMatrix(undefined, { purpose: 'replacement-acceptance' });
+  const versions = { claude: VERSION, codex: '0.110.0', omp: '13.0.0' };
+  const results = (): RealClientScenarioResult[] => scenarios.map((scenario) => ({
+    scenarioId: scenario.id,
+    outcome: 'pass',
+    clientVersion: versions[scenario.client],
+    observedAt: FRESH,
+    evidenceRef: `test-run:actual-journey:${scenario.id}`,
+  }));
+
+  it('derives every client and inventory family independently of cutover restrictions', () => {
+    expect(scenarios).toHaveLength(MANAGED_CAPABILITY_DISPOSITIONS.length *
+      Object.keys(CAPABILITY_CLIENT_ENFORCEMENT).length * REPLACEMENT_CLIENT_SCENARIO_KINDS.length);
+    expect(new Set(scenarios.map((scenario) => scenario.client)))
+      .toEqual(new Set(Object.keys(CAPABILITY_CLIENT_ENFORCEMENT)));
+    expect(new Set(scenarios.map((scenario) => scenario.family)))
+      .toEqual(new Set(MANAGED_CAPABILITY_DISPOSITIONS.map((entry) => entry.family)));
+    expect(scenarios.some((scenario) => scenario.kind === 'native-disable' || scenario.kind === 'recovery')).toBe(false);
+    expect(new Set(scenarios.map((scenario) => scenario.id)).size).toBe(scenarios.length);
+    expect(scenarios.every((scenario) => scenario.purpose === 'replacement-acceptance')).toBe(true);
+  });
+
+  it('can scope an actual run without inventing undeclared resume/wake coverage', () => {
+    const scoped = declareRealClientMatrix(undefined, {
+      purpose: 'replacement-acceptance', clients: ['codex'], surfaces: ['launch'],
+      dispositions: [MANAGED_CAPABILITY_DISPOSITIONS[0]!],
+    });
+    expect(scoped.map((scenario) => scenario.kind)).toContain('launch');
+    expect(scoped.map((scenario) => scenario.kind)).not.toContain('resume');
+    expect(scoped.map((scenario) => scenario.kind)).not.toContain('wake');
+    expect(scoped.every((scenario) => scenario.client === 'codex')).toBe(true);
+    expect(scoped[0]?.declaredBy).toContain(MANAGED_CAPABILITY_DISPOSITIONS[0]!.evidence.path);
+  });
+
+  it('reports missing actual journeys and never supplies a cutover gate entry', () => {
+    const missing = realClientMatrixReport({ purpose: 'replacement-acceptance', clientVersions: versions, now: NOW });
+    expect(missing.declaredCount).toBe(scenarios.length);
+    expect(missing.rows.every((row) => row.status === 'missing')).toBe(true);
+    const green = realClientMatrixReport({ scenarios, results: results(), clientVersions: versions, now: NOW });
+    expect(green.allDeclaredScenariosPassed).toBe(true);
+    expect(green.entries).toEqual([]);
+    expect(green.unsupportedCount).toBe(0);
+  });
+
+  it.each([
+    ['missing evidence reference', { evidenceRef: '' }, 'failing'],
+    ['blank client version', { clientVersion: ' ' }, 'failing'],
+    ['invalid observation time', { observedAt: 'not-a-date' }, 'stale'],
+    ['future observation time', { observedAt: new Date(NOW.getTime() + 1000).toISOString() }, 'stale'],
+    ['forged fingerprint', { fingerprint: 'forged' }, 'failing'],
+  ] as const)('rejects %s instead of claiming acceptance', (_label, mutation, status) => {
+    const result = { ...results()[0]!, ...mutation };
+    const report = realClientMatrixReport({ scenarios: [scenarios[0]!], results: [result], clientVersions: versions, now: NOW });
+    expect(report.rows[0]?.status).toBe(status);
+    expect(report.allDeclaredScenariosPassed).toBe(false);
+  });
+
+  it('requires a measured current version and invalidates only the upgraded client', () => {
+    const unknown = realClientMatrixReport({ scenarios, results: results(), now: NOW });
+    expect(unknown.rows.every((row) => row.status === 'version-mismatch')).toBe(true);
+    const upgraded = realClientMatrixReport({ scenarios, results: results(), clientVersions: { ...versions, codex: '0.111.0' }, now: NOW });
+    expect(upgraded.rows.filter((row) => row.scenario.client === 'codex').every((row) => row.status === 'version-mismatch')).toBe(true);
+    expect(upgraded.rows.filter((row) => row.scenario.client !== 'codex').every((row) => row.status === 'passed')).toBe(true);
+    expect(upgraded.allDeclaredScenariosPassed).toBe(false);
+  });
+
+  it('binds unsupported truth to current evidence without counting it as a pass', () => {
+    const scenario = scenarios.find((entry) => entry.client === 'codex' && entry.kind === 'unsupported-controls')!;
+    const result: RealClientScenarioResult = {
+      ...results().find((entry) => entry.scenarioId === scenario.id)!, outcome: 'unsupported',
+      unsupportedReason: 'Measured client has no host-composable native-tool deny flag; native features remain available.',
+    };
+    const report = realClientMatrixReport({ scenarios: [scenario], results: [result], clientVersions: versions, now: NOW });
+    expect(report.rows[0]?.status).toBe('unsupported');
+    expect(report.unsupportedCount).toBe(1);
+    expect(report.passedCount).toBe(0);
+    expect(report.allDeclaredScenariosPassed).toBe(false);
+    expect(report.entries).toEqual([]);
+    const invalid = realClientMatrixReport({ scenarios: [scenario], results: [{ ...result, unsupportedReason: '' }], clientVersions: versions, now: NOW });
+    expect(invalid.rows[0]?.status).toBe('failing');
+    const stale = realClientMatrixReport({ scenarios: [scenario], results: [{ ...result, clientVersion: 'older' }], clientVersions: versions, now: NOW });
+    expect(stale.rows[0]?.status).toBe('version-mismatch');
+    expect(scenarioResultFingerprint(result)).not.toBe(scenarioResultFingerprint({ ...result, evidenceRef: 'another-run' }));
+    expect(scenarioResultFingerprint(result)).not.toBe(scenarioResultFingerprint({ ...result, unsupportedReason: 'different limitation' }));
+  });
+
+  it('does not let a forged latest result inherit a prior valid pass', () => {
+    const prior = results()[0]!;
+    const report = realClientMatrixReport({ scenarios: [scenarios[0]!], results: [prior,
+      { ...prior, observedAt: NOW.toISOString(), fingerprint: 'forged' }], clientVersions: versions, now: NOW });
+    expect(report.rows[0]?.status).toBe('failing');
+    const repaired = realClientMatrixReport({ scenarios: [scenarios[0]!], results: [
+      { ...prior, fingerprint: 'forged' }, { ...prior, observedAt: NOW.toISOString() }], clientVersions: versions, now: NOW });
+    expect(repaired.rows[0]?.status).toBe('passed');
+    expect(repaired.allDeclaredScenariosPassed).toBe(true);
   });
 });

@@ -20,12 +20,14 @@ import { describe, expect, it } from 'vitest';
 import {
   declareRealClientMatrix,
   realClientMatrixGateSource,
+  realClientMatrixReport,
   scenarioResultFingerprint,
   DEFAULT_SCENARIO_FRESHNESS_MS,
   type RealClientScenarioResult,
 } from './managed-capability-matrix';
 import {
   CONTRACT_CAPABILITY_READINESS,
+  capabilityPolicyFlags,
   resolveCapabilityPolicy,
   type CapabilityPolicyRequest,
   type CapabilityReadinessSource,
@@ -80,6 +82,35 @@ const withheldReason = (decision: ReturnType<typeof resolveCapabilityPolicy>) =>
   decision.withheld.find((entry) => entry.id === RESTRICTION)?.reason;
 
 describe('P-008 matrix gate — reaches the real policy decision', () => {
+  it('rejects forged matrix evidence at the real cutover admission boundary', () => {
+    const results = greenResults();
+    results[0] = { ...results[0]!, fingerprint: 'forged' };
+    const decision = resolveCapabilityPolicy(request(results));
+    expect(decision.deniedNames).not.toContain('Bash');
+    expect(withheldReason(decision)).toBe('matrix-scenario-unproven');
+    expect(resolveCapabilityPolicy(request(greenResults())).deniedNames).toContain('Bash');
+  });
+
+  it('cannot enable cutover with a green replacement-acceptance manifest', () => {
+    const scenarios = declareRealClientMatrix(undefined, { purpose: 'replacement-acceptance' });
+    const report = realClientMatrixReport({ scenarios, clientVersions: { claude: VERSION, codex: VERSION, omp: VERSION }, now: NOW,
+      results: scenarios.map((scenario) => ({ scenarioId: scenario.id, outcome: 'pass', clientVersion: VERSION,
+        observedAt: FRESH, evidenceRef: `test-run:${scenario.id}` })),
+    });
+    expect(report.allDeclaredScenariosPassed).toBe(true);
+    expect(report.entries).toEqual([]);
+    const decision = resolveCapabilityPolicy(request(greenResults(), { matrix: report.entries }));
+    expect(decision.deniedNames).not.toContain('Bash');
+    expect(withheldReason(decision)).toBe('matrix-scenario-unproven');
+    for (const client of ['claude', 'codex', 'omp'] as const) {
+      for (const surface of ['launch', 'resume', 'wake'] as const) {
+        const flags = capabilityPolicyFlags({ client, surface, matrix: report.entries });
+        expect(flags.join(' ')).not.toMatch(/(?:=|,)Bash(?:,|$)/);
+        expect(resolveCapabilityPolicy({ client, surface, matrix: report.entries }).applied)
+          .not.toContainEqual(expect.objectContaining({ id: RESTRICTION }));
+      }
+    }
+  });
   it('CALIBRATION: a fully green matrix lets the managed default be enabled', () => {
     // Without this case every assertion below could pass because the
     // restriction is withheld for some unrelated reason.
