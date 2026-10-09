@@ -444,7 +444,12 @@ through `reports:publish` before your final reply. Preserve Mermaid fences and k
 the default `visibility:'owner'` unless a broader audience was requested. Complete
 delivery in this order: (1) `reports:publish`; (2) `reports:get { id: report_id }` using
 the returned id; (3) verify that readback contains the complete Markdown and intended
-visibility; (4) cite the returned `path` and `report_id` in your final reply. Claim
+visibility; (4) provide a descriptive Markdown link to the report page in the GUI.
+Resolve the returned `path` against the verified owner-facing GUI origin to make an
+absolute HTTP(S) URL; the operator Reports reader selects a report with
+`/reports?sel=<report_id>`. Verify that the link opens the intended report. Never
+give a bare report id, a relative `/reports/...` path, or a guessed GUI URL as the
+owner's actionable link. Keep `report_id` in the durable evidence record. Claim
 saved or delivered only after the readback succeeds. Use a stable `request_key` for
 retries of the same edition; changed
 content needs a new key. A correction uses `supersedes`; a separate dated edition
