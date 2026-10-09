@@ -15,7 +15,7 @@
  * download path and returns a real-shape tarball (or an injected error
  * status) — same artifact format the real marketplace serves.
  */
-import { describe, it, before, after } from 'node:test';
+import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, promises as fs } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -63,13 +63,22 @@ interface MockMarketplace {
   /** Override the response for a specific (path, status). Most recent
    *  registration wins; useful for switching catalog vs download. */
   setHandler(path: string, handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void): void;
+  requests: { path: string; elapsedMs: number; status?: number; finishedMs?: number }[];
   close(): Promise<void>;
 }
 
 async function startMockMarketplace(): Promise<MockMarketplace> {
   const handlers = new Map<string, (req: any, res: any) => void>();
+  const startedAt = performance.now();
+  const requests: MockMarketplace['requests'] = [];
   const server = createServer((req, res) => {
     const path = req.url?.split('?')[0] ?? '';
+    const request = { path, elapsedMs: Math.round(performance.now() - startedAt) } as MockMarketplace['requests'][number];
+    requests.push(request);
+    res.once('finish', () => {
+      request.status = res.statusCode;
+      request.finishedMs = Math.round(performance.now() - startedAt);
+    });
     const h = handlers.get(path);
     if (!h) {
       res.statusCode = 404;
@@ -83,13 +92,18 @@ async function startMockMarketplace(): Promise<MockMarketplace> {
   return {
     url: `http://127.0.0.1:${port}`,
     port,
+    requests,
     setHandler: (path, handler) => handlers.set(path, handler),
     close: () => new Promise((resolve) => server.close(() => resolve())),
   };
 }
 
-/** Run the real papercusp CLI with the given env, capturing exit + output. */
-async function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string; stderr: string }> {
+/** Run the real CLI. Test-only options exercise the same pipe and deadline fence. */
+async function runCli(args: string[], env: NodeJS.ProcessEnv, options: {
+  executable?: string;
+  timeoutMs?: number;
+  killGraceMs?: number;
+} = {}) {
   const childEnv: NodeJS.ProcessEnv = {
     ...process.env,
     ...env,
@@ -101,26 +115,73 @@ async function runCli(args: string[], env: NodeJS.ProcessEnv): Promise<{ code: n
   delete childEnv.NODE_TEST_CONTEXT;
   delete childEnv.NODE_TEST_WORKER_ID;
 
-  return await new Promise((resolve) => {
-    const child = spawnAsync(CLI_BIN, args, {
+  const executable = options.executable ?? CLI_BIN;
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const startedAt = performance.now();
+  const requestOffset = mp.requests.length;
+  return await new Promise<{
+    code: number; signal: NodeJS.Signals | null; stdout: string; stderr: string;
+    timedOut: boolean; closed: true; durationMs: number;
+  }>((resolve) => {
+    const child = spawnAsync(executable, args, {
       env: childEnv,
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: process.platform !== 'win32',
     });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    let escalation: ReturnType<typeof setTimeout> | undefined;
+    const phases: Record<string, number | string> = {};
+    const elapsed = () => Math.round(performance.now() - startedAt);
+    const signalTree = (signal: NodeJS.Signals) => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, signal);
+        else child.kill(signal);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ESRCH') {
+          stderr += `\nprocess signal failed: ${String(error)}`;
+        }
+      }
+    };
     const timeout = setTimeout(() => {
-      stderr += `\nspawn error: ${CLI_BIN} timed out after 15000ms`;
-      child.kill('SIGTERM');
-    }, 15_000);
-    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
-    child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
-    child.on('error', (err) => {
-      clearTimeout(timeout);
-      resolve({ code: -1, stdout, stderr: `${stderr}\nspawn error: ${err.message}` });
+      timedOut = true;
+      phases.deadlineMs = elapsed();
+      stderr += `\nspawn error: ${executable} timed out after ${timeoutMs}ms`;
+      signalTree('SIGTERM');
+      escalation = setTimeout(() => {
+        phases.escalationMs = elapsed();
+        signalTree('SIGKILL');
+      }, options.killGraceMs ?? 1_000);
+    }, timeoutMs);
+    child.once('spawn', () => { phases.spawnMs = elapsed(); });
+    child.stdout?.on('data', (chunk) => {
+      phases.firstStdoutMs ??= elapsed();
+      stdout += String(chunk);
     });
-    child.on('exit', (code, signal) => {
+    child.stderr?.on('data', (chunk) => {
+      phases.firstStderrMs ??= elapsed();
+      stderr += String(chunk);
+    });
+    child.on('error', (err) => {
+      phases.spawnErrorMs = elapsed();
+      stderr += `\nspawn error: ${err.message}`;
+    });
+    child.once('exit', (code, signal) => {
+      phases.exitMs = elapsed();
+      phases.exitCode = code ?? 'none';
+      phases.exitSignal = signal ?? 'none';
+    });
+    // 'exit' precedes pipe EOF: descendants can still be writing captured output.
+    // Retain deadline/escalation until 'close' so neither output nor ownership is lost.
+    child.once('close', (code, signal) => {
       clearTimeout(timeout);
-      resolve({ code: code ?? (signal ? 143 : -1), stdout, stderr });
+      if (escalation) clearTimeout(escalation);
+      phases.closeMs = elapsed();
+      stderr += `\nCLI_PROCESS_RESULT ${JSON.stringify({
+        code, signal, timedOut, phases, requests: mp.requests.slice(requestOffset),
+      })}`;
+      resolve({ code: code ?? -1, signal, stdout, stderr, timedOut, closed: true, durationMs: elapsed() });
     });
   });
 }
@@ -134,6 +195,49 @@ before(async () => {
 
 after(async () => {
   await mp.close();
+});
+
+afterEach(async () => {
+  if (testHome) await fs.rm(testHome, { recursive: true, force: true });
+});
+
+describe('atomic install subprocess lifecycle', () => {
+  it('waits for descendant pipe EOF after the immediate child exits', async () => {
+    const r = await runCli(['-e', `
+      const { spawn } = require('node:child_process');
+      spawn(process.execPath, ['-e', "setTimeout(() => process.stdout.write('late output'), 100)"],
+        { stdio: ['ignore', 1, 2] }).unref();
+      process.exit(0);
+    `], {}, { executable: process.execPath });
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout, 'late output');
+    assert.equal(r.closed, true);
+    assert.equal(r.timedOut, false);
+  });
+
+  it('escalates a SIGTERM-resistant owned child and preserves the raw close signal', async () => {
+    const r = await runCli(['-e', `
+      process.on('SIGTERM', () => {});
+      process.stdout.write('ready');
+      setInterval(() => {}, 100);
+    `], {}, { executable: process.execPath, timeoutMs: 3_000, killGraceMs: 100 });
+    assert.equal(r.stdout, 'ready');
+    assert.equal(r.timedOut, true);
+    assert.equal(r.closed, true);
+    assert.equal(r.signal, 'SIGKILL', r.stderr);
+    assert.match(r.stderr, /"escalationMs":/);
+    assert.match(r.stderr, /"closeMs":/);
+  });
+
+  it('settles a spawn failure on close with diagnostic evidence', async () => {
+    const r = await runCli([], {}, { executable: join(tmpdir(), 'absent-atomic-cli', 'bin') });
+    assert.notEqual(r.code, 0);
+    assert.equal(r.signal, null);
+    assert.equal(r.timedOut, false);
+    assert.equal(r.closed, true);
+    assert.match(r.stderr, /ENOENT/);
+    assert.match(r.stderr, /CLI_PROCESS_RESULT/);
+  });
 });
 
 describe('papercusp install — atomic staging', () => {
@@ -158,6 +262,13 @@ describe('papercusp install — atomic staging', () => {
       PAPERCUSP_ACCEPT_CAPABILITIES: '1',
     });
     assert.equal(r.code, 0, `install failed:\nstdout: ${r.stdout}\nstderr: ${r.stderr}`);
+    assert.equal(r.closed, true);
+    assert.equal(r.signal, null);
+    assert.equal(r.timedOut, false);
+    const receipt = JSON.parse(r.stderr.split('CLI_PROCESS_RESULT ').at(-1)!);
+    assert.equal(receipt.requests.length, 2, r.stderr);
+    assert.deepEqual(receipt.requests.map((request: { status: number }) => request.status), [200, 200]);
+    assert.ok(receipt.phases.closeMs >= receipt.phases.exitMs, r.stderr);
 
     const installDir = join(testHome, 'global-plugins', slug);
     const manifestPath = join(installDir, 'papercusp.json');
