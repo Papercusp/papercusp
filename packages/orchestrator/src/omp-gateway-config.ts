@@ -84,7 +84,9 @@ export function prepareOmpGatewayModelsConfig(
 
 const DEFAULT_MODELS: Record<OmpGatewayProvider, string[]> = {
   anthropic: ['claude-sonnet-4-6'],
-  openai: ['gpt-5-codex'],
+  // Codex model defaults belong to the caller's maintained model registry.
+  // A historical hard-coded fallback can name a model the account cannot serve.
+  openai: [],
 };
 
 const PROVIDER_API: Record<OmpGatewayProvider, string> = {
@@ -201,6 +203,7 @@ export function ompGatewayModelsConfig(
     .map((model) => model.trim())
     .filter(Boolean);
   const modelIds = models.length ? models : DEFAULT_MODELS[opts.provider];
+  if (!modelIds.length) throw new Error('OpenAI OMP gateway routing requires an explicit supported model');
 
   const headers: Record<string, string> = {};
   if (accountId) headers[ACCOUNT_HEADER] = accountId;
