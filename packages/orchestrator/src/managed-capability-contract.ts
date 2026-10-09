@@ -182,12 +182,12 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     nativeSurface: 'Multi-step tool scripts, saved recipes, language execution, and persistent/multimodal kernels',
     disposition: 'unsupported-gap',
     boundary:
-      'code:run, orchestrate:run, and recipes:run are foreground managed script authorities with current-caller nested authorization, branching/fan-out, parent cancellation, explicit replay state, final image/audio media, and uncertain-write reporting. They do not claim a persistent language kernel: cross-call or restart state beyond returned replay state remains explicitly unsupported.',
+      'code:run, orchestrate:run, and recipes:run are foreground managed script authorities with current-caller nested authorization, branching/fan-out, parent cancellation, explicit replay state, final image/audio media, and uncertain-write reporting. code:run also implements opt-in JavaScript worker/VM open/run/status/close with globalThis state on its owning process. Cross-worker routing and current-client acceptance remain open; Python, implicit lexical persistence, and process-restart state recovery are unsupported.',
     managedAuthorities: ['code:run', 'orchestrate:run', 'recipes:run'],
     evidence: {
       path: 'packages/operator-core/lib/agent-tools/code/run.ts',
       anchors: ["name: 'code:run'", 'generatedImage({ image_url:'],
-      note: 'Managed nested-tool scripting with bounded result/media output.',
+      note: 'Managed nested-tool scripting with bounded result/media output and opt-in local JavaScript kernels; API/client parity is not yet accepted.',
     },
     reuseSites: [
       {
@@ -200,16 +200,26 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         anchors: ["name: 'recipes:run'", 'authorityContextSchema'],
         note: 'Existing saved-script execution and authority contract.',
       },
+      {
+        path: 'libs/generic/tooldef/src/code-orchestration/run-script.ts',
+        anchors: ['openOrchestrationKernel', 'kernel_unrecoverable', 'globalThis'],
+        note: 'Persistent worker/VM runtime with current-cell dispatch and explicit state-loss outcomes.',
+      },
+      {
+        path: 'libs/generic/tooldef/src/code-orchestration/persistent-kernel-process.integration.test.ts',
+        anchors: ['persistent kernel process-boundary truth', 'kernel_unrecoverable'],
+        note: 'Real-process proof distinguishes a live owning kernel from a sibling-worker miss and an owner restart; it does not prove API routing.',
+      },
     ],
     gaps: [
       {
         id: 'persistent-kernel-lifecycle',
         kind: 'unsupported',
         description:
-          'A persistent language-kernel lifecycle with state beyond explicit replay values and restart recovery is not implemented or accepted.',
+          'Local JavaScript cross-call state is implemented; process-owner routing, actual API/client lifecycle acceptance, and cleanup acceptance remain open. Process restart explicitly loses state; no replacement is started implicitly.',
         owningPlanItems: ['P-017', 'P-020', 'P-015'],
         falsifier:
-          'Persistent-kernel acceptance proves cross-call state lifetime, binary/media transport, cancellation, nested-call authorization, and restart recovery.',
+          'Persistent-kernel acceptance proves cross-call state lifetime across request workers, binary/media transport, cancellation, current-cell nested-call authorization, cleanup, and explicit unrecoverable restart truth.',
       },
     ],
     cutoverReady: false,
@@ -342,18 +352,18 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     nativeSurface: 'HTTP fetch, web search, browser/DOM automation, and visual computer control',
     disposition: 'unsupported-gap',
     boundary:
-      'capability:fetch governs raw HTTP and capability:computer governs a leased sandbox desktop; search and browser/DOM behavior remain distinct and cannot be represented as fetch or pixel clicking by fiat.',
+      'capability:fetch governs raw HTTP and separately implements opt-in Playwright browser/DOM open/navigate/observe/close sessions; capability:computer governs a leased sandbox desktop. Search, raw HTTP, browser/DOM, and pixel clicking remain distinct. Browser state is process-local, and worker routing, actual-ledger/API, confinement, and restart cleanup acceptance remain open.',
     managedAuthorities: [
       'capability:fetch',
+      'capability:fetch browser sessions',
       'search:* provider surfaces',
       'capability:computer',
       'computer desktop lease',
     ],
     evidence: {
-      path: 'packages/operator-core/lib/agent-tools/index.ts',
-      anchors: ["import './capability/fetch';", "import './computer/computer';", "import './search/fulltext';"],
-      absentAnchors: ["import './browser/browser';"],
-      note: 'Managed HTTP, search, and computer doors are registered; no canonical managed browser adapter is registered.',
+      path: 'packages/operator-core/lib/agent-tools/capability/fetch.ts',
+      anchors: ["name: 'capability:fetch'", 'browserSessionArg.optional()', 'runBrowserSession'],
+      note: 'The registered fetch door has separate browser session operations; focused local proof does not establish actual-ledger/API/confinement parity.',
     },
     reuseSites: [
       {
@@ -366,13 +376,23 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
         anchors: ["name: 'capability:computer'", 'resolveBoundDisplay'],
         note: 'Existing sandbox-desktop action and observation boundary.',
       },
+      {
+        path: 'packages/operator-core/lib/agent-tools/capability/browser-session.ts',
+        anchors: ['launchBrowserProcess', 'browserScope', 'closeBrowserSession', 'fetchWithCapabilityPolicy'],
+        note: 'Playwright lifecycle reuses execution sandbox, egress policy, and task ledger authority.',
+      },
+      {
+        path: 'packages/operator-core/lib/agent-tools/capability/browser-session.e2e.test.ts',
+        anchors: ['real Chromium and HTTP', 'ledger adapter mocked'],
+        note: 'Canonical real Chromium/HTTP proof with a mocked ledger; actual ledger and confinement acceptance remain separate.',
+      },
     ],
     gaps: [
       {
         id: 'browser-provider-contract',
         kind: 'unsupported',
         description:
-          'A managed browser/DOM provider with explicit auth, egress, output, and session-lifetime rules is not yet accepted.',
+          'The managed browser/DOM implementation and focused local tests exist; process-owner routing and actual-ledger/API, confinement, and unplanned host-restart cleanup are not yet accepted.',
         owningPlanItems: ['P-018', 'P-020', 'P-015'],
         falsifier:
           'A real-client test proves browser navigation/DOM work without conflating it with raw HTTP or sandbox pixels.',
