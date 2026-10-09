@@ -296,6 +296,12 @@ describe('R-5 — offline recovery is a RECORDED deliberate exclusion, not unbui
     (entry) => entry.family === 'memory-checkpoint-resume-rewind',
   );
 
+  const assertPermanentExclusion = (reason: string) => {
+    expect(reason).toContain('D-010');
+    expect(reason).toMatch(/permanent(?:ly)? (?:documented exclusion|excludes offline recovery)/i);
+    expect(reason).not.toMatch(/(?:pending|todo|unbuilt) (?:offline )?recovery/i);
+  };
+
   it('the shipped contract records the exclusion and cites D-010 plus its D-007/D-008 root', () => {
     expect(
       recoveryFamily,
@@ -327,8 +333,15 @@ describe('R-5 — offline recovery is a RECORDED deliberate exclusion, not unbui
     expect(exclusion?.falsifier ?? '').toMatch(/supersede D-007\/D-008/i);
 
     // ...and the family-level reason must not describe it as pending work.
-    expect(recoveryFamily?.cutoverReason).toContain('D-010');
-    expect(recoveryFamily?.cutoverReason).toMatch(/permanent documented exclusion/i);
+    assertPermanentExclusion(recoveryFamily?.cutoverReason ?? '');
+    expect(exclusion?.description).toContain('dropped its owning item P-004');
+  });
+
+  it('rejects pending recovery work and an exclusion without recorded decision authority', () => {
+    expect(() => assertPermanentExclusion('D-010: pending offline recovery implementation')).toThrow();
+    expect(() => assertPermanentExclusion('permanently excludes offline recovery')).toThrow();
+    expect(() => assertPermanentExclusion('D-010 permanent documented exclusion; pending recovery')).toThrow();
+    expect(() => assertPermanentExclusion(recoveryFamily!.cutoverReason)).not.toThrow();
   });
 
   it('POSITIVE CONTROL: other gap kinds still exist, so the unsupported-kind assertion discriminates', () => {
