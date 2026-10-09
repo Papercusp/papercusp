@@ -65,6 +65,29 @@ export const ACQUIRE_RECENT_SUCCESS_MS = 60_000;
  */
 export const PG_RESULT_DIAGNOSTIC_LIMIT = 32;
 
+/** At most this many active acquisition tickets are copied into a deadline error. */
+export const ACQUIRE_TICKET_DIAGNOSTIC_LIMIT = 8;
+
+export interface AcquireTicketDiagnostic {
+  state: 'waiting' | 'held';
+  /** Time this ticket has spent waiting or holding a connection. */
+  ageMs: number;
+  /** Validated local/proxy request identity, or null when no safe identity exists. */
+  requestId: string | null;
+  /** Source-registered operation name, or null when no safe label exists. */
+  operation: string | null;
+}
+
+export interface AcquireTicketSnapshot {
+  pool: string;
+  capacity: number;
+  /** All active tickets at this seam, including the caller that hit the deadline. */
+  active: number;
+  omitted: number;
+  /** Oldest active tickets first. */
+  tickets: AcquireTicketDiagnostic[];
+}
+
 export interface AcquireSnapshot {
   /** The pool's `buildClient` label, e.g. `org-app` / `org-admin`. */
   pool: string;
@@ -94,6 +117,8 @@ export interface AcquireTicket {
 interface PoolState {
   waiting: Map<number, number>;
   held: Map<number, number>;
+  /** Optional during in-place upgrades of the pinned registry state. */
+  ticketContexts?: Map<number, { requestId: string | null; operation: string | null }>;
   max: number | null;
   totalAcquired: number;
   lastAcquiredAt: number | null;
@@ -116,9 +141,17 @@ const STATE = pinModuleState<RegistryState>('@papercusp/db-org.acquire-registry'
 function poolState(pool: string): PoolState {
   let s = STATE.pools.get(pool);
   if (!s) {
-    s = { waiting: new Map(), held: new Map(), max: null, totalAcquired: 0, lastAcquiredAt: null };
+    s = {
+      waiting: new Map(),
+      held: new Map(),
+      ticketContexts: new Map(),
+      max: null,
+      totalAcquired: 0,
+      lastAcquiredAt: null,
+    };
     STATE.pools.set(pool, s);
   }
+  s.ticketContexts ??= new Map();
   return s;
 }
 
@@ -607,6 +640,14 @@ export function beginAcquire(pool: string): AcquireTicket {
   const s = poolState(pool);
   const id = ++STATE.seq;
   s.waiting.set(id, Date.now());
+  const diagnostic = capturePgDiagnosticContext();
+  const correlation = diagnostic.state === 'linked' ? diagnostic.correlation : undefined;
+  if (correlation?.requestId) {
+    s.ticketContexts?.set(id, {
+      requestId: correlation.requestId,
+      operation: correlation.operation ?? null,
+    });
+  }
   let done = false;
   return {
     acquired(): void {
@@ -621,6 +662,7 @@ export function beginAcquire(pool: string): AcquireTicket {
       done = true;
       s.waiting.delete(id);
       s.held.delete(id);
+      s.ticketContexts?.delete(id);
     },
   };
 }
@@ -662,6 +704,40 @@ export function acquireSnapshot(pool: string): AcquireSnapshot {
     max: s.max,
     totalAcquired: s.totalAcquired,
     lastAcquiredAgoMs: s.lastAcquiredAt === null ? null : Math.max(0, now - s.lastAcquiredAt),
+  };
+}
+
+/**
+ * Copy a small, oldest-first view of active acquisition tickets. Only the
+ * sanitized request/operation labels captured when each ticket opened are
+ * retained; no query text, owner/session IDs, or connection details enter the
+ * snapshot. This remains an in-memory read on the deadline path.
+ */
+export function acquireTicketSnapshot(pool: string): AcquireTicketSnapshot {
+  const s = STATE.pools.get(pool);
+  if (!s) {
+    return { pool, capacity: ACQUIRE_TICKET_DIAGNOSTIC_LIMIT, active: 0, omitted: 0, tickets: [] };
+  }
+  const now = Date.now();
+  const active = [
+    ...Array.from(s.waiting, ([id, startedAt]) => ({ id, state: 'waiting' as const, startedAt })),
+    ...Array.from(s.held, ([id, startedAt]) => ({ id, state: 'held' as const, startedAt })),
+  ].sort((a, b) => a.startedAt - b.startedAt || a.id - b.id);
+  const tickets = active.slice(0, ACQUIRE_TICKET_DIAGNOSTIC_LIMIT).map(({ id, state, startedAt }) => {
+    const context = s.ticketContexts?.get(id);
+    return {
+      state,
+      ageMs: Math.max(0, now - startedAt),
+      requestId: context?.requestId ?? null,
+      operation: context?.operation ?? null,
+    };
+  });
+  return {
+    pool,
+    capacity: ACQUIRE_TICKET_DIAGNOSTIC_LIMIT,
+    active: active.length,
+    omitted: Math.max(0, active.length - tickets.length),
+    tickets,
   };
 }
 
