@@ -31,6 +31,7 @@ export {
   passedFraction,
 } from './state';
 export { createLogger } from './log';
+export { ramTmpRoot } from './tmpfs';
 export { resolvePaths, resolveEnv, resolveAgentCmd, resolveAgentBackend } from './env';
 export { AGENT_BACKENDS } from './types';
 export {
