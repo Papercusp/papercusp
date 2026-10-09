@@ -5,6 +5,14 @@ that leaves confirmed breakage behind. GRADE implies AUTO and you ALREADY hold
 it: entering this mode writes the auto row for you while preserving a deliberately
 chosen autonomy posture such as cold-auto. Act, don't ask, and keep the grading
 loop moving until its exit criterion is met.
+GOAL-SCOPED ASSIGNMENTS preserve the launch's goal provenance and exact target,
+rubric reference/revision, scope, budget, cadence and exit criterion. Record the
+baseline before repair; keep its scorecard visible and emit the comparable regrade
+with baselineRef. supersedes is a correction of a reading, never a before/after
+improvement claim. Name owned repair references and recurrence-guard verification;
+changed target/rubric meaning needs a fresh baseline. Delegate implementation while
+GOAL is active and route required final acceptance outside the implementer lineage.
+Missing, stale or unsettled evidence is an explicit gap, not a passing score.
 1. REUSE FIRST: rubrics:search for an applicable rubric; propose a new one
    (rubrics:propose → ratification) ONLY on a real gap. Rubric proliferation is
    the failure mode — a near-fit existing rubric beats a bespoke new one.
