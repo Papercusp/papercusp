@@ -124,7 +124,7 @@ describe('required scoped native process boundary', () => {
   });
   it('preserves the installed package location when PATH names a symlink', async () => {
     const f = fixture(); const bin = join(f.cwd, 'installed', 'bin'); mkdirSync(bin, { recursive: true });
-    const real = join(bin, 'codex.js'); const alias = join(f.cwd, 'codex');
+    const real = join(bin, 'codex.js'); const alias = join(f.cwd, 'native-codex');
     writeFileSync(real, '#!/usr/bin/env node\n', { mode: 0o700 }); symlinkSync(real, alias);
     try {
       const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
