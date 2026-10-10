@@ -65,6 +65,9 @@ export const ACQUIRE_RECENT_SUCCESS_MS = 60_000;
  */
 export const PG_RESULT_DIAGNOSTIC_LIMIT = 32;
 
+/** Keep recent failures separately so successful query volume cannot erase them. */
+export const PG_FAILURE_DIAGNOSTIC_LIMIT = 16;
+
 /** At most this many active acquisition tickets are copied into a deadline error. */
 export const ACQUIRE_TICKET_DIAGNOSTIC_LIMIT = 8;
 
@@ -125,6 +128,9 @@ interface PoolState {
   /** Optional for in-place upgrade of a PoolState pinned by older live code. */
   pgResults?: Array<PgResultDiagnostic & { objectRefs?: PgDiagnosticObjectRefs }>;
   totalPgResults?: number;
+  /** Failure-only ring is separate from successful-result churn. */
+  pgFailures?: PgResultDiagnostic[];
+  totalPgFailures?: number;
 }
 
 interface RegistryState {
@@ -252,6 +258,8 @@ export interface PgResultDiagnostic {
   preBuildMs: number | null;
   status: 'ok' | 'error';
   errorCode: string | null;
+  /** Added only for terminal errors; inferred from the query/command, not SQL values. */
+  failurePhase?: PgFailurePhase;
   recordedAt: number;
   correlationState: PgDiagnosticCorrelationState;
   correlation?: PgResultDiagnosticCorrelation;
@@ -263,7 +271,20 @@ export interface PgResultDiagnosticSnapshot {
   totalRecorded: number;
   dropped: number;
   results: Array<PgResultDiagnostic & { objectRefs?: PgDiagnosticObjectRefs }>;
+  failureCapacity: number;
+  totalFailures: number;
+  droppedFailures: number;
+  failures: PgResultDiagnostic[];
 }
+
+export type PgFailurePhase =
+  | 'transaction-start'
+  | 'transaction-setup'
+  | 'statement'
+  | 'transaction-commit'
+  | 'transaction-rollback'
+  | 'transaction-control'
+  | 'unknown';
 
 /** Local inspector opt-in only. Dereferencing temporarily keeps the target alive. */
 export interface PgDiagnosticObjectRefs {
@@ -520,6 +541,36 @@ function classifyPgQuery(query: string): string {
   return relation ? `${operation}:${relation}` : operation;
 }
 
+/** Classify only the phase of a failed result; never retain its SQL text. */
+function classifyPgFailurePhase(
+  query: string,
+  queryFamily: string,
+  command: string | null | undefined,
+): PgFailurePhase {
+  const commandToken = safeToken(command, 32);
+  const operation = queryFamily.split(':', 1)[0];
+  if (commandToken === 'begin' || operation === 'begin' || /^start\s+transaction\b/i.test(query.trim())) {
+    return 'transaction-start';
+  }
+  if (commandToken === 'commit' || operation === 'commit' || /^end\b/i.test(query.trim())) {
+    return 'transaction-commit';
+  }
+  if (commandToken === 'rollback' || operation === 'rollback' || /^abort\b/i.test(query.trim())) {
+    return 'transaction-rollback';
+  }
+  if (commandToken === 'savepoint' || commandToken === 'release' || /^savepoint\b|^release\b/i.test(query.trim())) {
+    return 'transaction-control';
+  }
+  const withoutComments = query
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/--[^\r\n]*/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  if (withoutComments.startsWith('select set_config(')) return 'transaction-setup';
+  return query.trim() ? 'statement' : 'unknown';
+}
+
 /**
  * Record one terminal result from postgres-js. All fields are normalized and
  * the retained FIFO is bounded. This function is intentionally synchronous and
@@ -534,6 +585,8 @@ export function recordPgResult(
   const s = poolState(pool);
   const results = (s.pgResults ??= []);
   const correlation = normalizePgDiagnosticContext(input.context);
+  const queryFamily = pgQueryFamily(input.query);
+  const failed = input.status === 'error';
   const diagnostic: PgResultDiagnostic & { objectRefs?: PgDiagnosticObjectRefs } = {
     pool,
     source: { ...source },
@@ -541,7 +594,7 @@ export function recordPgResult(
     queryId: boundedWholeNumber(input.queryId) ?? 0,
     backendPid:
       input.backendPid === null ? null : boundedWholeNumber(input.backendPid, true),
-    queryFamily: pgQueryFamily(input.query),
+    queryFamily,
     command: safeToken(input.command, 32),
     rowCount: boundedWholeNumber(input.rowCount) ?? 0,
     wireBytes: boundedWholeNumber(input.wireBytes) ?? 0,
@@ -553,8 +606,9 @@ export function recordPgResult(
       input.preBuildMs === null || input.preBuildMs === undefined
         ? null
         : boundedWholeNumber(input.preBuildMs, true),
-    status: input.status === 'error' ? 'error' : 'ok',
+    status: failed ? 'error' : 'ok',
     errorCode: safeToken(input.errorCode, 16),
+    ...(failed ? { failurePhase: classifyPgFailurePhase(input.query, queryFamily, input.command) } : {}),
     recordedAt: Date.now(),
     correlationState: correlation.state,
     ...(correlation.correlation ? { correlation: correlation.correlation } : {}),
@@ -565,6 +619,14 @@ export function recordPgResult(
   s.totalPgResults = (s.totalPgResults ?? 0) + 1;
   if (results.length > PG_RESULT_DIAGNOSTIC_LIMIT) {
     results.splice(0, results.length - PG_RESULT_DIAGNOSTIC_LIMIT);
+  }
+  if (failed) {
+    const failures = (s.pgFailures ??= []);
+    failures.push(diagnostic);
+    s.totalPgFailures = (s.totalPgFailures ?? 0) + 1;
+    if (failures.length > PG_FAILURE_DIAGNOSTIC_LIMIT) {
+      failures.splice(0, failures.length - PG_FAILURE_DIAGNOSTIC_LIMIT);
+    }
   }
 }
 
@@ -601,6 +663,9 @@ export function pgResultDiagnosticSnapshot(
   const all = s?.pgResults ?? [];
   const totalRecorded = s?.totalPgResults ?? 0;
   const appliedLimit = Math.max(0, Math.min(PG_RESULT_DIAGNOSTIC_LIMIT, Math.floor(limit)));
+  const allFailures = s?.pgFailures ?? [];
+  const totalFailures = s?.totalPgFailures ?? 0;
+  const appliedFailureLimit = Math.min(PG_FAILURE_DIAGNOSTIC_LIMIT, appliedLimit);
   const results =
     appliedLimit === 0
       ? []
@@ -610,12 +675,24 @@ export function pgResultDiagnosticSnapshot(
           ...(item.correlation ? { correlation: { ...item.correlation } } : {}),
           ...(options.includeObjectRefs && objectRefs ? { objectRefs: { ...objectRefs } } : {}),
         }));
+  const failures =
+    appliedFailureLimit === 0
+      ? []
+      : allFailures.slice(-appliedFailureLimit).map((item) => ({
+          ...item,
+          source: { ...item.source },
+          ...(item.correlation ? { correlation: { ...item.correlation } } : {}),
+        }));
   return {
     pool,
     capacity: PG_RESULT_DIAGNOSTIC_LIMIT,
     totalRecorded,
     dropped: Math.max(0, totalRecorded - all.length),
     results,
+    failureCapacity: PG_FAILURE_DIAGNOSTIC_LIMIT,
+    totalFailures,
+    droppedFailures: Math.max(0, totalFailures - allFailures.length),
+    failures,
   };
 }
 
