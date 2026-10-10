@@ -22,11 +22,7 @@
     "oauth": {
       "authorizeUrl": "https://app.asana.com/-/oauth_authorize",
       "tokenUrl": "https://app.asana.com/-/oauth_token",
-      "scopes": [
-        "tasks:read", "tasks:write", "stories:read", "stories:write",
-        "projects:read", "projects:write", "users:read", "workspaces:read", "tags:read", "teams:read",
-        "webhooks:read", "webhooks:write", "webhooks:delete"
-      ],
+      "scopes": ["default"],
       "clientRegistrationRef": "asana",
       "identity": {
         "url": "https://app.asana.com/api/1.0/users/me?opt_fields=name",
