@@ -43,7 +43,7 @@ function loopbackEndpoint(value) {
   return `${u.hostname}:${u.port || '80'}`;
 }
 
-function scopedRuntimeReadPaths(command, env) {
+function scopedRuntimeBinding(command, env) {
   const resolveExecutable = name => {
     const path = isAbsolute(name) ? name : (env.PATH ?? '').split(sep === '/' ? ':' : ';')
       .filter(Boolean).map(p => join(p, name)).find(existsSync);
@@ -57,7 +57,8 @@ function scopedRuntimeReadPaths(command, env) {
   const runtime = ['codex', 'codex.js'].includes(basename(executable.real)) &&
     basename(dirname(executable.real)) === 'bin' ? dirname(dirname(executable.real)) : executable.real;
   const node = resolveExecutable('node');
-  return [...new Set([executable.path, executable.real, runtime, node.path, node.real])];
+  return { command: executable.real,
+    readPaths: [...new Set([executable.path, executable.real, runtime, node.path, node.real])] };
 }
 
 function scopedSandboxReadPaths(bin) {
@@ -119,7 +120,8 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
         current.baseURL !== route.baseURL || current.token !== route.token ||
         loopbackEndpoint(options.env.PAPERCUSP_OPERATOR_URL) !== operatorEndpoint)
       throw new Error('Scoped native sandbox binding changed before spawn');
-    const observedRuntimePaths = scopedRuntimeReadPaths(command, env);
+    const runtime = scopedRuntimeBinding(command, env);
+    const observedRuntimePaths = runtime.readPaths;
     if (runtimePaths && JSON.stringify(runtimePaths) !== JSON.stringify(observedRuntimePaths))
       throw new Error('Scoped native executable binding changed before spawn');
     const observedFingerprint = scopedExecutableFingerprint([...observedRuntimePaths, bin, bwrap]);
@@ -151,7 +153,9 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
         ...runtimePaths, ...scopedSandboxReadPaths(bin)];
       writeFileSync(settingsPath, JSON.stringify(policy), { mode: 0o600 });
     }
-    const wrapped = wrapProcessWithSrt(command, argv, { srtBin: bin, settingsPath });
+    // A file bind can dereference an executable symlink. Launch its real path
+    // so Node's import.meta.url/createRequire keep the installed package root.
+    const wrapped = wrapProcessWithSrt(runtime.command, argv, { srtBin: bin, settingsPath });
     // SRT always adds /tmp/claude and HOME debug directories to write grants.
     // Give its host-side launcher a private view of those defaults too, before
     // its existing network/PID/seccomp boundary runs. Otherwise a write grant

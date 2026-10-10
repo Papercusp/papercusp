@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
@@ -42,7 +42,7 @@ describe('required scoped native process boundary', () => {
         expect(statSync(path).mode & 0o777).toBe(0o600);
         expect(JSON.stringify(policy)).not.toContain(route.token);
         expect(result.args[settingsIndex + 3]).toContain("no_proxy='' NO_PROXY=''");
-        expect(result.args[settingsIndex + 3]).toContain(`exec '/bin/sh' ${argv.map(a => `'${a}'`).join(' ')}`);
+        expect(result.args[settingsIndex + 3]).toContain(`exec '${realpathSync('/bin/sh')}' ${argv.map(a => `'${a}'`).join(' ')}`);
       }
     } finally { rmSync(f.cwd, { recursive: true, force: true }); if (policyDir) rmSync(policyDir, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
   });
@@ -120,6 +120,18 @@ describe('required scoped native process boundary', () => {
       writeFileSync(executable, '#!/bin/sh\nexit 1\n');
       expect(() => spawn(executable, ['resume'], f, realSpawn)).toThrow(/executable contents changed/);
       expect(calls).toBe(1);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); }
+  });
+  it('preserves the installed package location when PATH names a symlink', async () => {
+    const f = fixture(); const bin = join(f.cwd, 'installed', 'bin'); mkdirSync(bin, { recursive: true });
+    const real = join(bin, 'codex.js'); const alias = join(f.cwd, 'codex');
+    writeFileSync(real, '#!/usr/bin/env node\n', { mode: 0o700 }); symlinkSync(real, alias);
+    try {
+      const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
+      await spawn(alias, ['--version'], f, (_command, args) => {
+        expect(args[args.indexOf('-c') + 1]).toContain(`exec '${real}' '--version'`);
+        return Promise.resolve('done');
+      });
     } finally { rmSync(f.cwd, { recursive: true, force: true }); }
   });
   it('does not reallow a sibling directory that merely shares a denied prefix', () => {
