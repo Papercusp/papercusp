@@ -173,6 +173,9 @@ export interface PgResultDiagnosticInput {
   preBuildMs?: number | null;
   status: 'ok' | 'error';
   errorCode?: string | null;
+  /** Bounded PostgreSQL error labels only; the server message is never retained. */
+  errorClass?: string | null;
+  serverRoutine?: string | null;
   /** Opaque to postgres.js; sanitized both at capture and retention. */
   context?: unknown;
   /** Exact fulfilled postgres-js object; consumed synchronously into a WeakRef only. */
@@ -258,6 +261,8 @@ export interface PgResultDiagnostic {
   preBuildMs: number | null;
   status: 'ok' | 'error';
   errorCode: string | null;
+  errorClass: string | null;
+  serverRoutine: string | null;
   /** Added only for terminal errors; inferred from the query/command, not SQL values. */
   failurePhase?: PgFailurePhase;
   recordedAt: number;
@@ -302,6 +307,13 @@ function safeToken(value: string | null | undefined, max: number): string | null
   if (!value) return null;
   const token = value.toLowerCase().replace(/[^a-z0-9_.-]+/g, '').slice(0, max);
   return token || null;
+}
+
+/** Keep only source-independent identifier labels; reject mixed prose entirely. */
+function safeDiagnosticIdentifier(value: string | null | undefined, max: number): string | null {
+  if (typeof value !== 'string' || value.length > max) return null;
+  const identifier = value.trim();
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier) ? identifier : null;
 }
 
 function sanitizePgCorrelation(
@@ -608,7 +620,11 @@ export function recordPgResult(
         : boundedWholeNumber(input.preBuildMs, true),
     status: failed ? 'error' : 'ok',
     errorCode: safeToken(input.errorCode, 16),
-    ...(failed ? { failurePhase: classifyPgFailurePhase(input.query, queryFamily, input.command) } : {}),
+    ...(failed ? {
+      failurePhase: classifyPgFailurePhase(input.query, queryFamily, input.command),
+      errorClass: safeDiagnosticIdentifier(input.errorClass, 80),
+      serverRoutine: safeDiagnosticIdentifier(input.serverRoutine, 120),
+    } : {}),
     recordedAt: Date.now(),
     correlationState: correlation.state,
     ...(correlation.correlation ? { correlation: correlation.correlation } : {}),

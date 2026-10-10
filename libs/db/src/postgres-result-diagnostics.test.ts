@@ -544,8 +544,11 @@ describe('postgres.js terminal result diagnostics patch', () => {
       functionSource(connection, 'reportQueryResult'),
       (value) => seen.push(value),
     );
-    report({ code: '42P01' });
-    expect(seen[0]).toMatchObject({ status: 'error', errorCode: '42P01', queryId: 23 });
+    report({ code: '42P01', name: 'PostgresError', routine: 'ExecSimpleQuery', message: 'do-not-retain-error-message' });
+    expect(seen[0]).toMatchObject({
+      status: 'error', errorCode: '42P01', errorClass: 'PostgresError', serverRoutine: 'ExecSimpleQuery', queryId: 23,
+    });
+    expect(JSON.stringify(seen)).not.toContain('do-not-retain-error-message');
 
     const throwing = instantiateReporter(
       functionSource(connection, 'reportQueryResult'),
@@ -764,6 +767,31 @@ describe('failure-only PostgreSQL result diagnostics', () => {
     );
     expect(snapshot.results.every((row) => !('failurePhase' in row))).toBe(true);
     expect(JSON.stringify(snapshot)).not.toContain('do-not-retain-activity');
+  });
+
+  it('retains only identifier-shaped PostgreSQL error class and routine labels', () => {
+    const registry = registryFromSource();
+    registry.recordPgResult('failure-label-fixture', {
+      ...completedInput,
+      status: 'error',
+      errorClass: 'PostgresError',
+      serverRoutine: 'AfterTriggerEndSubXact',
+    });
+    registry.recordPgResult('failure-label-fixture', {
+      ...completedInput,
+      queryId: 2,
+      status: 'error',
+      errorClass: 'PostgresError secret=do-not-retain',
+      serverRoutine: 'AfterTriggerEndSubXact detail',
+    });
+
+    const snapshot = registry.pgResultDiagnosticSnapshot('failure-label-fixture');
+    expect(snapshot.failures[0]).toMatchObject({
+      errorClass: 'PostgresError',
+      serverRoutine: 'AfterTriggerEndSubXact',
+    });
+    expect(snapshot.failures[1]).toMatchObject({ errorClass: null, serverRoutine: null });
+    expect(JSON.stringify(snapshot)).not.toContain('do-not-retain');
   });
 
   it('bounds failure retention independently and reports evictions', () => {
