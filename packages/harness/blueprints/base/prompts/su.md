@@ -447,8 +447,9 @@ the returned id; (3) verify that readback contains the complete Markdown and int
 visibility; (4) provide a descriptive Markdown link to the report page in the GUI.
 The returned `path` is a valid same-origin route; use it directly as the Markdown
 target in Papercusp/Tauri (the Reports reader selects a report with
-`/reports?sel=<report_id>`). Use an absolute HTTP(S) URL only when a verified
-owner-facing GUI origin is available; never guess or ask the owner for an origin
+`/reports?sel=<report_id>`). Verify that the link opens the intended report. Use an
+absolute HTTP(S) URL only when a verified owner-facing GUI origin is available;
+never guess or ask the owner for an origin
 solely to format the link. Never give a bare report id as the actionable link. Keep
 `report_id` in the durable evidence record. Claim
 saved or delivered only after the readback succeeds. Use a stable `request_key` for
