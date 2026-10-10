@@ -253,3 +253,50 @@ describe('P-008 matrix gate — precedence and blast radius', () => {
     }
   });
 });
+
+describe('P-020 replacement dispositions at the policy boundary', () => {
+  // Exercise the real declaration/report/policy composition with fixture observations.
+  // This does not certify an installed client's native controls or model journey.
+  it.each(['claude', 'codex', 'omp'] as const)(
+    '%s preserves an unsupported boundary beside a supported control without enabling cutover',
+    (client) => {
+      const scenarios = declareRealClientMatrix(undefined, {
+        purpose: 'replacement-acceptance', clients: [client], surfaces: ['launch'],
+      }).filter((scenario) => scenario.family === FAMILY &&
+        (scenario.kind === 'launch' || scenario.kind === 'unsupported-controls'));
+      expect(scenarios).toHaveLength(2);
+      const unsupportedReason = 'Fixture client control is unavailable; retain its native interface.';
+      const results: RealClientScenarioResult[] = scenarios.map((scenario) => ({
+        scenarioId: scenario.id,
+        clientVersion: VERSION,
+        observedAt: FRESH,
+        evidenceRef: `fixture:${scenario.id}`,
+        outcome: scenario.kind === 'unsupported-controls' ? 'unsupported' : 'pass',
+        ...(scenario.kind === 'unsupported-controls' ? { unsupportedReason } : {}),
+      }));
+      const report = realClientMatrixReport({ scenarios, results,
+        clientVersions: { [client]: VERSION }, now: NOW });
+      expect(report.rows.find((row) => row.scenario.kind === 'launch')?.status).toBe('passed');
+      expect(report.rows.find((row) => row.scenario.kind === 'unsupported-controls'))
+        .toMatchObject({ status: 'unsupported', detail: unsupportedReason });
+      expect(report.passedCount).toBe(1);
+      expect(report.unsupportedCount).toBe(1);
+      expect(report.allDeclaredScenariosPassed).toBe(false);
+      expect(report.entries).toEqual([]);
+      for (const surface of ['launch', 'resume', 'wake'] as const) {
+        const decision = resolveCapabilityPolicy({ client, surface, matrix: report.entries });
+        expect(decision.applied.map((entry) => entry.id)).not.toContain(RESTRICTION);
+        expect(decision.deniedNames).not.toContain('Bash');
+      }
+      const unknownBoundary = realClientMatrixReport({ scenarios,
+        results: results.map((result) => result.outcome === 'unsupported'
+          ? { ...result, unsupportedReason: '' } : result),
+        clientVersions: { [client]: VERSION }, now: NOW });
+      expect(unknownBoundary.rows.find((row) => row.scenario.kind === 'unsupported-controls')?.status)
+        .toBe('failing');
+      expect(unknownBoundary.rows.find((row) => row.scenario.kind === 'launch')?.status).toBe('passed');
+      expect(unknownBoundary.allDeclaredScenariosPassed).toBe(false);
+      expect(unknownBoundary.entries).toEqual([]);
+    },
+  );
+});
