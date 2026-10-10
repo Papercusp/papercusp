@@ -1,7 +1,7 @@
 /** Shared process settings and SRT argv for orchestrated and native PTY spawns.
  * Plain ESM keeps the native launcher independent of the orchestrator's TS loader.
  */
-import { existsSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import { snapshotScopedInferenceGateway, SCOPED_INFERENCE_GATEWAY_ENV } from './codex-gateway-config.ts';
@@ -59,6 +59,19 @@ function scopedRuntimeReadPaths(command, env) {
   return [...new Set([executable.path, executable.real, runtime, node.path, node.real])];
 }
 
+function scopedSandboxReadPaths(bin) {
+  if (!existsSync(bin)) return [bin]; // pure spawn composition may use an injected executable
+  const real = realpathSync(bin);
+  const marker = '/@anthropic-ai/sandbox-runtime/';
+  if (real.includes(marker)) return [bin, real.slice(0, real.indexOf(marker) + marker.length - 1)];
+  // The maintained launcher also supports the small POSIX shim for a globally
+  // installed SRT. Its explicit package path is the authority for seccomp
+  // resources; do not open the surrounding home or global node_modules pool.
+  const source = statSync(real).size < 32768 ? readFileSync(real, 'utf8') : '';
+  const entry = source.match(/\/[^\s"']+\/@anthropic-ai\/sandbox-runtime\/dist\/cli\.js/);
+  return entry ? [bin, real, dirname(dirname(entry[0]))] : [bin, real];
+}
+
 /** Required final-PTY wrapper. The route and policy are captured before the
  * first native spawn, and checked again on every recycle/carry/park resume.
  * Other loopback ports, providers and registries never enter this allowlist.
@@ -74,6 +87,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   const codexHome = env.CODEX_HOME;
   if (env.PAPERCUSP_AGENT !== 'codex' || !isAbsolute(cwd) || !codexHome || !isAbsolute(codexHome))
     throw new Error('Scoped native sandbox requires an isolated Codex home and absolute checkout');
+  if (process.platform !== 'linux') throw new Error('Scoped native read isolation requires the verified Linux mount boundary');
   if (cwd === '/' || codexHome === '/' || [cwd, codexHome].some(p => p === '/dev/shm' || p.startsWith('/dev/shm/')))
     throw new Error('Scoped native checkout/home must survive the private device namespace and cannot grant the filesystem root');
   const operatorEndpoint = loopbackEndpoint(env.PAPERCUSP_OPERATOR_URL);
@@ -82,7 +96,11 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     ? (env.PATH ?? '').split(sep === '/' ? ':' : ';').filter(Boolean).map(p => join(p, 'srt')).find(existsSync)
     : srtBin;
   if (!bin) throw new Error('Scoped native launch requires SRT; refusing unconfined execution');
-  const dir = mkdtempSync(join(tmpdir(), 'papercusp-native-srt-'));
+  const bwrap = (env.PATH ?? process.env.PATH ?? '').split(':').filter(Boolean).map(p => join(p, 'bwrap')).find(existsSync);
+  if (!bwrap) throw new Error('Scoped native launch requires bubblewrap for private default temporary paths');
+  const nativeTmp = join(codexHome, 'tmp');
+  mkdirSync(nativeTmp, { recursive: true, mode: 0o700 });
+  const dir = mkdtempSync(join(codexHome, 'papercusp-native-srt-'));
   const settingsPath = join(dir, 'settings.json');
   let runtimePaths;
   return (command, argv, options, realSpawn) => {
@@ -113,10 +131,18 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
       policy.filesystem.denyRead = [...rootDenies, ...policy.filesystem.denyRead];
       policy.filesystem.allowRead = [cwd, codexHome, '/usr', '/bin', '/sbin', '/lib', '/lib64',
         '/etc/ssl', '/etc/ld.so.cache', '/etc/ld.so.conf', '/etc/ld.so.conf.d', '/etc/nsswitch.conf',
-        '/etc/hosts', '/etc/resolv.conf', '/etc/passwd', '/etc/group', '/etc/localtime', ...runtimePaths];
+        '/etc/hosts', '/etc/resolv.conf', '/etc/passwd', '/etc/group', '/etc/localtime',
+        ...runtimePaths, ...scopedSandboxReadPaths(bin)];
       writeFileSync(settingsPath, JSON.stringify(policy), { mode: 0o600 });
     }
     const wrapped = wrapProcessWithSrt(command, argv, { srtBin: bin, settingsPath });
-    return realSpawn(wrapped.command, wrapped.argv, options);
+    // SRT always adds /tmp/claude and HOME debug directories to write grants.
+    // Give its host-side launcher a private view of those defaults too, before
+    // its existing network/PID/seccomp boundary runs. Otherwise a write grant
+    // re-binds shared host context through an otherwise complete read deny.
+    const mountArgs = ['--die-with-parent', '--bind', '/', '/', '--dev', '/dev', '--bind', nativeTmp, '/tmp/claude'];
+    if (existsSync('/private/tmp/claude')) mountArgs.push('--bind', nativeTmp, '/private/tmp/claude');
+    return realSpawn(bwrap, [...mountArgs, '--', wrapped.command, ...wrapped.argv],
+      { ...options, env: { ...options.env, HOME: codexHome, CLAUDE_CODE_TMPDIR: nativeTmp } });
   };
 }

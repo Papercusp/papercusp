@@ -1,7 +1,7 @@
 import { it, expect } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createScopedNativeSandboxSpawn } from './fleet-srt-spawn.mjs';
@@ -29,11 +29,14 @@ it('isolates assigned corpus from sibling-arm solutions and hidden grader files'
   const cwd = mkdtempSync(join(physicalTmp, 'native-context-assigned-'));
   const sibling = mkdtempSync(join(physicalTmp, 'native-context-other-arm-'));
   const homeCorpus = mkdtempSync(join(homedir(), '.native-context-other-arm-'));
+  mkdirSync(join(physicalTmp, 'claude'), { recursive: true });
+  const sharedTmp = mkdtempSync(join(physicalTmp, 'claude', 'native-context-other-arm-'));
   const codexHome = join(cwd, 'codex-home'); mkdirSync(codexHome);
   const own = join(cwd, 'permitted-corpus.txt'); writeFileSync(own, 'PERMITTED_INITIAL_CORPUS');
   const secrets = [join(sibling, 'other-arm-solution.txt'), join(sibling, 'hidden-grader-answer.txt'),
-    join(homeCorpus, 'prior-memory.txt')];
+    join(homeCorpus, 'prior-memory.txt'), join(sharedTmp, 'prior-output.txt')];
   for (const path of secrets) writeFileSync(path, 'FORBIDDEN_CONTEXT_SENTINEL');
+  const alias = join(cwd, 'sibling-link'); symlinkSync(secrets[0], alias);
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: homedir(),
     PAPERCUSP_AGENT: 'codex', CODEX_HOME: codexHome, PAPERCUSP_OPERATOR_URL: 'http://127.0.0.1:32002',
     PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify({ baseURL: 'http://127.0.0.1:32001', token: 'a'.repeat(64) }) };
@@ -42,10 +45,10 @@ it('isolates assigned corpus from sibling-arm solutions and hidden grader files'
   try {
     const boundary = createScopedNativeSandboxSpawn({ cwd, env })!;
     const sandbox = (script: string) => boundary('/bin/sh', ['-c', script], { cwd, env },
-      (command, args, options) => { policyDir = dirname(args[1]); return run(command, args, options); });
+      (command, args, options) => { policyDir = dirname(args[args.indexOf('-s') + 1]); return run(command, args, options); });
     const allowed = await sandbox(`/bin/cat ${quote(own)} && printf native > ${quote(join(codexHome, 'state'))}`);
     expect(allowed, allowed.stderr).toMatchObject({ code: 0, stdout: 'PERMITTED_INITIAL_CORPUS' });
-    for (const path of secrets) {
+    for (const path of [...secrets, alias]) {
       // Positive control distinguishes confinement from a missing fixture.
       expect(await run('/bin/cat', [path], { cwd, env })).toMatchObject({ code: 0, stdout: 'FORBIDDEN_CONTEXT_SENTINEL' });
       const denied = await sandbox(`/bin/cat ${quote(path)}`);
@@ -53,7 +56,7 @@ it('isolates assigned corpus from sibling-arm solutions and hidden grader files'
       expect(denied.code, path).not.toBe(0);
     }
   } finally {
-    for (const path of [cwd, sibling, homeCorpus, policyDir]) if (path) rmSync(path, { recursive: true, force: true });
+    for (const path of [cwd, sibling, homeCorpus, sharedTmp, policyDir]) if (path) rmSync(path, { recursive: true, force: true });
   }
 }, 45_000);
 
@@ -76,7 +79,7 @@ it('physically permits only assigned ports and rejects raw sockets, policy write
     expect(control).toMatchObject({ code: 0, stdout: 'endpoint-2' }); expect(calls[2]).toBe(1);
     const boundary = createScopedNativeSandboxSpawn({ cwd, env })!;
     const spawnThroughBoundary = (script: string) => boundary('/bin/sh', ['-c', script], { cwd, env },
-      (command, args, options) => { policyDir = dirname(args[1]); return run(command, args, options); });
+      (command, args, options) => { policyDir = dirname(args[args.indexOf('-s') + 1]); return run(command, args, options); });
     const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
     const reach = (port: number, extra = '') => `/usr/bin/curl --silent --show-error --fail --max-time 3 ${extra} http://127.0.0.1:${port}`;
     const allowed = await spawnThroughBoundary(`${reach(gateway)} && printf '\\n' && ${reach(operator)} && printf '\\n' && printf writable > ${quote(join(codexHome, 'native-state'))}`);

@@ -21,9 +21,13 @@ describe('required scoped native process boundary', () => {
       const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
       for (const argv of [['first'], ['resume', 'native-2'], ['resume', 'native-3']]) {
         const result = spawn('/bin/sh', argv, f, (command, args, options) => ({ command, args, options }));
-        expect(result.command).toBe('/usr/bin/srt');
-        expect(result.args.slice(0, 3)).toEqual(['-s', result.args[1], '-c']);
-        const path = result.args[1]; policyDir = dirname(path);
+        expect(result.command).toMatch(/\/bwrap$/);
+        const settingsIndex = result.args.indexOf('-s');
+        expect(result.args.slice(settingsIndex, settingsIndex + 3)).toEqual(['-s', result.args[settingsIndex + 1], '-c']);
+        const path = result.args[settingsIndex + 1]; policyDir = dirname(path);
+        expect(result.args).toContain('/tmp/claude');
+        expect(result.options.env.HOME).toBe(f.env.CODEX_HOME);
+        expect(result.options.env.CLAUDE_CODE_TMPDIR).toBe(join(f.env.CODEX_HOME, 'tmp'));
         const policy = JSON.parse(readFileSync(path, 'utf8'));
         expect(policy.network).toEqual({ allowedDomains: ['127.0.0.1:32001', '127.0.0.1:9071'], deniedDomains: [] });
         expect(policy.filesystem.denyWrite).toContain(policyDir);
@@ -35,8 +39,8 @@ describe('required scoped native process boundary', () => {
         expect(policy.filesystem.allowRead).not.toContain(homedir());
         expect(statSync(path).mode & 0o777).toBe(0o600);
         expect(JSON.stringify(policy)).not.toContain(route.token);
-        expect(result.args[3]).toContain("no_proxy='' NO_PROXY=''");
-        expect(result.args[3]).toContain(`exec '/bin/sh' ${argv.map(a => `'${a}'`).join(' ')}`);
+        expect(result.args[settingsIndex + 3]).toContain("no_proxy='' NO_PROXY=''");
+        expect(result.args[settingsIndex + 3]).toContain(`exec '/bin/sh' ${argv.map(a => `'${a}'`).join(' ')}`);
       }
     } finally { rmSync(f.cwd, { recursive: true, force: true }); if (policyDir) rmSync(policyDir, { recursive: true, force: true }); }
   });
@@ -60,7 +64,7 @@ describe('required scoped native process boundary', () => {
   });
   it('rejects changed carry route without invoking the spawn', () => {
     const f = fixture(); let path: string | undefined; let calls = 0;
-    const call = (command: string, argv: string[]) => { calls++; path = argv[1]; return command; };
+    const call = (command: string, argv: string[]) => { calls++; path = argv[argv.indexOf('-s') + 1]; return command; };
     try {
       const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
       spawn('/bin/sh', ['first'], f, call);
