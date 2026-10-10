@@ -36,6 +36,24 @@
  */
 export const CODEX_GATEWAY_PROVIDER_ID = 'papercusp-codex-gateway';
 
+/** Host-issued per-process route; independent launches strip this envelope. */
+export const SCOPED_INFERENCE_GATEWAY_ENV = 'PAPERCUSP_SCOPED_INFERENCE_GATEWAY';
+export interface ScopedInferenceGateway { baseURL: string; token: string }
+
+/** Private native controllers bind only loopback listeners and high-entropy
+ * credentials. An invalid explicit route must never fall back to the pool. */
+export function snapshotScopedInferenceGateway(value: unknown): Readonly<ScopedInferenceGateway> {
+  const route = value as ScopedInferenceGateway | null;
+  if (!route || typeof route.baseURL !== 'string' || typeof route.token !== 'string' ||
+      !/^[A-Za-z0-9_-]{32,512}$/.test(route.token)) throw new Error('Invalid scoped inference gateway');
+  let url: URL;
+  try { url = new URL(route.baseURL); } catch { throw new Error('Invalid scoped inference gateway'); }
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || !url.port ||
+      url.username || url.password || url.search || url.hash || url.pathname !== '/' ||
+      route.baseURL !== url.origin) throw new Error('Invalid scoped inference gateway');
+  return Object.freeze({ baseURL: url.origin, token: route.token });
+}
+
 /** Escape a value for a TOML double-quoted basic string. */
 export function tomlEscape(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -48,6 +66,8 @@ export function codexGatewayPort(): number {
 }
 
 export interface CodexGatewayConfigOpts {
+  /** Exact private controller route, independent of process-wide pool defaults. */
+  gateway?: ScopedInferenceGateway;
   /** Gateway attribution/owner header (x-papercusp-owner) — the spawn/session owner id. */
   ownerId?: string | null;
   /** Admission-tier label (x-papercusp-priority) — the spawn role, when the tier flag resolved one. */
@@ -107,12 +127,13 @@ export function codexGatewayConfigToml(
   accountId?: string | null,
   opts: CodexGatewayConfigOpts = {},
 ): { root: string[]; tables: string[] } {
+  const scoped = opts.gateway === undefined ? null : snapshotScopedInferenceGateway(opts.gateway);
   const pinnedAccount = accountId?.trim();
   // WI-3645: a pin gets routing config as before; a caller that passes NO pin but sets
   // `gatewayOn` (the explicit-auto / unpinned case) ALSO gets routing config, just without the
   // account-pin header — the gateway's own codex fallback auto-selects when the header is
   // absent. Only a caller that passes neither (gateway fully off) gets no config.
-  if (!pinnedAccount && !opts.gatewayOn) return { root: [], tables: [] };
+  if (!pinnedAccount && !opts.gatewayOn && !scoped) return { root: [], tables: [] };
   const providerId = CODEX_GATEWAY_PROVIDER_ID;
   // `/v1/models` is shared by the Claude and Codex adapters. Inference is
   // unambiguous from `/v1/responses`, but the native model-catalog client does
@@ -125,7 +146,7 @@ export function codexGatewayConfigToml(
   if (ownerId) headers['x-papercusp-owner'] = ownerId;
   const priority = opts.priority?.trim();
   if (priority) headers['x-papercusp-priority'] = priority;
-  const gatewayBaseUrl = `http://127.0.0.1:${codexGatewayPort()}`;
+  const gatewayBaseUrl = scoped?.baseURL ?? `http://127.0.0.1:${codexGatewayPort()}`;
   const headerEntries = Object.entries(headers);
   const httpHeadersLine = headerEntries.length
     ? [`http_headers = { ${headerEntries.map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`).join(', ')} }`]
@@ -151,7 +172,7 @@ export function codexGatewayConfigToml(
       'wire_api = "responses"',
       // The gateway owns upstream credentials, not the ambient default ChatGPT login.
       'requires_openai_auth = false',
-      'experimental_bearer_token = "papercusp-gateway"',
+      `experimental_bearer_token = "${scoped?.token ?? 'papercusp-gateway'}"`,
       ...httpHeadersLine,
       '# END PAPERCUSP_CODEX_GATEWAY_PROVIDER',
       '',

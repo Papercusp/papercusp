@@ -46,4 +46,31 @@ describe('codexGatewayConfigToml model discovery', () => {
   it('does not override model discovery for the default account that bypasses the gateway', () => {
     expect(codexGatewayConfigToml(null)).toEqual({ root: [], tables: [] });
   });
+
+  it('isolates simultaneous private routes from the ambient gateway and from each other', () => {
+    process.env.PAPERCUSP_GATEWAY_PORT = '9876';
+    const a = { baseURL: 'http://127.0.0.1:32101', token: 'a'.repeat(64) };
+    const b = { baseURL: 'http://127.0.0.1:32102', token: 'b'.repeat(64) };
+    const render = (gateway: typeof a) => codexGatewayConfigToml(null, { gateway }).tables.join('\n');
+    const first = render(a), second = render(b);
+    a.baseURL = b.baseURL;
+    expect(first).toContain('http://127.0.0.1:32101/v1/models');
+    expect(first).toContain(`experimental_bearer_token = "${'a'.repeat(64)}"`);
+    expect(first).not.toContain('32102');
+    expect(second).toContain('http://127.0.0.1:32102/v1');
+    expect(second).not.toContain('9876');
+    expect(process.env.PAPERCUSP_GATEWAY_PORT).toBe('9876');
+  });
+
+  it.each(['https://127.0.0.1:32101', 'http://localhost:32101', 'http://127.0.0.1',
+    'http://127.0.0.1:32101/v1', 'http://127.0.0.1:32101?x=1', 'http://user@127.0.0.1:32101'])
+  ('refuses invalid explicit routes without default fallback: %s', baseURL => {
+    expect(() => codexGatewayConfigToml(null, { gateway: { baseURL, token: 'a'.repeat(64) } })).toThrow(/scoped/);
+  });
+
+  it('refuses a weak or injectable private token', () => {
+    for (const token of ['papercusp-gateway', 'a'.repeat(64) + '\n', 'a'.repeat(64) + '"']) {
+      expect(() => codexGatewayConfigToml('pool', { gateway: { baseURL: 'http://127.0.0.1:32101', token } })).toThrow(/scoped/);
+    }
+  });
 });
