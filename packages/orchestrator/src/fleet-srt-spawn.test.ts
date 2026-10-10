@@ -150,6 +150,17 @@ describe('required scoped native process boundary', () => {
       expect(existsSync(privateTmp!)).toBe(false);
     } finally { rmSync(f.cwd, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
   });
+  it('cleans mounts when a child already exited before async registration returned', async () => {
+    const f = fixture(); let privateTmp: string | undefined;
+    const child = Object.assign(new EventEmitter(), { exitCode: 1, signalCode: null });
+    try {
+      const boundary = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
+      await boundary('/bin/sh', [], f, async (_command, _args, options) => {
+        privateTmp = options.env.TMPDIR; return { child, taskId: 'fast-native-task' };
+      });
+      expect(existsSync(privateTmp!)).toBe(false);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
+  });
   it('preserves the installed package location when PATH names a symlink', async () => {
     const f = fixture(); const bin = join(f.cwd, 'installed', 'bin'); mkdirSync(bin, { recursive: true });
     const real = join(bin, 'codex.js'); const alias = join(f.cwd, 'native-codex');
