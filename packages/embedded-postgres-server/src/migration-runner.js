@@ -24,6 +24,7 @@
 
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n';
 // WI-41781: a fresh-schema replay applies hundreds of migrations while many
@@ -172,10 +173,50 @@ function migrationTransactionPrefix(statementTimeoutMs, bulkApply) {
 // partially-applied file as complete.
 const STATEMENT_BREAKPOINT = /-->\s*statement-breakpoint/g;
 
+// WI-10007383: preserve the ledgered 1422 bytes while making a cold replay's
+// large launch-JSON backfill resumable. Both boot and db:migrate consume this
+// splitter. The immutable fingerprint prevents rewriting any other SQL.
+const SESSION_PROJECTION_BACKFILL_SHA256 =
+  '3e83f0b39921a090bd4eaeb4d67f676d8ab7c739abd81a71a2651a5214bbd34a';
+const SESSION_PROJECTION_BATCH_ROWS = 64;
+const SESSION_PROJECTION_BATCH_TRANSACTIONS = 1024;
+
+function boundedSessionProjectionChunks(ddl, chunks) {
+  if (createHash('sha256').update(ddl).digest('hex') !== SESSION_PROJECTION_BACKFILL_SHA256) return chunks;
+  const backfill = chunks[chunks.length - 1];
+  const updateAt = backfill.indexOf('UPDATE harness_shared.adv_sessions');
+  if (updateAt < 0) throw new Error('Pinned session projection migration is missing its backfill');
+  const preamble = backfill.slice(0, updateAt);
+  const batch = `${preamble}WITH pending_projection AS (
+  SELECT id FROM harness_shared.adv_sessions
+   WHERE launch_harness_projection IS NULL
+   ORDER BY id
+   LIMIT ${SESSION_PROJECTION_BATCH_ROWS}
+   FOR UPDATE
+)
+UPDATE harness_shared.adv_sessions
+   SET launch_harness_projection = launch_harness_projection
+ WHERE id IN (SELECT id FROM pending_projection);`;
+  const completed = `${preamble}DO $projection_backfill_done$
+BEGIN
+  IF EXISTS (SELECT 1 FROM harness_shared.adv_sessions WHERE launch_harness_projection IS NULL) THEN
+    RAISE EXCEPTION 'Session projection backfill remains incomplete; committed batches are retained; rerun to resume';
+  END IF;
+END;
+$projection_backfill_done$;`;
+  // Bound work per attempt as well as per transaction. Larger restored sets
+  // resume on the next attempt; the final guard forbids a premature ledger row.
+  return [
+    ...chunks.slice(0, -1),
+    ...Array.from({ length: SESSION_PROJECTION_BATCH_TRANSACTIONS }, () => batch),
+    completed,
+  ];
+}
+
 /** @param {string} ddl */
 export function migrationTransactionChunks(ddl) {
   if (!ddl.includes('statement-breakpoint')) return [ddl];
-  return ddl
+  const chunks = ddl
     .split(STATEMENT_BREAKPOINT)
     .map((chunk) => chunk.trim())
     // Do not use a repeated group with an optional newline here. A long
@@ -185,6 +226,7 @@ export function migrationTransactionChunks(ddl) {
       const text = line.trim();
       return text.length > 0 && !text.startsWith('--');
     }));
+  return boundedSessionProjectionChunks(ddl, chunks);
 }
 
 const SCHEMA_MIGRATIONS_DDL = `
