@@ -59,6 +59,24 @@ describe('withWorkspace — EI-9279 connect-retry wiring', () => {
     expect(tx).toHaveBeenCalledTimes(1); // workspace GUC remains inside the transaction
   });
 
+  it('applies read-only mode and per-call query bounds before workspace setup', async () => {
+    const tx = vi.fn(async () => []);
+    h.begin.mockImplementation(async (cb: (sql: Sql) => Promise<unknown>) => cb(tx as unknown as Sql));
+
+    await withWorkspace('ws-bounded', async () => 'ok', {
+      readOnly: true,
+      lockTimeoutMs: 1_000,
+      statementTimeoutMs: 2_000,
+    });
+
+    const statements = tx.mock.calls.map(([template]) => Array.isArray(template) ? template.join(' ') : '');
+    expect(statements[0]).toBe('SET TRANSACTION READ ONLY');
+    expect(statements[1]).toContain("set_config('lock_timeout'");
+    expect(statements[1]).toContain("set_config('statement_timeout'");
+    expect(tx.mock.calls[1]?.slice(1)).toEqual(['1000ms', '2000ms']);
+    expect(statements[2]).toContain("set_config('app.workspace_id'");
+  });
+
   it('sets pooled search path and workspace scope in one transaction query', async () => {
     h.pgbouncerEnabled.mockReturnValue(true);
     try {
@@ -176,6 +194,38 @@ describe('withWorkspace — P-022/D-020 acquisition deadline', () => {
       await vi.advanceTimersByTimeAsync(DEFAULT_TX_ACQUIRE_DEADLINE_MS + 50);
       await assertion;
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses a shorter per-call acquisition deadline and does not retry a measured queue timeout', async () => {
+    vi.useFakeTimers();
+    resetAcquireRegistryForTest();
+    recordPoolMax('org-app', 1);
+    const held = beginAcquire('org-app');
+    held.acquired();
+    try {
+      let beginAttempts = 0;
+      h.begin.mockImplementation(() => {
+        beginAttempts++;
+        return new Promise(() => {});
+      });
+
+      const pending = withWorkspace('ws-bounded', async () => 'unreached', {
+        acquireTimeoutMs: 250,
+        acquireRetries: 0,
+      });
+      const assertion = expect(pending).rejects.toMatchObject({
+        name: 'DbCallDeadlineError',
+        deadlineMs: 250,
+        retryable: true,
+      });
+      await vi.advanceTimersByTimeAsync(300);
+      await assertion;
+      expect(beginAttempts).toBe(1);
+    } finally {
+      held.release();
+      resetAcquireRegistryForTest();
       vi.useRealTimers();
     }
   });
