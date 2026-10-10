@@ -352,7 +352,9 @@ async function rest(host, source, method, path, opts) {
     throw syncError('rate-limited', `asana_rate_limited:${retryAfterSeconds}s`, { retryAfterSeconds });
   }
   if (status === 401 || status === 403) {
-    throw syncError('auth', `asana_access_denied:${status}${firstErrorMessage(body) ? `: ${firstErrorMessage(body)}` : ''}`);
+    // Name the endpoint (WI-10008201): a granular-scope token gets 403 "Full permissions are required"
+    // from endpoints no granular scope covers, and without the path nobody can tell which one failed.
+    throw syncError('auth', `asana_access_denied:${status}:${method} ${path}${firstErrorMessage(body) ? `: ${firstErrorMessage(body)}` : ''}`);
   }
   if ((options.allow || []).includes(status) || (status >= 200 && status < 300)) {
     if (status >= 200 && status < 300 && (!body || typeof body !== 'object')) {
