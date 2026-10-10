@@ -186,7 +186,9 @@ function boundedSessionProjectionChunks(ddl, chunks) {
   const backfill = chunks[chunks.length - 1];
   const updateAt = backfill.indexOf('UPDATE harness_shared.adv_sessions');
   if (updateAt < 0) throw new Error('Pinned session projection migration is missing its backfill');
-  const preamble = backfill.slice(0, updateAt);
+  // A reused/cold data directory can be replayed while bootstrap's bulk path
+  // has asynchronous commits enabled. Persist each successful data batch.
+  const preamble = `SET LOCAL synchronous_commit = on;\n${backfill.slice(0, updateAt)}`;
   const batch = `${preamble}WITH pending_projection AS (
   SELECT id FROM harness_shared.adv_sessions
    WHERE launch_harness_projection IS NULL
