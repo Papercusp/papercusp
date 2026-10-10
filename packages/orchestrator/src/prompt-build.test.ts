@@ -47,6 +47,13 @@ test('STATE_PLANE_NOTE — teaches coord:send why envelope object shape', () => 
   assert.match(STATE_PLANE_NOTE, /bare string or array of strings is REFUSED/);
 });
 
+test('STATE_PLANE_NOTE — distinguishes premises ref strings from provenance objects', () => {
+  assert.match(STATE_PLANE_NOTE, /`premises`[^\n]*ARRAY of/);
+  assert.match(STATE_PLANE_NOTE, /ref STRINGS/);
+  assert.match(STATE_PLANE_NOTE, /never `\{ ref, provenance \}` objects/);
+  assert.match(STATE_PLANE_NOTE, /belongs to `youMayNotKnow`/);
+});
+
 test('STATE_PLANE_NOTE — requires coord:send summary as the inbox headline', () => {
   assert.ok(
     STATE_PLANE_NOTE.includes('`summary` is REQUIRED at the top level for every single-message send.'),
