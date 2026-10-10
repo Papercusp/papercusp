@@ -1735,22 +1735,6 @@ export function healSandboxZeroByteManifest(cwd: string, log?: (msg: string) => 
 }
 
 /**
- * Root for fleet agent package-manager caches. The sandbox makes everything
- * outside cwd read-only (allowWrite is cwd + this dir), but npm/pip/cargo write
- * their caches under $HOME (e.g. ~/.npm/_cacache) — so a real `npm install`
- * under the sandbox fails EROFS (verified P-014/D-013: the registry was
- * REACHED, the cache write was denied). Rather than weaken containment by
- * leaving $HOME writable, we add THIS one dedicated dir to `allowWrite` and
- * point each ecosystem's cache env at a per-project subdir of it (see
- * fleetSandboxCacheEnv). Workspace agent spawns keep using those isolated paths
- * even when the OS sandbox is explicitly disabled, so sibling checkouts and
- * /tmp scratch projects do not race the shared ~/.npm content store. NOT under
- * `~/.papercusp` (which is denyRead).
- * Computed from the operator process home so it matches the absolute cache-env
- * paths even when the child gets a per-spawn HOME (resolveSpawnHome).
- */
-
-/**
  * Cache-redirect env for a workspace agent spawn whose project lives at `cwd`.
  * Points npm/yarn/pip/cargo/go + the generic XDG cache at a per-project subdir
  * of FLEET_SANDBOX_CACHE_ROOT (which is allow-listed for writes when the OS
@@ -2116,10 +2100,10 @@ export function buildFleetSrtSettings(opts: {
   return buildProcessSrtSettings({
     cwd: opts.cwd, agentHomes: opts.agentHomes,
     allowedDomains: [
-        ...resolveFleetAllowedDomains(),
-        ...fleetSrtModelDomains(opts.backend),
-        'localhost',
-        '127.0.0.1',
+      ...resolveFleetAllowedDomains(),
+      ...fleetSrtModelDomains(opts.backend),
+      'localhost',
+      '127.0.0.1',
     ],
   });
 }
