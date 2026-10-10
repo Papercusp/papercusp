@@ -226,6 +226,8 @@ describe('bounded PostgreSQL result diagnostics', () => {
         elapsedMs: 83,
         status: 'ok',
         errorCode: null,
+        errorClass: null,
+        serverRoutine: null,
         correlationState: 'unobserved',
         recordedAt: Date.now(),
       }),

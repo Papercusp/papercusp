@@ -620,10 +620,10 @@ export function recordPgResult(
         : boundedWholeNumber(input.preBuildMs, true),
     status: failed ? 'error' : 'ok',
     errorCode: safeToken(input.errorCode, 16),
+    errorClass: failed ? safeDiagnosticIdentifier(input.errorClass, 80) : null,
+    serverRoutine: failed ? safeDiagnosticIdentifier(input.serverRoutine, 120) : null,
     ...(failed ? {
       failurePhase: classifyPgFailurePhase(input.query, queryFamily, input.command),
-      errorClass: safeDiagnosticIdentifier(input.errorClass, 80),
-      serverRoutine: safeDiagnosticIdentifier(input.serverRoutine, 120),
     } : {}),
     recordedAt: Date.now(),
     correlationState: correlation.state,
