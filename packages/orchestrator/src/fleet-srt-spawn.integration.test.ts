@@ -6,6 +6,10 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createScopedNativeSandboxSpawn } from './fleet-srt-spawn.mjs';
 
+// Linux SRT mounts a private /dev/shm. The test runner may use it as TMPDIR,
+// but positive-control fixtures must survive into the real child namespace.
+const physicalTmp = process.platform === 'linux' ? '/tmp' : tmpdir();
+
 const listen = (s: Server) => new Promise<number>((resolve, reject) => {
   s.once('error', reject); s.listen(0, '127.0.0.1', () => resolve((s.address() as any).port));
 });
@@ -22,8 +26,8 @@ function run(command: string, argv: string[], options: { cwd: string; env: NodeJ
 }
 
 it('isolates assigned corpus from sibling-arm solutions and hidden grader files', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'native-context-assigned-'));
-  const sibling = mkdtempSync(join(tmpdir(), 'native-context-other-arm-'));
+  const cwd = mkdtempSync(join(physicalTmp, 'native-context-assigned-'));
+  const sibling = mkdtempSync(join(physicalTmp, 'native-context-other-arm-'));
   const homeCorpus = mkdtempSync(join(homedir(), '.native-context-other-arm-'));
   const codexHome = join(cwd, 'codex-home'); mkdirSync(codexHome);
   const own = join(cwd, 'permitted-corpus.txt'); writeFileSync(own, 'PERMITTED_INITIAL_CORPUS');
@@ -54,7 +58,7 @@ it('isolates assigned corpus from sibling-arm solutions and hidden grader files'
 }, 45_000);
 
 it('physically permits only assigned ports and rejects raw sockets, policy writes and credential reads', async () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'native-boundary-physical-'));
+  const cwd = mkdtempSync(join(physicalTmp, 'native-boundary-physical-'));
   const hidden = mkdtempSync(join(homedir(), '.papercusp', 'native-boundary-fixture-'));
   const codexHome = join(hidden, 'codex-home'); mkdirSync(codexHome);
   const secret = join(hidden, 'harmless-credential.txt'); writeFileSync(secret, 'fixture-only');
