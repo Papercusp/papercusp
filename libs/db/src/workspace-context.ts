@@ -44,6 +44,12 @@ export interface WorkspaceTxOptions {
   /** Diagnostic hook: BEGIN has completed, then transaction-local setup is ready.
    * The caller's callback starts only after `ready`. */
   onAcquisitionPhase?: (phase: 'begin' | 'ready') => void;
+  /** Per-call acquisition bound for latency-sensitive reads. */
+  acquireTimeoutMs?: number;
+  /** Safe pre-handler retry count for acquisition deadlines and closed connections. */
+  acquireRetries?: number;
+  /** Set the transaction READ ONLY before applying workspace context. */
+  readOnly?: boolean;
 }
 
 /**
@@ -89,6 +95,7 @@ export async function withWorkspace<T>(
   // for. Passing it makes a deadline breach report MEASURED waiting/held counts
   // rather than the 3-step manual probe the message used to hand out.
   const acquirePool = opts.bypassRlsForAdmin ? 'org-admin' : 'org-app';
+  const acquireMs = opts.acquireTimeoutMs ?? DEFAULT_TX_ACQUIRE_DEADLINE_MS;
   return retryOnRetryableDbDeadline(() =>
     withAcquisitionDeadline<T>(
       ({ disarm, expired }) =>
@@ -112,6 +119,7 @@ export async function withWorkspace<T>(
       // parent's options were already drizzle-mutated by getOrgPgApp()).
       const txOpts = txSql as unknown as { options?: unknown };
       txOpts.options ??= (sql as unknown as { options?: unknown }).options;
+      if (opts.readOnly) await txSql`SET TRANSACTION READ ONLY`;
       // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
       // pooling the connect-time search_path is NOT preserved (server connections are
       // shared across clients), so set it per-transaction — mirrors getOrgPg/getOrgPgApp's
@@ -140,8 +148,8 @@ export async function withWorkspace<T>(
       if (expired()) {
         throw new DbCallDeadlineError(
           acquireLabel,
-          DEFAULT_TX_ACQUIRE_DEADLINE_MS,
-          DEFAULT_TX_ACQUIRE_DEADLINE_MS,
+          acquireMs,
+          acquireMs,
           acquirePool,
         );
       }
@@ -152,9 +160,10 @@ export async function withWorkspace<T>(
       markStarted();
       return await fn(txSql);
     }) as unknown) as Promise<T>
-      , { pool: acquirePool }),
-      { label: acquireLabel, pool: acquirePool },
+        , { pool: acquirePool, retries: opts.acquireRetries }),
+      { label: acquireLabel, pool: acquirePool, ms: acquireMs },
     ),
+    { retries: opts.acquireRetries },
   );
 }
 
