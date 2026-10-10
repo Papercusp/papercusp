@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -121,6 +122,33 @@ describe('required scoped native process boundary', () => {
       expect(() => spawn(executable, ['resume'], f, realSpawn)).toThrow(/executable contents changed/);
       expect(calls).toBe(1);
     } finally { rmSync(f.cwd, { recursive: true, force: true }); }
+  });
+  it.each(['managed', 'pty'])('keeps native mounts until the asynchronously registered %s process ends', async kind => {
+    const f = fixture(); let privateTmp: string | undefined;
+    const child = new EventEmitter(); let exit: (() => void) | undefined;
+    const result = kind === 'managed' ? { taskId: 'native-task', child }
+      : { onExit: (callback: () => void) => { exit = callback; } };
+    try {
+      const boundary = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
+      const registered = await boundary('/bin/sh', ['first'], f, async (_command, _args, options) => {
+        privateTmp = options.env.TMPDIR;
+        return result;
+      });
+      expect(registered).toBe(result);
+      expect(existsSync(privateTmp!)).toBe(true);
+      if (kind === 'managed') child.emit('close', 0); else exit!();
+      expect(existsSync(privateTmp!)).toBe(false);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
+  });
+  it('cleans private mounts when asynchronous registration rejects', async () => {
+    const f = fixture(); let privateTmp: string | undefined;
+    try {
+      const boundary = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
+      await expect(boundary('/bin/sh', [], f, async (_command, _args, options) => {
+        privateTmp = options.env.TMPDIR; throw new Error('registration failed');
+      })).rejects.toThrow('registration failed');
+      expect(existsSync(privateTmp!)).toBe(false);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
   });
   it('preserves the installed package location when PATH names a symlink', async () => {
     const f = fixture(); const bin = join(f.cwd, 'installed', 'bin'); mkdirSync(bin, { recursive: true });
