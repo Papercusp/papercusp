@@ -78,6 +78,8 @@ import { hasExplicitDisallowedTools } from './native-scheduler-deny';
 import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
 import { workspaceHomeDir } from './workspace';
+import { FLEET_SANDBOX_DENY_READ, FLEET_SANDBOX_CACHE_ROOT, buildProcessSrtSettings, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
+export { FLEET_SANDBOX_DENY_READ, FLEET_SANDBOX_CACHE_ROOT } from './fleet-srt-spawn.mjs';
 
 /**
  * Postgres client interface the orchestrator uses for PG-canonical state.
@@ -1634,16 +1636,6 @@ export function fleetOmpToolsArgs(
  * denyRead paths, confines writes to cwd, and blocks egress to unlisted hosts.
  * ──────────────────────────────────────────────────────────────────────── */
 
-/** Credential dirs hidden from the sandboxed Bash subprocess (`denyRead`). */
-export const FLEET_SANDBOX_DENY_READ: readonly string[] = [
-  '~/.ssh',
-  '~/.aws',
-  '~/.gnupg',
-  '~/.config/gcloud',
-  '~/.papercusp',
-  '~/.npmrc',
-];
-
 /**
  * Domains a sandboxed Bash command may reach — the package registries a build/
  * test role legitimately needs. Verified (P-012/D-011): claude's sandbox egress
@@ -1757,7 +1749,6 @@ export function healSandboxZeroByteManifest(cwd: string, log?: (msg: string) => 
  * Computed from the operator process home so it matches the absolute cache-env
  * paths even when the child gets a per-spawn HOME (resolveSpawnHome).
  */
-export const FLEET_SANDBOX_CACHE_ROOT = join(homedir(), '.cache', 'papercusp-fleet-sandbox');
 
 /**
  * Cache-redirect env for a workspace agent spawn whose project lives at `cwd`.
@@ -2122,31 +2113,15 @@ export function buildFleetSrtSettings(opts: {
   backend: AgentBackend;
   agentHomes?: string[];
 }): Record<string, unknown> {
-  const home = homedir();
-  const abs = (p: string) => (p.startsWith('~/') ? join(home, p.slice(2)) : p);
-  const denyRead = FLEET_SANDBOX_DENY_READ.map(abs);
-  const homes = (opts.agentHomes ?? []).filter(Boolean).map(abs);
-  const allowWrite = [opts.cwd, FLEET_SANDBOX_CACHE_ROOT, ...homes];
-  // Re-allow reading any agent home that's under a denyRead dir (codex
-  // CODEX_HOME is under ~/.papercusp) so the agent can load its config + auth.
-  const allowRead = homes.filter((h) => denyRead.some((d) => h.startsWith(d)));
-  return {
-    network: {
-      allowedDomains: [
+  return buildProcessSrtSettings({
+    cwd: opts.cwd, agentHomes: opts.agentHomes,
+    allowedDomains: [
         ...resolveFleetAllowedDomains(),
         ...fleetSrtModelDomains(opts.backend),
         'localhost',
         '127.0.0.1',
-      ],
-      deniedDomains: [],
-    },
-    filesystem: {
-      allowWrite,
-      denyWrite: [],
-      denyRead,
-      ...(allowRead.length ? { allowRead } : {}),
-    },
-  };
+    ],
+  });
 }
 
 /** Write per-spawn srt settings to a 0600 temp file; returns its path. */
@@ -2159,11 +2134,6 @@ export function writeFleetSrtSettings(opts: {
   const path = join(dir, 'srt-settings.json');
   writeFileSync(path, JSON.stringify(buildFleetSrtSettings(opts)), { mode: 0o600 });
   return path;
-}
-
-/** Single-quote shell-escape each arg into one `sh -c`-safe string. */
-function shQuote(parts: string[]): string {
-  return parts.map((p) => `'${p.replace(/'/g, `'\\''`)}'`).join(' ');
 }
 
 /**
@@ -2195,8 +2165,7 @@ export function wrapSpawnWithSrt(
   if (!opts.enabled || !backendUsesSrt(opts.backend) || !opts.srtBin || !opts.settingsPath) {
     return { command, argv };
   }
-  const inner = `export no_proxy='' NO_PROXY=''; exec ${shQuote([command, ...argv])}`;
-  return { command: opts.srtBin, argv: ['-s', opts.settingsPath, '-c', inner] };
+  return wrapProcessWithSrt(command, argv, opts);
 }
 
 /**
