@@ -21,6 +21,38 @@ function run(command: string, argv: string[], options: { cwd: string; env: NodeJ
   });
 }
 
+it('isolates assigned corpus from sibling-arm solutions and hidden grader files', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'native-context-assigned-'));
+  const sibling = mkdtempSync(join(tmpdir(), 'native-context-other-arm-'));
+  const homeCorpus = mkdtempSync(join(homedir(), '.native-context-other-arm-'));
+  const codexHome = join(cwd, 'codex-home'); mkdirSync(codexHome);
+  const own = join(cwd, 'permitted-corpus.txt'); writeFileSync(own, 'PERMITTED_INITIAL_CORPUS');
+  const secrets = [join(sibling, 'other-arm-solution.txt'), join(sibling, 'hidden-grader-answer.txt'),
+    join(homeCorpus, 'prior-memory.txt')];
+  for (const path of secrets) writeFileSync(path, 'FORBIDDEN_CONTEXT_SENTINEL');
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: homedir(),
+    PAPERCUSP_AGENT: 'codex', CODEX_HOME: codexHome, PAPERCUSP_OPERATOR_URL: 'http://127.0.0.1:32002',
+    PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify({ baseURL: 'http://127.0.0.1:32001', token: 'a'.repeat(64) }) };
+  let policyDir: string | undefined;
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  try {
+    const boundary = createScopedNativeSandboxSpawn({ cwd, env })!;
+    const sandbox = (script: string) => boundary('/bin/sh', ['-c', script], { cwd, env },
+      (command, args, options) => { policyDir = dirname(args[1]); return run(command, args, options); });
+    const allowed = await sandbox(`/bin/cat ${quote(own)} && printf native > ${quote(join(codexHome, 'state'))}`);
+    expect(allowed, allowed.stderr).toMatchObject({ code: 0, stdout: 'PERMITTED_INITIAL_CORPUS' });
+    for (const path of secrets) {
+      // Positive control distinguishes confinement from a missing fixture.
+      expect(await run('/bin/cat', [path], { cwd, env })).toMatchObject({ code: 0, stdout: 'FORBIDDEN_CONTEXT_SENTINEL' });
+      const denied = await sandbox(`/bin/cat ${quote(path)}`);
+      expect(denied, path).toMatchObject({ stdout: '' });
+      expect(denied.code, path).not.toBe(0);
+    }
+  } finally {
+    for (const path of [cwd, sibling, homeCorpus, policyDir]) if (path) rmSync(path, { recursive: true, force: true });
+  }
+}, 45_000);
+
 it('physically permits only assigned ports and rejects raw sockets, policy writes and credential reads', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'native-boundary-physical-'));
   const hidden = mkdtempSync(join(homedir(), '.papercusp', 'native-boundary-fixture-'));
