@@ -24,7 +24,8 @@
       "tokenUrl": "https://app.asana.com/-/oauth_token",
       "scopes": [
         "tasks:read", "tasks:write", "stories:read", "stories:write",
-        "projects:read", "users:read", "workspaces:read", "tags:read", "teams:read"
+        "projects:read", "projects:write", "users:read", "workspaces:read", "tags:read", "teams:read",
+        "webhooks:read", "webhooks:write", "webhooks:delete"
       ],
       "clientRegistrationRef": "asana",
       "identity": {
