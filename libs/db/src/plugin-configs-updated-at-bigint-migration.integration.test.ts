@@ -41,6 +41,20 @@ beforeAll(async () => {
     VALUES ('legacy', 'kept', '${LEGACY_TIME}', 'ws');
   `);
 
+  // This is the writer's exact epoch-millisecond expression. The legacy
+  // TIMESTAMPTZ column rejects it with the same assignment type error as the
+  // reported 42804, before the migration repairs the schema contract.
+  await expect(sql.unsafe(`
+    INSERT INTO harness_shared.plugin_configs
+      (harness_slug, plugin_slug, updated_at, workspace_id)
+    VALUES (
+      'writer-before-migration',
+      'epoch-ms',
+      (extract(epoch FROM now()) * 1000)::bigint,
+      'ws'
+    );
+  `)).rejects.toMatchObject({ code: '42804' });
+
   await sql.unsafe(MIGRATION_SQL);
 }, 120_000);
 
