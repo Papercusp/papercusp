@@ -4,6 +4,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 import { snapshotScopedInferenceGateway, SCOPED_INFERENCE_GATEWAY_ENV } from './codex-gateway-config.ts';
 
 export const FLEET_SANDBOX_DENY_READ = Object.freeze([
@@ -72,6 +73,12 @@ function scopedSandboxReadPaths(bin) {
   return entry ? [bin, real, dirname(dirname(entry[0]))] : [bin, real];
 }
 
+function scopedExecutableFingerprint(paths) {
+  return JSON.stringify([...new Set(paths.filter(existsSync).map(p => realpathSync(p)))]
+    .filter(p => statSync(p).isFile())
+    .map(p => [p, createHash('sha256').update(readFileSync(p)).digest('hex')]));
+}
+
 /** Required final-PTY wrapper. The route and policy are captured before the
  * first native spawn, and checked again on every recycle/carry/park resume.
  * Other loopback ports, providers and registries never enter this allowlist.
@@ -103,17 +110,22 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   const dir = mkdtempSync(join(codexHome, 'papercusp-native-srt-'));
   const settingsPath = join(dir, 'settings.json');
   let runtimePaths;
+  let executableFingerprint;
   return (command, argv, options, realSpawn) => {
     let current;
     try { current = snapshotScopedInferenceGateway(JSON.parse(options.env[SCOPED_INFERENCE_GATEWAY_ENV])); }
     catch { throw new Error('Scoped native sandbox lost its route before spawn'); }
-    if (options.cwd !== cwd || options.env.CODEX_HOME !== codexHome || options.env.PAPERCUSP_AGENT !== 'codex' ||
+    if (options.cwd !== cwd || options.env.PATH !== env.PATH || options.env.CODEX_HOME !== codexHome || options.env.PAPERCUSP_AGENT !== 'codex' ||
         current.baseURL !== route.baseURL || current.token !== route.token ||
         loopbackEndpoint(options.env.PAPERCUSP_OPERATOR_URL) !== operatorEndpoint)
       throw new Error('Scoped native sandbox binding changed before spawn');
     const observedRuntimePaths = scopedRuntimeReadPaths(command, env);
     if (runtimePaths && JSON.stringify(runtimePaths) !== JSON.stringify(observedRuntimePaths))
       throw new Error('Scoped native executable binding changed before spawn');
+    const observedFingerprint = scopedExecutableFingerprint([...observedRuntimePaths, bin, bwrap]);
+    if (executableFingerprint && executableFingerprint !== observedFingerprint)
+      throw new Error('Scoped native executable contents changed before spawn');
+    executableFingerprint = observedFingerprint;
     // Unix-domain socket addresses are bounded. A deep per-session native home
     // cannot hold SRT's bridge names, so use a short private root and grant only
     // that root. Re-create it after a managed generation's exit cleanup.

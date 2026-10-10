@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
@@ -71,6 +71,7 @@ describe('required scoped native process boundary', () => {
       const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
       spawn('/bin/sh', ['first'], f, call);
       for (const patch of [
+        { PATH: '/other' },
         { CODEX_HOME: '/other' }, { PAPERCUSP_AGENT: 'claude' },
         { PAPERCUSP_OPERATOR_URL: 'http://127.0.0.1:9072' },
         { PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify({ ...route, token: 'b'.repeat(64) }) },
@@ -83,6 +84,43 @@ describe('required scoped native process boundary', () => {
     expect(wrapProcessWithSrt("/bin/a'b", ['$()', 'a b'], { srtBin: '/srt', settingsPath: '/p' }).argv[3])
       .toBe("export no_proxy='' NO_PROXY=''; exec '/bin/a'\\''b' '$()' 'a b'");
     expect(() => wrapProcessWithSrt('/cmd', [], { srtBin: null, settingsPath: '/p' })).toThrow(/unavailable/);
+  });
+  it.each(['promise', 'pty', 'child', 'throw'])('cleans private native temp after %s completion and recreates it on resume', async kind => {
+    const f = fixture(); let privateTmp: string | undefined; let exit: (() => void) | undefined;
+    try {
+      const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
+      const realSpawn = (_command: string, _args: string[], options: any) => {
+        privateTmp = options.env.TMPDIR;
+        expect(existsSync(privateTmp!)).toBe(true);
+        if (kind === 'throw') throw new Error('spawn failed');
+        if (kind === 'promise') return Promise.resolve('done');
+        if (kind === 'pty') return { onExit: (callback: () => void) => { exit = callback; } };
+        return { once: (event: string, callback: () => void) => { expect(event).toBe('close'); exit = callback; } };
+      };
+      if (kind === 'throw') expect(() => spawn('/bin/sh', ['first'], f, realSpawn)).toThrow('spawn failed');
+      else { await spawn('/bin/sh', ['first'], f, realSpawn); exit?.(); }
+      const priorTmp = privateTmp!;
+      expect(existsSync(priorTmp)).toBe(false);
+      await spawn('/bin/sh', ['resume'], f, (_command, _args, options) => {
+        privateTmp = options.env.TMPDIR;
+        expect(privateTmp).not.toBe(priorTmp);
+        expect(existsSync(privateTmp!)).toBe(true);
+        return Promise.resolve('done');
+      });
+      expect(existsSync(privateTmp!)).toBe(false);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
+  });
+  it('refuses an executable replaced at the same path before a managed resume', async () => {
+    const f = fixture(); const executable = join(f.cwd, 'native-fixture'); let calls = 0;
+    try {
+      writeFileSync(executable, '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+      const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
+      const realSpawn = () => { calls++; return Promise.resolve('done'); };
+      await spawn(executable, ['first'], f, realSpawn);
+      writeFileSync(executable, '#!/bin/sh\nexit 1\n');
+      expect(() => spawn(executable, ['resume'], f, realSpawn)).toThrow(/executable contents changed/);
+      expect(calls).toBe(1);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); }
   });
   it('does not reallow a sibling directory that merely shares a denied prefix', () => {
     const own = join(homedir(), '.papercusp', 'own'), sibling = join(homedir(), '.papercusp-sibling');
