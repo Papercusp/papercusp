@@ -1,0 +1,64 @@
+import { it, expect } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { createScopedNativeSandboxSpawn } from './fleet-srt-spawn.mjs';
+
+const listen = (s: Server) => new Promise<number>((resolve, reject) => {
+  s.once('error', reject); s.listen(0, '127.0.0.1', () => resolve((s.address() as any).port));
+});
+const stop = (s: Server) => new Promise<void>((resolve, reject) => s.close(e => e ? reject(e) : resolve()));
+function run(command: string, argv: string[], options: { cwd: string; env: NodeJS.ProcessEnv }) {
+  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const p = spawn(command, argv, { ...options, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '';
+    const timer = setTimeout(() => { p.kill('SIGKILL'); reject(new Error('Native boundary fixture exceeded 15 seconds')); }, 15_000);
+    p.stdout.on('data', x => { stdout += x; }); p.stderr.on('data', x => { stderr += x; });
+    p.once('error', e => { clearTimeout(timer); reject(e); });
+    p.once('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  });
+}
+
+it('physically permits only assigned ports and rejects raw sockets, policy writes and credential reads', async () => {
+  const cwd = mkdtempSync(join(tmpdir(), 'native-boundary-physical-'));
+  const hidden = mkdtempSync(join(homedir(), '.papercusp', 'native-boundary-fixture-'));
+  const codexHome = join(hidden, 'codex-home'); mkdirSync(codexHome);
+  const secret = join(hidden, 'harmless-credential.txt'); writeFileSync(secret, 'fixture-only');
+  const calls = [0, 0, 0];
+  const servers = calls.map((_, i) => createServer((_req, res) => { calls[i]++; res.end(`endpoint-${i}`); }));
+  let policyDir: string | undefined;
+  try {
+    const [gateway, operator, forbidden] = await Promise.all(servers.map(listen));
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: homedir(),
+      PAPERCUSP_AGENT: 'codex', CODEX_HOME: codexHome, PAPERCUSP_OPERATOR_URL: `http://127.0.0.1:${operator}`,
+      PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify({ baseURL: `http://127.0.0.1:${gateway}`, token: 'a'.repeat(64) }) };
+    // The positive raw control establishes that the forbidden endpoint is live
+    // and reachable on this host, rather than testing an absent service.
+    const control = await run('/usr/bin/curl', ['--silent', '--show-error', '--fail', '--max-time', '3', `http://127.0.0.1:${forbidden}`], { cwd, env });
+    expect(control).toMatchObject({ code: 0, stdout: 'endpoint-2' }); expect(calls[2]).toBe(1);
+    const boundary = createScopedNativeSandboxSpawn({ cwd, env })!;
+    const spawnThroughBoundary = (script: string) => boundary('/bin/sh', ['-c', script], { cwd, env },
+      (command, args, options) => { policyDir = dirname(args[1]); return run(command, args, options); });
+    const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+    const reach = (port: number, extra = '') => `/usr/bin/curl --silent --show-error --fail --max-time 3 ${extra} http://127.0.0.1:${port}`;
+    const allowed = await spawnThroughBoundary(`${reach(gateway)} && printf '\\n' && ${reach(operator)} && printf '\\n' && printf writable > ${quote(join(codexHome, 'native-state'))}`);
+    expect(allowed, allowed.stderr).toMatchObject({ code: 0, stdout: 'endpoint-0\nendpoint-1\n' });
+    expect(readFileSync(join(codexHome, 'native-state'), 'utf8')).toBe('writable');
+    const denied = await spawnThroughBoundary(reach(forbidden));
+    expect(denied.code).not.toBe(0); expect(calls[2]).toBe(1);
+    const raw = await spawnThroughBoundary(reach(gateway, "--noproxy '*'"));
+    expect(raw.code).not.toBe(0); expect(calls[0]).toBe(1);
+    const hiddenRead = await spawnThroughBoundary(`/bin/cat ${quote(secret)}`);
+    expect(hiddenRead.code).not.toBe(0); expect(hiddenRead.stdout).not.toContain('fixture-only');
+    const rewrite = await spawnThroughBoundary(`printf '{}' > ${quote(join(policyDir!, 'settings.json'))}`);
+    expect(rewrite.code).not.toBe(0);
+    expect(JSON.parse(readFileSync(join(policyDir!, 'settings.json'), 'utf8')).network.allowedDomains)
+      .toEqual([`127.0.0.1:${gateway}`, `127.0.0.1:${operator}`]);
+  } finally {
+    await Promise.all(servers.map(s => s.listening ? stop(s) : Promise.resolve()));
+    rmSync(cwd, { recursive: true, force: true }); rmSync(hidden, { recursive: true, force: true });
+    if (policyDir) rmSync(policyDir, { recursive: true, force: true });
+  }
+}, 45_000);
