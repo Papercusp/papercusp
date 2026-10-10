@@ -109,7 +109,7 @@ const registryControls = [
   },
   {
     name: 'R4 SQL privacy',
-    from: 'queryFamily: pgQueryFamily(input.query)', to: 'queryFamily: input.query',
+    from: 'const queryFamily = pgQueryFamily(input.query);', to: 'const queryFamily = input.query;',
     verify(source: string) {
       const registry = registryFromSource(source);
       registry.recordPgResult('org-app', completedInput);
@@ -704,5 +704,84 @@ describe('pgQueryFamily memo (WI-10002541)', () => {
   it('exposes counters only, never query text', () => {
     pgQueryFamily(completedInput.query);
     expect(JSON.stringify(pgQueryFamilyMemoStats())).not.toContain('never-retain-secret');
+  });
+});
+
+describe('failure-only PostgreSQL result diagnostics', () => {
+  it('retains failed query phase and safe request context after success churn', () => {
+    const correlation = {
+      processInstanceId: '11111111-1111-4111-8111-111111111111',
+      buildSha: null,
+      rowId: null,
+      attemptId: '22222222-2222-4222-8222-222222222222',
+      hopId: null,
+      stage: null,
+      boundary: null,
+      requestId: '33333333-3333-4333-8333-333333333333',
+      operation: 'activity.report',
+    };
+    const failures = [
+      { query: 'BEGIN', command: null, phase: 'transaction-start' },
+      { query: "SELECT set_config('app.workspace_id', $1, true)", command: 'SELECT', phase: 'transaction-setup' },
+      { query: "INSERT INTO harness_shared.agent_activity (summary) VALUES ('do-not-retain-activity')", command: 'INSERT', phase: 'statement', context: { state: 'linked', correlation } },
+      { query: 'COMMIT', command: null, phase: 'transaction-commit' },
+      { query: 'ROLLBACK', command: null, phase: 'transaction-rollback' },
+    ] as const;
+    failures.forEach((failure, index) => {
+      recordPgResult('failure-fixture', {
+        ...completedInput,
+        queryId: index + 1,
+        query: failure.query,
+        command: failure.command,
+        status: 'error',
+        errorCode: 'XX000',
+        ...('context' in failure ? { context: failure.context } : {}),
+      });
+    });
+    for (let queryId = 1; queryId <= 40; queryId += 1) {
+      recordPgResult('failure-fixture', {
+        ...completedInput,
+        queryId: queryId + 100,
+        query: 'SELECT id FROM harness_shared.queue WHERE id = $1',
+        command: 'SELECT',
+        status: 'ok',
+      });
+    }
+
+    const snapshot = pgResultDiagnosticSnapshot('failure-fixture', 16);
+    expect(snapshot).toMatchObject({ failureCapacity: 16, totalFailures: 5, droppedFailures: 0 });
+    expect(snapshot.failures.map((row) => row.failurePhase)).toEqual(
+      failures.map((failure) => failure.phase),
+    );
+    expect(snapshot.failures[2]).toMatchObject({
+      queryFamily: 'insert:harness_shared.agent_activity',
+      errorCode: 'xx000',
+      correlationState: 'linked',
+      correlation: { requestId: correlation.requestId, operation: 'activity.report' },
+    });
+    expect(snapshot.results.map((row) => row.queryId)).toEqual(
+      Array.from({ length: 16 }, (_, index) => index + 125),
+    );
+    expect(snapshot.results.every((row) => !('failurePhase' in row))).toBe(true);
+    expect(JSON.stringify(snapshot)).not.toContain('do-not-retain-activity');
+  });
+
+  it('bounds failure retention independently and reports evictions', () => {
+    for (let queryId = 1; queryId <= 20; queryId += 1) {
+      recordPgResult('failure-cap-fixture', {
+        ...completedInput,
+        queryId,
+        query: 'SELECT id FROM harness_shared.queue WHERE id = $1',
+        command: 'SELECT',
+        status: 'error',
+        errorCode: 'XX000',
+      });
+    }
+
+    const snapshot = pgResultDiagnosticSnapshot('failure-cap-fixture', 32);
+    expect(snapshot).toMatchObject({ failureCapacity: 16, totalFailures: 20, droppedFailures: 4 });
+    expect(snapshot.failures.map((row) => row.queryId)).toEqual(
+      Array.from({ length: 16 }, (_, index) => index + 5),
+    );
   });
 });
