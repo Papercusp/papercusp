@@ -50,6 +50,10 @@ export interface WorkspaceTxOptions {
   acquireRetries?: number;
   /** Set the transaction READ ONLY before applying workspace context. */
   readOnly?: boolean;
+  /** Optional per-call PostgreSQL statement bound, applied during transaction setup. */
+  statementTimeoutMs?: number;
+  /** Optional per-call PostgreSQL lock-wait bound, applied during transaction setup. */
+  lockTimeoutMs?: number;
 }
 
 /**
@@ -120,6 +124,20 @@ export async function withWorkspace<T>(
       const txOpts = txSql as unknown as { options?: unknown };
       txOpts.options ??= (sql as unknown as { options?: unknown }).options;
       if (opts.readOnly) await txSql`SET TRANSACTION READ ONLY`;
+      const lockTimeoutMs = opts.lockTimeoutMs == null
+        ? undefined
+        : String(Math.max(100, Math.trunc(opts.lockTimeoutMs))) + 'ms';
+      const statementTimeoutMs = opts.statementTimeoutMs == null
+        ? undefined
+        : String(Math.max(100, Math.trunc(opts.statementTimeoutMs))) + 'ms';
+      if (lockTimeoutMs !== undefined && statementTimeoutMs !== undefined) {
+        await txSql`SELECT set_config('lock_timeout', ${lockTimeoutMs}, true),
+                            set_config('statement_timeout', ${statementTimeoutMs}, true)`;
+      } else if (lockTimeoutMs !== undefined) {
+        await txSql`SELECT set_config('lock_timeout', ${lockTimeoutMs}, true)`;
+      } else if (statementTimeoutMs !== undefined) {
+        await txSql`SELECT set_config('statement_timeout', ${statementTimeoutMs}, true)`;
+      }
       // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
       // pooling the connect-time search_path is NOT preserved (server connections are
       // shared across clients), so set it per-transaction — mirrors getOrgPg/getOrgPgApp's
