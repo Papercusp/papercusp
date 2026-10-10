@@ -169,9 +169,22 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
       child = realSpawn(bwrap, [...mountArgs, '--', wrapped.command, ...wrapped.argv],
         { ...options, env: { ...options.env, HOME: codexHome, TMPDIR: nativeTmp, CLAUDE_CODE_TMPDIR: nativeTmp } });
     } catch (error) { cleanup(); throw error; }
-    if (child?.then && child?.finally) return child.finally(cleanup);
-    if (typeof child?.onExit === 'function') child.onExit(cleanup);
-    else if (typeof child?.once === 'function') child.once('close', cleanup);
+    const attachCleanup = (result, completedPromise = false) => {
+      // Async spawners can resolve at registration with a live process handle
+      // (managedSpawn returns { child, taskId }). Promise settlement is then
+      // the start of the mount lifetime, rather than its end.
+      const processHandle = result?.child ?? result;
+      if (typeof processHandle?.onExit === 'function') processHandle.onExit(cleanup);
+      else if (typeof processHandle?.once === 'function') {
+        processHandle.once('close', cleanup);
+        // A fast child may finish before async registration returns its handle.
+        if (processHandle.exitCode != null || processHandle.signalCode != null) cleanup();
+      } else if (completedPromise) cleanup(); // Promise represents the entire run.
+      return result;
+    };
+    if (typeof child?.then === 'function') return child.then(
+      result => attachCleanup(result, true), error => { cleanup(); throw error; });
+    attachCleanup(child);
     return child;
   };
 }
