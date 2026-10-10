@@ -2,7 +2,7 @@
  * Plain ESM keeps the native launcher independent of the orchestrator's TS loader.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import { snapshotScopedInferenceGateway, SCOPED_INFERENCE_GATEWAY_ENV } from './codex-gateway-config.ts';
 
@@ -143,6 +143,6 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     const mountArgs = ['--die-with-parent', '--bind', '/', '/', '--dev', '/dev', '--bind', nativeTmp, '/tmp/claude'];
     if (existsSync('/private/tmp/claude')) mountArgs.push('--bind', nativeTmp, '/private/tmp/claude');
     return realSpawn(bwrap, [...mountArgs, '--', wrapped.command, ...wrapped.argv],
-      { ...options, env: { ...options.env, HOME: codexHome, CLAUDE_CODE_TMPDIR: nativeTmp } });
+      { ...options, env: { ...options.env, HOME: codexHome, TMPDIR: nativeTmp, CLAUDE_CODE_TMPDIR: nativeTmp } });
   };
 }

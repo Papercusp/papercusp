@@ -6,8 +6,8 @@ import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, wrapProcessWit
 
 const route = { baseURL: 'http://127.0.0.1:32001', token: 'a'.repeat(64) };
 const fixture = () => {
-  const cwd = mkdtempSync(join(tmpdir(), 'native-boundary-unit-'));
-  return { cwd, env: { PAPERCUSP_AGENT: 'codex', CODEX_HOME: join(cwd, 'codex'),
+  const cwd = mkdtempSync(join(process.platform === 'linux' ? '/tmp' : tmpdir(), 'native-boundary-unit-'));
+  return { cwd, env: { PATH: process.env.PATH, PAPERCUSP_AGENT: 'codex', CODEX_HOME: join(cwd, 'codex'),
     PAPERCUSP_OPERATOR_URL: 'http://127.0.0.1:9071', PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify(route) } };
 };
 
