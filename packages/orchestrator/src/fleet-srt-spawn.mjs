@@ -1,7 +1,7 @@
 /** Shared process settings and SRT argv for orchestrated and native PTY spawns.
  * Plain ESM keeps the native launcher independent of the orchestrator's TS loader.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, sep } from 'node:path';
 import { snapshotScopedInferenceGateway, SCOPED_INFERENCE_GATEWAY_ENV } from './codex-gateway-config.ts';
@@ -98,8 +98,8 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   if (!bin) throw new Error('Scoped native launch requires SRT; refusing unconfined execution');
   const bwrap = (env.PATH ?? process.env.PATH ?? '').split(':').filter(Boolean).map(p => join(p, 'bwrap')).find(existsSync);
   if (!bwrap) throw new Error('Scoped native launch requires bubblewrap for private default temporary paths');
-  const nativeTmp = join(codexHome, 'tmp');
-  mkdirSync(nativeTmp, { recursive: true, mode: 0o700 });
+  mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+  let nativeTmp;
   const dir = mkdtempSync(join(codexHome, 'papercusp-native-srt-'));
   const settingsPath = join(dir, 'settings.json');
   let runtimePaths;
@@ -114,14 +114,18 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     const observedRuntimePaths = scopedRuntimeReadPaths(command, env);
     if (runtimePaths && JSON.stringify(runtimePaths) !== JSON.stringify(observedRuntimePaths))
       throw new Error('Scoped native executable binding changed before spawn');
-    if (!runtimePaths) {
+    // Unix-domain socket addresses are bounded. A deep per-session native home
+    // cannot hold SRT's bridge names, so use a short private root and grant only
+    // that root. Re-create it after a managed generation's exit cleanup.
+    if (!nativeTmp || !existsSync(nativeTmp)) nativeTmp = mkdtempSync('/tmp/pc-native-');
+    {
       runtimePaths = observedRuntimePaths;
       const policy = buildProcessSrtSettings({ cwd, agentHomes: [codexHome],
         allowedDomains: [...new Set([gatewayEndpoint, operatorEndpoint])], denyWrite: [dir] });
       // Generic fleet credential denies leave ordinary host data readable.
       // Each metered assignment instead gets only its checkout, native state
       // and installed runtime. The fleet cache is shared context, so exclude it.
-      policy.filesystem.allowWrite = [cwd, codexHome];
+      policy.filesystem.allowWrite = [cwd, codexHome, nativeTmp];
       // Expand real root entries ourselves. SRT's '/' preset also tmpfs-mounts
       // root symlink aliases after their targets have been hidden and can fail
       // before execution. Alias targets remain subject to the same real mounts.
@@ -129,7 +133,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
         .filter(entry => !entry.isSymbolicLink() && !['proc', 'dev', 'sys'].includes(entry.name))
         .map(entry => join('/', entry.name));
       policy.filesystem.denyRead = [...rootDenies, ...policy.filesystem.denyRead];
-      policy.filesystem.allowRead = [cwd, codexHome, '/usr', '/bin', '/sbin', '/lib', '/lib64',
+      policy.filesystem.allowRead = [cwd, codexHome, nativeTmp, '/usr', '/bin', '/sbin', '/lib', '/lib64',
         '/etc/ssl', '/etc/ld.so.cache', '/etc/ld.so.conf', '/etc/ld.so.conf.d', '/etc/nsswitch.conf',
         '/etc/hosts', '/etc/resolv.conf', '/etc/passwd', '/etc/group', '/etc/localtime',
         ...runtimePaths, ...scopedSandboxReadPaths(bin)];
@@ -142,7 +146,16 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     // re-binds shared host context through an otherwise complete read deny.
     const mountArgs = ['--die-with-parent', '--bind', '/', '/', '--dev', '/dev', '--bind', nativeTmp, '/tmp/claude'];
     if (existsSync('/private/tmp/claude')) mountArgs.push('--bind', nativeTmp, '/private/tmp/claude');
-    return realSpawn(bwrap, [...mountArgs, '--', wrapped.command, ...wrapped.argv],
-      { ...options, env: { ...options.env, HOME: codexHome, TMPDIR: nativeTmp, CLAUDE_CODE_TMPDIR: nativeTmp } });
+    const tempForSpawn = nativeTmp;
+    const cleanup = () => rmSync(tempForSpawn, { recursive: true, force: true });
+    let child;
+    try {
+      child = realSpawn(bwrap, [...mountArgs, '--', wrapped.command, ...wrapped.argv],
+        { ...options, env: { ...options.env, HOME: codexHome, TMPDIR: nativeTmp, CLAUDE_CODE_TMPDIR: nativeTmp } });
+    } catch (error) { cleanup(); throw error; }
+    if (child?.then && child?.finally) return child.finally(cleanup);
+    if (typeof child?.onExit === 'function') child.onExit(cleanup);
+    else if (typeof child?.once === 'function') child.once('close', cleanup);
+    return child;
   };
 }

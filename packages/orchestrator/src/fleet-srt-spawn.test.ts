@@ -16,7 +16,7 @@ describe('required scoped native process boundary', () => {
     expect(createScopedNativeSandboxSpawn({ cwd: '/checkout', env: {} })).toBeNull();
   });
   it('pins only the exact gateway and MCP ports on every native generation', () => {
-    const f = fixture(); let policyDir: string | undefined;
+    const f = fixture(); let policyDir: string | undefined; let privateTmp: string | undefined;
     try {
       const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
       for (const argv of [['first'], ['resume', 'native-2'], ['resume', 'native-3']]) {
@@ -27,13 +27,15 @@ describe('required scoped native process boundary', () => {
         const path = result.args[settingsIndex + 1]; policyDir = dirname(path);
         expect(result.args).toContain('/tmp/claude');
         expect(result.options.env.HOME).toBe(f.env.CODEX_HOME);
-        expect(result.options.env.CLAUDE_CODE_TMPDIR).toBe(join(f.env.CODEX_HOME, 'tmp'));
+        privateTmp = result.options.env.CLAUDE_CODE_TMPDIR;
+        expect(privateTmp).toMatch(/^\/tmp\/pc-native-/);
+        expect(result.options.env.TMPDIR).toBe(privateTmp);
         const policy = JSON.parse(readFileSync(path, 'utf8'));
         expect(policy.network).toEqual({ allowedDomains: ['127.0.0.1:32001', '127.0.0.1:9071'], deniedDomains: [] });
         expect(policy.filesystem.denyWrite).toContain(policyDir);
         expect(policy.filesystem.denyRead).toContain('/home');
         expect(policy.filesystem.denyRead).toContain('/tmp');
-        expect(policy.filesystem.allowWrite).toEqual([f.cwd, f.env.CODEX_HOME]);
+        expect(policy.filesystem.allowWrite).toEqual([f.cwd, f.env.CODEX_HOME, privateTmp]);
         expect(policy.filesystem.allowRead).toContain(f.cwd);
         expect(policy.filesystem.allowRead).toContain(f.env.CODEX_HOME);
         expect(policy.filesystem.allowRead).not.toContain(homedir());
@@ -42,7 +44,7 @@ describe('required scoped native process boundary', () => {
         expect(result.args[settingsIndex + 3]).toContain("no_proxy='' NO_PROXY=''");
         expect(result.args[settingsIndex + 3]).toContain(`exec '/bin/sh' ${argv.map(a => `'${a}'`).join(' ')}`);
       }
-    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (policyDir) rmSync(policyDir, { recursive: true, force: true }); }
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (policyDir) rmSync(policyDir, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
   });
   it.each([
     { PAPERCUSP_AGENT: 'claude' }, { CODEX_HOME: 'relative' },
@@ -63,8 +65,8 @@ describe('required scoped native process boundary', () => {
     finally { rmSync(f.cwd, { recursive: true, force: true }); }
   });
   it('rejects changed carry route without invoking the spawn', () => {
-    const f = fixture(); let path: string | undefined; let calls = 0;
-    const call = (command: string, argv: string[]) => { calls++; path = argv[argv.indexOf('-s') + 1]; return command; };
+    const f = fixture(); let path: string | undefined; let privateTmp: string | undefined; let calls = 0;
+    const call = (command: string, argv: string[], options: any) => { calls++; path = argv[argv.indexOf('-s') + 1]; privateTmp = options.env.TMPDIR; return command; };
     try {
       const spawn = createScopedNativeSandboxSpawn({ ...f, srtBin: '/usr/bin/srt' })!;
       spawn('/bin/sh', ['first'], f, call);
@@ -75,7 +77,7 @@ describe('required scoped native process boundary', () => {
         { PAPERCUSP_SCOPED_INFERENCE_GATEWAY: undefined },
       ]) expect(() => spawn('/bin/sh', ['resume'], { ...f, env: { ...f.env, ...patch } }, call)).toThrow(/binding|lost/);
       expect(calls).toBe(1);
-    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (path) rmSync(dirname(path), { recursive: true, force: true }); }
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (path) rmSync(dirname(path), { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
   });
   it('shares shell quoting and required-wrapper refusal with fleet execution', () => {
     expect(wrapProcessWithSrt("/bin/a'b", ['$()', 'a b'], { srtBin: '/srt', settingsPath: '/p' }).argv[3])
