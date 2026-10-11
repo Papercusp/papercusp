@@ -1,0 +1,294 @@
+-- 1452 — Retire the legacy stored tsvector columns on the corpora that BM25 serves.
+-- Plan bm25-lexical-search-evoke-adoption-2026-10-10 P-009 (R-14, with R-10 kept working);
+-- decisions D-011 §2-§5 and D-012.
+--
+-- WHAT. On each corpus whose BM25 index is valid on this host, the stored legacy tsvector
+-- column, and with it its GIN index, is replaced by a column of the same name and type defined
+-- GENERATED ALWAYS AS (<the exact legacy expression>) VIRTUAL. A virtual column has no heap
+-- bytes, no index and no write-time computation. Every legacy fragment (qualified or bare),
+-- every view, and the BM25 kill-switch path keep resolving the same name to the identical
+-- tsvector (D-012 §1). The three trigger-maintained columns (harness_brainstorm.content_tsv,
+-- harness_decisions.body_tsv, harness_escalations.body_tsv) take their trigger's expression,
+-- and the trigger and its function are dropped. The new column is appended, so a retired
+-- column moves to the end of SELECT * order.
+--
+-- AVAILABILITY GATE (D-011 §2, D-012 §3). Per host: PostgreSQL >= 18 (virtual generated
+-- columns), pg_textsearch preloaded and its extension installed. Per corpus: its BM25 index
+-- exists and is valid, ready and live. A host or corpus that fails the gate keeps its stored
+-- column and GIN index, so extension-less desktops keep indexed legacy ranking.
+--
+-- WHEN (D-011 §3). This migration defines bm25_retire_legacy_columns() and calls it once. The
+-- BM25 maintenance workflow calls it on every run, so a corpus whose BM25 index becomes valid
+-- later (a CONCURRENTLY build, a fresh install) retires then. Each table runs in its own
+-- subtransaction under lock_timeout 1s. A busy table, or any error, skips that table with a
+-- reason; the function never raises to its caller, so it can never fail boot.
+--
+-- VIEWS (D-012 §2). DROP COLUMN refuses while a view reads the column (today engineer_issues,
+-- harness_features_consolidated and work_items_claimable on work_items._search, and
+-- personal_documents on documents.text_tsv). Each dependent view is redefined in place with
+-- CREATE OR REPLACE VIEW, which keeps its grants, triggers, comments and dependent views, using
+-- a copy of its definition in which the column reference reads NULL::tsvector. Then the column
+-- is swapped, and the view is redefined again from its ORIGINAL pg_get_viewdef text with its
+-- reloptions. All of it commits together, so no other session sees the transient definition.
+--
+-- STORAGE ACCOUNTING (D-011 §4). Each row reports freed_index_bytes (the GIN index file, freed
+-- at commit) and est_column_bytes (pg_stats avg_width x reltuples). The column's heap bytes are
+-- reclaimed only as rows are rewritten (updates, VACUUM FULL), and avg_width counts a toasted
+-- value as its pointer, so the estimate is a floor.
+--
+-- p_dry_run => true performs every step and then rolls the table's subtransaction back,
+-- reporting 'would-retire', so the real views' round trip can be checked on a live database.
+--
+-- FORWARD-COMPAT: the release serving :3070 keeps working, because every retired column keeps its name, type and values (computed on read), so that release's legacy queries and views resolve exactly as before.
+
+-- One row per BM25 corpus: its legacy tsvector column and, for the three trigger-maintained
+-- columns, the trigger function's expression (a stored generated column's expression is read
+-- from pg_attrdef). The (table_name, column_name) pairs must match legacyTsvColumn in
+-- packages/operator-core/lib/search/lexical/corpora.ts (pinned by corpora.test.ts).
+CREATE OR REPLACE FUNCTION harness_shared.bm25_legacy_tsv_columns()
+RETURNS TABLE (table_name text, column_name text, trigger_expr text)
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS $fn$
+  VALUES
+    ('work_items', '_search', NULL::text),
+    ('harness_plans', '_search', NULL),
+    ('goals', '_search', NULL),
+    ('report_library', 'search_tsv', NULL),
+    ('session_turns', 'text_tsv', NULL),
+    ('documents', 'text_tsv', NULL),
+    ('coord_thread_posts', 'body_tsv', NULL),
+    ('carry_notes', 'note_tsv', NULL),
+    ('code_recipes', 'title_tsv', NULL),
+    ('datatype_registry', 'title_tsv', NULL),
+    ('event_key_registry', 'title_tsv', NULL),
+    ('capability_class_registry', 'title_tsv', NULL),
+    ('audit_log', '_search', NULL),
+    ('harness_escalations', 'body_tsv', $e$setweight(to_tsvector('english'::regconfig, COALESCE(escalation, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(supervisor_notes, ''::text)), 'B'::"char")$e$),
+    ('harness_decisions', 'body_tsv', $e$to_tsvector('english'::regconfig, (COALESCE(verb, ''::text) || ' '::text) || COALESCE(args, ''::text))$e$),
+    ('harness_brainstorm', 'content_tsv', $e$to_tsvector('english'::regconfig, COALESCE(content, ''::text))$e$)
+$fn$;
+
+-- p_def with every reference to the column p_col, bare or alias-qualified, replaced by
+-- NULL::tsvector. A select-list item that is only the reference keeps its output name. Used
+-- only for the transient view definition in bm25_retire_legacy_columns(), which verifies that
+-- the result no longer depends on the column before it drops it.
+CREATE OR REPLACE FUNCTION harness_shared.bm25_view_def_without_column(p_def text, p_col text)
+RETURNS text
+LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE
+AS $fn$
+DECLARE
+  v_ref constant text := '(?:[A-Za-z_][A-Za-z0-9_$]*\.)?' || p_col;
+  v text := p_def;
+BEGIN
+  IF p_col !~ '^[a-z_][a-z0-9_]*$' THEN
+    RAISE EXCEPTION 'bm25_view_def_without_column: unsafe column name %', p_col;
+  END IF;
+  v := regexp_replace(v, '((?:^|\n)[ \t]*(?:SELECT[ \t]+)?)' || v_ref || '(,?[ \t]*)(?=\n|$)',
+                      '\1NULL::tsvector AS __bm25_legacy_column__\2', 'g');
+  v := regexp_replace(v, '(?<![A-Za-z0-9_$."''])' || v_ref || '(?![A-Za-z0-9_$"''])',
+                      'NULL::tsvector', 'g');
+  RETURN replace(v, '__bm25_legacy_column__', p_col);
+END;
+$fn$;
+
+CREATE OR REPLACE FUNCTION harness_shared.bm25_retire_legacy_columns(p_dry_run boolean DEFAULT false)
+RETURNS TABLE (table_name text, column_name text, outcome text, detail text,
+               freed_index_bytes bigint, est_column_bytes bigint)
+LANGUAGE plpgsql
+SET lock_timeout = '1s'
+SET search_path = harness_shared, public
+AS $fn$
+DECLARE
+  c record;
+  t record;
+  v_table regclass;
+  v_attnum smallint;
+  v_generated "char";
+  v_type oid;
+  v_expr text;
+  v_comment text;
+  v_views oid[];
+  v_defs text[];
+  v_opts text[];
+  v_triggers text[];
+  v_i int;
+BEGIN
+  IF current_setting('server_version_num')::int < 180000 THEN
+    outcome := 'skipped:pg-below-18'; detail := current_setting('server_version'); RETURN NEXT;
+    RETURN;
+  END IF;
+  IF NOT harness_shared.bm25_library_preloaded() THEN
+    outcome := 'skipped:library-not-preloaded'; RETURN NEXT;
+    RETURN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_textsearch') THEN
+    outcome := 'skipped:extension-not-installed'; RETURN NEXT;
+    RETURN;
+  END IF;
+
+  FOR c IN
+    SELECT l.table_name AS tbl, l.column_name AS col, l.trigger_expr, i.index_name
+      FROM harness_shared.bm25_legacy_tsv_columns() l
+      LEFT JOIN harness_shared.bm25_corpus_indexes() i ON i.table_name = l.table_name
+  LOOP
+    table_name := c.tbl; column_name := c.col;
+    detail := NULL; freed_index_bytes := NULL; est_column_bytes := NULL;
+
+    v_table := to_regclass(format('harness_shared.%I', c.tbl));
+    IF v_table IS NULL THEN
+      outcome := 'skipped:table-missing'; RETURN NEXT;
+      CONTINUE;
+    END IF;
+
+    SELECT a.attnum, a.attgenerated, a.atttypid INTO v_attnum, v_generated, v_type
+      FROM pg_attribute a
+     WHERE a.attrelid = v_table AND a.attname = c.col AND NOT a.attisdropped;
+    IF NOT FOUND THEN
+      outcome := 'skipped:column-missing'; RETURN NEXT;
+      CONTINUE;
+    END IF;
+    IF v_type <> 'tsvector'::regtype THEN
+      outcome := 'skipped:not-tsvector'; detail := format_type(v_type, NULL); RETURN NEXT;
+      CONTINUE;
+    END IF;
+    IF v_generated = 'v' THEN
+      outcome := 'already-retired'; RETURN NEXT;
+      CONTINUE;
+    END IF;
+
+    IF c.index_name IS NULL OR NOT EXISTS (
+      SELECT 1
+        FROM pg_class i
+        JOIN pg_namespace n ON n.oid = i.relnamespace
+        JOIN pg_index x ON x.indexrelid = i.oid
+        JOIN pg_am am ON am.oid = i.relam
+       WHERE n.nspname = 'harness_shared' AND i.relname = c.index_name AND x.indrelid = v_table
+         AND am.amname = 'bm25' AND x.indisvalid AND x.indisready AND x.indislive)
+    THEN
+      outcome := 'skipped:bm25-index-not-valid'; detail := c.index_name; RETURN NEXT;
+      CONTINUE;
+    END IF;
+
+    IF v_generated = 's' THEN
+      SELECT pg_get_expr(d.adbin, d.adrelid) INTO v_expr
+        FROM pg_attrdef d WHERE d.adrelid = v_table AND d.adnum = v_attnum;
+    ELSE
+      v_expr := c.trigger_expr;
+    END IF;
+    IF v_expr IS NULL THEN
+      outcome := 'skipped:no-legacy-expression'; RETURN NEXT;
+      CONTINUE;
+    END IF;
+
+    v_comment := col_description(v_table, v_attnum);
+    SELECT (s.avg_width::numeric * greatest(cl.reltuples, 0))::bigint INTO est_column_bytes
+      FROM pg_stats s, pg_class cl
+     WHERE cl.oid = v_table AND s.schemaname = 'harness_shared' AND s.tablename = c.tbl
+       AND s.attname = c.col;
+
+    BEGIN
+      EXECUTE format('LOCK TABLE %s IN ACCESS EXCLUSIVE MODE', v_table);
+
+      SELECT coalesce(sum(pg_relation_size(d.objid)), 0)::bigint INTO freed_index_bytes
+        FROM pg_depend d
+        JOIN pg_class ic ON ic.oid = d.objid AND ic.relkind = 'i'
+       WHERE d.classid = 'pg_class'::regclass AND d.refclassid = 'pg_class'::regclass
+         AND d.refobjid = v_table AND d.refobjsubid = v_attnum;
+
+      SELECT coalesce(array_agg(q.ev_class ORDER BY q.ev_class), '{}') INTO v_views
+        FROM (SELECT DISTINCT r.ev_class
+                FROM pg_depend d
+                JOIN pg_rewrite r ON r.oid = d.objid
+               WHERE d.classid = 'pg_rewrite'::regclass AND d.refclassid = 'pg_class'::regclass
+                 AND d.refobjid = v_table AND d.refobjsubid = v_attnum
+                 AND r.ev_class <> v_table) q;
+
+      v_defs := '{}'; v_opts := '{}';
+      FOR v_i IN 1 .. coalesce(array_length(v_views, 1), 0) LOOP
+        v_defs := v_defs || rtrim(pg_get_viewdef(v_views[v_i], false), E'; \n');
+        v_opts := v_opts || coalesce(
+          (SELECT 'WITH (' || array_to_string(reloptions, ', ') || ') '
+             FROM pg_class WHERE oid = v_views[v_i] AND reloptions IS NOT NULL), '');
+        EXECUTE format('CREATE OR REPLACE VIEW %s %sAS %s', v_views[v_i]::regclass, v_opts[v_i],
+                       harness_shared.bm25_view_def_without_column(v_defs[v_i], c.col));
+      END LOOP;
+
+      IF EXISTS (
+        SELECT 1
+          FROM pg_depend d
+          JOIN pg_rewrite r ON r.oid = d.objid
+         WHERE d.classid = 'pg_rewrite'::regclass AND d.refclassid = 'pg_class'::regclass
+           AND d.refobjid = v_table AND d.refobjsubid = v_attnum AND r.ev_class <> v_table)
+      THEN
+        RAISE EXCEPTION 'a view still reads %.% after its transient redefinition', c.tbl, c.col
+          USING ERRCODE = 'dependent_objects_still_exist';
+      END IF;
+
+      v_triggers := '{}';
+      FOR t IN
+        SELECT tg.tgname, tg.tgfoid
+          FROM pg_trigger tg
+          JOIN pg_proc p ON p.oid = tg.tgfoid
+         WHERE tg.tgrelid = v_table AND NOT tg.tgisinternal
+           AND p.prosrc ~* ('\mNEW\.' || c.col || '\M')
+      LOOP
+        EXECUTE format('DROP TRIGGER %I ON %s', t.tgname, v_table);
+        v_triggers := v_triggers || t.tgname::text;
+        IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgfoid = t.tgfoid) THEN
+          BEGIN
+            EXECUTE format('DROP FUNCTION %s', t.tgfoid::regprocedure);
+          EXCEPTION WHEN dependent_objects_still_exist THEN
+            NULL;
+          END;
+        END IF;
+      END LOOP;
+
+      EXECUTE format('ALTER TABLE %s DROP COLUMN %I', v_table, c.col);
+      EXECUTE format('ALTER TABLE %s ADD COLUMN %I tsvector GENERATED ALWAYS AS (%s) VIRTUAL',
+                     v_table, c.col, v_expr);
+      IF v_comment IS NOT NULL THEN
+        EXECUTE format('COMMENT ON COLUMN %s.%I IS %L', v_table, c.col, v_comment);
+      END IF;
+
+      FOR v_i IN 1 .. coalesce(array_length(v_views, 1), 0) LOOP
+        EXECUTE format('CREATE OR REPLACE VIEW %s %sAS %s', v_views[v_i]::regclass, v_opts[v_i],
+                       v_defs[v_i]);
+      END LOOP;
+
+      outcome := 'retired';
+      detail := format('views=[%s] triggers=[%s]; heap bytes are reclaimed as rows are rewritten',
+                       (SELECT string_agg(x::regclass::text, ',') FROM unnest(v_views) x),
+                       array_to_string(v_triggers, ','));
+      IF p_dry_run THEN
+        RAISE EXCEPTION 'bm25_retire_legacy_columns dry run' USING ERRCODE = 'BM25D';
+      END IF;
+    EXCEPTION
+      WHEN SQLSTATE 'BM25D' THEN
+        outcome := 'would-retire';
+      WHEN lock_not_available THEN
+        outcome := 'skipped:lock-timeout'; detail := SQLERRM; freed_index_bytes := NULL;
+      WHEN OTHERS THEN
+        outcome := 'skipped:error'; detail := SQLSTATE || ': ' || SQLERRM; freed_index_bytes := NULL;
+    END;
+    RETURN NEXT;
+  END LOOP;
+END;
+$fn$;
+
+COMMENT ON FUNCTION harness_shared.bm25_retire_legacy_columns(boolean) IS
+  'Availability-gated (PG >= 18, pg_textsearch preloaded and installed, the corpus BM25 index valid): '
+  'swaps each legacy stored tsvector column for a same-named VIRTUAL generated column, dropping its GIN '
+  'index and tsv trigger and keeping dependent views. Never raises; reports one row per corpus. '
+  'Called by migration 1452 and the BM25 maintenance workflow (plan bm25-lexical-search-evoke-adoption-2026-10-10 D-011/D-012).';
+
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN SELECT * FROM harness_shared.bm25_retire_legacy_columns() LOOP
+    RAISE NOTICE 'bm25_retire_legacy_columns: %.% -> % (freed index bytes %, est column bytes %) %',
+      coalesce(r.table_name, '(engine)'), coalesce(r.column_name, '-'), r.outcome,
+      r.freed_index_bytes, r.est_column_bytes, coalesce(r.detail, '');
+  END LOOP;
+END
+$$;
