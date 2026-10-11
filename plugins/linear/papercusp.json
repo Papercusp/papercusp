@@ -14,7 +14,7 @@
     "contractVersion": 1,
     "displayName": "Linear",
     "datatypes": ["ticket", "ticket-status-change", "ticket-comment"],
-    "capabilities": ["ticket.read", "ticket.comment", "ticket.transition", "ticket.containers"],
+    "capabilities": ["ticket.read", "ticket.create", "ticket.comment", "ticket.transition", "ticket.containers"],
     "oauth": {
       "authorizeUrl": "https://linear.app/oauth/authorize?actor=app",
       "tokenUrl": "https://api.linear.app/oauth/token",

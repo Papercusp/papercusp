@@ -21,7 +21,10 @@
  * nativeId the comment phase reports, so the host recognises its own comment when it comes back.
  * `ticket.transition { toCategory }` -> issueUpdate stateId, choosing the first workflow state
  * (by position) of the issue's team whose type maps to that column; an issue already in the
- * column is left alone (`changed: false`).
+ * column is left alone (`changed: false`). `ticket.create { containerId, correlationId, title, body }`
+ * -> issueCreate in a configured team, with the issue id derived from the correlation id so a
+ * retry recovers the issue it already made (plan cupboard-distributable-integrations-2026-10-10,
+ * D-012: the bug-triage workflow files through whichever ticket provider is installed).
  *
  * Configuration read (D-014): `ticket.containers {}` lists the teams the connected app can read,
  * `{ id, name, kind: 'team', key }`, so the Integrations page can offer them for `teamIds`.
@@ -43,6 +46,7 @@
  * host's version-scoped dedupe absorbs it.
  */
 
+const { createHash } = require('node:crypto');
 const manifest = require('./papercusp.json');
 
 const DESCRIPTOR = manifest.provider;
@@ -131,6 +135,15 @@ const ISSUE_UPDATE = `mutation PapercuspIssueTransition($id: String!, $input: Is
   issueUpdate(id: $id, input: $input) { success issue { id updatedAt state { ${STATE_FIELDS} } } }
 }`;
 
+const ISSUE_CREATE = `mutation PapercuspIssueCreate($input: IssueCreateInput!) {
+  issueCreate(input: $input) { success issue { id identifier url team { id } } }
+}`;
+
+/** The issue with one exact id, archived ones included; an absent id is an empty list, not an error. */
+const ISSUE_BY_ID_QUERY = `query PapercuspIssueById($id: ID!) {
+  issues(first: 1, includeArchived: true, filter: { id: { eq: $id } }) { nodes { id identifier url team { id } } }
+}`;
+
 const TEAMS_QUERY = `query PapercuspTeams($after: String) {
   teams(first: ${PAGE_SIZE}, after: $after) {
     nodes { id key name }
@@ -165,11 +178,16 @@ function syncError(kind, message, extra) {
   return Object.assign(new Error(message), { kind }, extra || {});
 }
 
-function teamsOf(config) {
+/** The source's configured `teamIds`, deduplicated; empty when none are set. */
+function configuredTeams(config) {
   const raw = config && config.teamIds;
-  const teams = Array.isArray(raw) ? raw.map(text).filter(Boolean) : [];
+  return [...new Set(Array.isArray(raw) ? raw.map(text).filter(Boolean) : [])];
+}
+
+function teamsOf(config) {
+  const teams = configuredTeams(config);
   if (teams.length === 0) throw syncError('transient', 'linear_teams_missing: source config needs teamIds');
-  return [...new Set(teams)];
+  return teams;
 }
 
 /** The canonical column of a Linear workflow state, or null when it has none. */
@@ -592,9 +610,16 @@ async function transitionTicket(request, host) {
 /**
  * `ticket.containers {}`: the teams the connected app can read, for the source's team picker
  * (D-014). Each team's `id` is the UUID `teamIds` holds (the issue filter matches `team.id`). A
- * read of Linear's catalogue only: it syncs nothing, writes nothing, and ignores the source config.
+ * read of Linear's catalogue only: it syncs nothing and writes nothing.
+ *
+ * `{ purpose: 'create' }` (the provider-neutral argument a trigger pack's destination picker
+ * passes, plan cupboard-distributable-integrations-2026-10-10 D-012) narrows the list to the teams
+ * `ticket.create` accepts: the source's configured `teamIds` that the app can still read. Without
+ * it the source config is ignored, so the picker can offer every team.
  */
 async function listContainers(request, host) {
+  const forCreate = text((request.args || {}).purpose) === 'create';
+  const fileable = new Set(configuredTeams(request.config));
   const byId = new Map();
   let after = null;
   let truncated = true;
@@ -603,6 +628,7 @@ async function listContainers(request, host) {
     for (const team of conn.nodes) {
       const id = text(team && team.id);
       if (!id || byId.has(id)) continue;
+      if (forCreate && !fileable.has(id)) continue;
       const key = text(team.key);
       byId.set(id, { id, name: text(team.name) || key || id, kind: 'team', ...(key ? { key } : {}) });
     }
@@ -616,8 +642,66 @@ async function listContainers(request, host) {
   return { containers, truncated };
 }
 
+/**
+ * The Linear issue id a correlation id names: a UUID-v4-shaped SHA-256 digest of it. Linear lets
+ * the creator choose an issue's id, so every attempt for one correlation id asks for the SAME issue
+ * and a retried create cannot make a second one, while a lookup by that id is exact recovery.
+ */
+function issueIdFor(correlationId) {
+  const b = createHash('sha256').update('papercusp-linear-issue:' + correlationId).digest();
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = b.subarray(0, 16).toString('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
+
+async function findIssue(host, source, id) {
+  const data = await gql(host, source, ISSUE_BY_ID_QUERY, { id });
+  const nodes = data && data.issues && Array.isArray(data.issues.nodes) ? data.issues.nodes : null;
+  if (!nodes) throw syncError('transient', 'linear_unexpected_shape:issues');
+  return nodes.find((node) => text(node && node.id) === id) || null;
+}
+
+function recoveredIssue(issue, teamId) {
+  if (text(issue.team && issue.team.id) !== teamId) throw new Error('ticket_create_recovery_scope_invalid');
+  return { externalRef: text(issue.id), url: text(issue.url), recovered: true };
+}
+
+/**
+ * `ticket.create { containerId, correlationId, title, body, recoveryOnly? }` -> issueCreate in one of
+ * the source's configured teams (`containerId` is the team id the ticket:file tool passes, D-012).
+ * The issue id is derived from the correlation id, so the host's commit-then-create attempt recovers
+ * instead of duplicating: an existing issue is returned (`recovered`), `recoveryOnly` never creates,
+ * and a create that fails after Linear accepted it is answered by the issue it made.
+ */
+async function createTicket(request, host) {
+  const args = request.args || {};
+  const correlationId = text(args.correlationId);
+  const teamId = text(args.containerId);
+  const title = text(args.title);
+  if (!correlationId || correlationId.length > 1024) throw new Error('ticket_create_correlation_required');
+  if (!teamId || !configuredTeams(request.config).includes(teamId)) throw new Error('ticket_create_project_out_of_scope');
+  if (!title || title.length > 200 || typeof args.body !== 'string' || args.body.length > 30000) throw new Error('ticket_create_content_invalid');
+  const id = issueIdFor(correlationId);
+  const found = await findIssue(host, request.source, id);
+  if (found) return recoveredIssue(found, teamId);
+  if (args.recoveryOnly === true) return { pendingReconciliation: true };
+  let data;
+  try {
+    data = await gql(host, request.source, ISSUE_CREATE, { input: { id, teamId, title, description: args.body } });
+  } catch (error) {
+    const made = await findIssue(host, request.source, id).catch(() => null);
+    if (made) return recoveredIssue(made, teamId);
+    throw error;
+  }
+  const result = data.issueCreate;
+  if (!result || result.success !== true || !result.issue || text(result.issue.id) !== id) throw new Error('ticket_create_receipt_missing');
+  return { externalRef: id, url: text(result.issue.url), recovered: false };
+}
+
 const INVOKERS = {
   'ticket.read': readTicket,
+  'ticket.create': createTicket,
   'ticket.comment': commentOnTicket,
   'ticket.transition': transitionTicket,
   'ticket.containers': listContainers,
