@@ -244,6 +244,14 @@ export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBi
  * @param {(e: { attempt: number }) => void} [opts.onPostgresRestarted]
  *        Called when a supervised restart reaches "ready to accept connections".
  */
+/** Extension libraries preloaded when the embedded binary tree ships them (pg_textsearch). */
+export const OPTIONAL_PRELOAD_LIBRARIES: readonly string[];
+/** The platform's embedded `postgres` binary path, or null when no platform package resolves. */
+export function resolveEmbeddedPostgresBinary(): Promise<string | null>;
+/** The subset of `libraries` present in the binary tree that holds `postgresBinary`. */
+export function presentPreloadLibraries(postgresBinary: string | null, libraries?: readonly string[], exists?: (p: string) => boolean): string[];
+/** `-c shared_preload_libraries=…` postmaster flags, or [] when `libraries` is empty. */
+export function preloadFlags(libraries: readonly string[]): string[];
 export function startEmbeddedPostgresServer(opts?: {
     dataDir?: string | undefined;
     port?: number | undefined;
@@ -253,6 +261,8 @@ export function startEmbeddedPostgresServer(opts?: {
     seedPath?: string | undefined;
     pgRestoreBin?: string | undefined;
     extraPostgresSettings?: Record<string, string> | undefined;
+    /** Override the libraries preloaded via shared_preload_libraries (default: the bundled subset of OPTIONAL_PRELOAD_LIBRARIES). */
+    preloadLibraries?: readonly string[] | undefined;
     credentialsFile?: string | undefined;
     onLog?: ((m: string) => void) | undefined;
     supervise?: boolean | undefined;

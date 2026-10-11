@@ -62,6 +62,74 @@ const DEFAULT_OWNER = 'postgres';
 const DEFAULT_OWNER_PWD = 'postgres';
 
 /**
+ * Extension libraries the postmaster preloads WHEN the embedded binary tree ships them.
+ *
+ * pg_textsearch (BM25 lexical search, plan bm25-lexical-search-evoke-adoption-2026-10-10)
+ * refuses `CREATE EXTENSION` and BM25 index scans unless it is in
+ * `shared_preload_libraries`, and the setting is postmaster-level, so it must be on the
+ * command line at start. It is preloaded only when its library file is present: naming a
+ * missing library in `shared_preload_libraries` makes the postmaster refuse to start,
+ * and some desktop targets (Windows today) do not bundle it. A target without the
+ * library boots normally; the BM25 migration then skips its indexes, search ranks with
+ * the legacy tsvector path, and the BM25 health check reports the gap instead of hiding it.
+ */
+export const OPTIONAL_PRELOAD_LIBRARIES = Object.freeze(['pg_textsearch']);
+
+/**
+ * The `postgres` binary path for this platform, resolved exactly the way
+ * embedded-postgres's own `dist/binary.js` does. The package's `exports` map hides that
+ * file, so the switch is repeated with LITERAL specifiers: any bundler or loader that can
+ * resolve the library's own imports resolves these too.
+ * @returns {Promise<string | null>}
+ */
+export async function resolveEmbeddedPostgresBinary() {
+  const key = `${process.platform}-${process.arch}`;
+  try {
+    /** @type {{ postgres?: string, default?: { postgres?: string } } | null} */
+    let mod = null;
+    switch (key) {
+      case 'darwin-arm64': mod = await import('@embedded-postgres/darwin-arm64'); break;
+      case 'darwin-x64': mod = await import('@embedded-postgres/darwin-x64'); break;
+      case 'linux-arm64': mod = await import('@embedded-postgres/linux-arm64'); break;
+      case 'linux-x64': mod = await import('@embedded-postgres/linux-x64'); break;
+      case 'win32-x64': mod = await import('@embedded-postgres/windows-x64'); break;
+      default: return null;
+    }
+    return mod?.postgres ?? mod?.default?.postgres ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Which of `libraries` the binary tree that holds `postgresBinary` actually contains.
+ * Checks both layouts the sidecar assembles: Debian (`lib/postgresql/`, the npm
+ * binaries) and PostgreSQL's relocatable prefix (`lib/`, the pinned source build).
+ * @param {string | null} postgresBinary  absolute path of `<root>/bin/postgres[.exe]`
+ * @param {readonly string[]} [libraries]
+ * @param {(p: string) => boolean} [exists]
+ * @returns {string[]}
+ */
+export function presentPreloadLibraries(postgresBinary, libraries = OPTIONAL_PRELOAD_LIBRARIES, exists = existsSync) {
+  if (!postgresBinary) return [];
+  const root = dirname(dirname(postgresBinary));
+  const dirs = [join(root, 'lib', 'postgresql'), join(root, 'lib')];
+  const exts = ['so', 'dylib', 'dll'];
+  return libraries.filter((lib) => dirs.some((dir) => exts.some((ext) => exists(join(dir, `${lib}.${ext}`)))));
+}
+
+/**
+ * The `-c shared_preload_libraries=…` flags for the postmaster command line, or none.
+ * An explicit `shared_preload_libraries` in the caller's settings wins (it is appended
+ * later and PostgreSQL honours the last `-c` for a key).
+ * @param {readonly string[]} libraries
+ * @returns {string[]}
+ */
+export function preloadFlags(libraries) {
+  return libraries.length > 0 ? ['-c', `shared_preload_libraries=${libraries.join(',')}`] : [];
+}
+
+/**
  * The repo-public default role passwords (WI-10003627). They are the documented
  * DEV convention libs/db/src/connection.ts falls back to, and they are safe only
  * where every local account is the same trust principal (a developer box, a
@@ -871,6 +939,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     : null;
   const secrets = hostCredentials ?? DEFAULT_ROLE_PASSWORDS;
 
+  const preloadLibraries = opts.preloadLibraries
+    ?? presentPreloadLibraries(await resolveEmbeddedPostgresBinary());
+  const missingPreload = OPTIONAL_PRELOAD_LIBRARIES.filter((l) => !preloadLibraries.includes(l));
+  log(`preload: ${preloadLibraries.length ? preloadLibraries.join(',') : '(none)'}`
+    + (missingPreload.length ? ` — not bundled for ${process.platform}-${process.arch}: ${missingPreload.join(',')}` : ''));
+
   const pg = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: DEFAULT_OWNER,
@@ -903,6 +977,8 @@ export async function startEmbeddedPostgresServer(opts = {}) {
       '-c', 'wal_level=logical',
       '-c', 'max_wal_senders=10',
       '-c', 'max_replication_slots=10',
+      // pg_textsearch (BM25) must be preloaded; only when the tree bundles it.
+      ...preloadFlags(preloadLibraries),
       ...Object.entries(opts.extraPostgresSettings ?? {}).flatMap(
         ([k, v]) => ['-c', `${k}=${v}`],
       ),
