@@ -66,6 +66,7 @@ import {
 import {
   repairIndexOperatorClasses,
   repairTruncatedIndexExpressions,
+  stripConcurrentBuildLeftoverIndexes,
 } from '../src/schema/schema-index-opclasses.mjs';
 import {
   sortTopLevelDeclarations,
@@ -913,6 +914,17 @@ if (indexOpclasses.status === 0) {
     console.log(
       `    Fix 14: restored ${expressionFix.repairedKeys} truncated index expression(s) in ${expressionFix.changed} index(es)`,
     );
+
+    // Fix 15 (WI-6554700010008628): an interrupted REINDEX / CREATE INDEX
+    // CONCURRENTLY leaves an INVALID *_ccnew / *_ccold twin that drizzle-kit
+    // introspects like a real index. No migration creates one; drop it by name.
+    const leftoverFix = stripConcurrentBuildLeftoverIndexes(schema);
+    schema = leftoverFix.source;
+    if (leftoverFix.stripped.length > 0) {
+      console.log(
+        `    Fix 15: stripped ${leftoverFix.stripped.length} concurrent-build leftover index(es): ${leftoverFix.stripped.join(', ')}`,
+      );
+    }
   } catch (error) {
     console.warn(
       '    skipped Fix 10 (index operator-class metadata was not valid JSON):',

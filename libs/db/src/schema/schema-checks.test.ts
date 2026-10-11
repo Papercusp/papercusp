@@ -50,6 +50,15 @@ describe('repairCheckPrefixes', () => {
     expect(once.source).toBe(`check("fn", sql\`f(g(x))\`),`);
     expect(repairCheckPrefixes(once.source)).toEqual({ source: once.source, fixed: 0 });
   });
+
+  // WI-6554700010008565: the committed mirror carried 9 checks with a kept
+  // `CHECK (` prefix (4 of them paren-unbalanced) until pull-schema gained Fix 11b.
+  it('keeps the committed generated mirror free of kept CHECK ( prefixes', () => {
+    const generated = readFileSync(join(__dirname, 'generated.ts'), 'utf8');
+
+    expect(generated).toMatch(/check\("[^"]+", sql`/);
+    expect(repairCheckPrefixes(generated)).toEqual({ source: generated, fixed: 0 });
+  });
 });
 
 describe('repairNotValidChecks', () => {

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { repairIndexOperatorClasses, repairTruncatedIndexExpressions } from './schema-index-opclasses.mjs';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  repairIndexOperatorClasses,
+  repairTruncatedIndexExpressions,
+  stripConcurrentBuildLeftoverIndexes,
+} from './schema-index-opclasses.mjs';
 
 const fixture = `import { pgSchema, text, timestamp, index } from "drizzle-orm/pg-core";
 export const harnessShared = pgSchema("harness_shared");
@@ -180,5 +186,73 @@ describe('repairTruncatedIndexExpressions', () => {
 
     expect(twice).toMatchObject({ matched: 1, changed: 0, repairedKeys: 0 });
     expect(twice.source).toBe(once.source);
+  });
+});
+
+/**
+ * Every sql`` fragment whose parentheses do not balance outside single-quoted
+ * SQL literals. drizzle-kit cuts index expression keys at 63 bytes
+ * (coalesce(attname, pg_get_indexdef(...)) is typed `name`) and over-strips some
+ * CHECK bodies; both leave unbalanced fragments behind.
+ */
+function unbalancedSqlFragments(source: string): { total: number; unbalanced: string[] } {
+  const fragment = /sql`((?:[^`\\]|\\.)*)`/g;
+  const unbalanced: string[] = [];
+  let total = 0;
+  for (const match of source.matchAll(fragment)) {
+    total += 1;
+    let depth = 0;
+    let inLiteral = false;
+    let ok = true;
+    for (const ch of match[1]) {
+      if (ch === "'") inLiteral = !inLiteral;
+      if (inLiteral) continue;
+      if (ch === '(') depth += 1;
+      else if (ch === ')' && --depth < 0) ok = false;
+    }
+    if (!ok || depth !== 0) unbalanced.push(match[1].slice(0, 120));
+  }
+  return { total, unbalanced };
+}
+
+describe('generated.ts sql fragment integrity (WI-6554700010008565)', () => {
+  it('detects a 63-byte-truncated key and ignores parentheses inside literals', () => {
+    const truncated = `index("x").using("btree", sql\`${"split_part((((launch_spec -> 'acceptedOperation'::text) -> 'pin".slice(0, 63)}\`)`;
+    const literal = `check("y", sql\`status <> '(('::text\`)`;
+
+    expect(unbalancedSqlFragments(truncated).unbalanced).toHaveLength(1);
+    expect(unbalancedSqlFragments(literal)).toEqual({ total: 1, unbalanced: [] });
+  });
+
+  it('keeps every sql fragment in the committed generated mirror paren-balanced', () => {
+    const generated = readFileSync(join(__dirname, 'generated.ts'), 'utf8');
+    const result = unbalancedSqlFragments(generated);
+
+    expect(result.total).toBeGreaterThan(500);
+    expect(result.unbalanced).toEqual([]);
+  });
+});
+
+describe('stripConcurrentBuildLeftoverIndexes (WI-6554700010008628)', () => {
+  const source = [
+    '\tindex("route_invocations_ws_time_idx").using("btree", table.workspaceId.asc()),',
+    '\tindex("route_invocations_ws_time_idx_ccnew").using("btree", table.workspaceId.asc()),',
+    '\tuniqueIndex("shared_presence_pkey_ccnew").using("btree", table.workspaceId.asc()),',
+    '\tindex("carry_notes_bm25_ccold1").using("bm25", sql`COALESCE(note, \'\'::text)`),',
+    '\tindex("ccnew_is_not_a_suffix_here").using("btree", table.id.asc()),',
+    '',
+  ].join('\n');
+
+  it('removes only *_ccnew / *_ccold[N] declarations and is idempotent', () => {
+    const once = stripConcurrentBuildLeftoverIndexes(source);
+
+    expect(once.stripped).toEqual([
+      'route_invocations_ws_time_idx_ccnew',
+      'shared_presence_pkey_ccnew',
+      'carry_notes_bm25_ccold1',
+    ]);
+    expect(once.source).toContain('index("route_invocations_ws_time_idx")');
+    expect(once.source).toContain('index("ccnew_is_not_a_suffix_here")');
+    expect(stripConcurrentBuildLeftoverIndexes(once.source)).toEqual({ source: once.source, stripped: [] });
   });
 });

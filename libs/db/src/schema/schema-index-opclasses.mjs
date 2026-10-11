@@ -324,3 +324,25 @@ export function repairIndexOperatorClasses(source, metadata) {
 
   return { source: output, matched, changed, skipped };
 }
+
+/**
+ * Remove index declarations left by an interrupted concurrent build
+ * (WI-6554700010008628). A dead REINDEX / CREATE INDEX CONCURRENTLY leaves an
+ * INVALID `<index>_ccnew` / `_ccold` twin in the catalog, and drizzle-kit
+ * introspects it like any other index: the committed mirror declared 8 of them on
+ * 2026-10-11. No migration creates such a name, so they are removed by name.
+ *
+ * @param {string} source generated schema source
+ * @returns {{source:string, stripped:string[]}}
+ */
+export function stripConcurrentBuildLeftoverIndexes(source) {
+  const stripped = [];
+  const output = source.replace(
+    /^[ \t]*(?:uniqueIndex|index)\("([^"]*_cc(?:new|old)\d*)"\)[^\n]*\n/gm,
+    (_line, name) => {
+      stripped.push(name);
+      return '';
+    },
+  );
+  return { source: output, stripped };
+}
