@@ -21,7 +21,7 @@ nor the worker can redirect the response. Optional `responseGuidance` steers ton
 
 ## Phase 1 — Respond
 
-- **P-001** `todo` Read the event `payload` returned by `triggers:read-payload { planRunId: payload.plan_run.runId }` plus optional `payload.plan_run.inputs.responseGuidance`, draft a concise answer to the triggering mention, then call `slack:respond-in-thread` with `planRunId=payload.plan_run.runId` and the answer text. Complete only after the tool reports `posted:true` or `alreadyPosted:true`.
+- **P-001** `todo` Read the event `payload` returned by `triggers:read-payload { planRunId: payload.plan_run.runId }` plus optional `payload.plan_run.inputs.responseGuidance`, draft a concise answer to the triggering mention, then call `chat:reply` with `planRunId=payload.plan_run.runId` and the answer text (it posts through the source's installed chat package). Complete only after the tool reports `posted:true` or `alreadyPosted:true`.
 
 ## Decisions
 
