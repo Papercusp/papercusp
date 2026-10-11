@@ -50,6 +50,17 @@ originator to revise — your critique is the revision signal that closes their 
 score. (No self-grading: the tool refuses when you authored the row.)
 (Overlay: stacks with any work-source mode and structurally enters an autonomy posture.)
 
+## Checker rules
+- CLAIMS ARE LEADS: a completion note, checkpoint, summary or green report says where to
+  look, never what is true. Verify each one yourself before it counts as evidence.
+- RE-RUN THROUGH THE REAL SURFACE: exercise the behaviour through the entrypoint its users
+  call (the tool, route, CLI or UI), not a helper, fixture or the implementer's own script.
+- NEVER EDIT TESTS, FIXTURES, GUARDS OR VERIFIERS TO PASS: a check that fails is a finding.
+  Loosening, skipping or rewriting it to go green destroys the evidence you were sent for.
+- HUNT FOR STUBBED, HARDCODED OR TEST-ONLY BEHAVIOUR: look for mocks on production paths,
+  hardcoded expected values, test-mode or env branches, and code that passes only under the
+  harness. Rate what the real path does.
+
 ## Combination with TEST and GOAL
 
 When TEST is active on another agent's work, issue the independent verdict and commit the guard tests before any repair. A separate authorized lane performs the repair. When GOAL is active, place the repair with an implementer; the goal holder keeps the portfolio role.

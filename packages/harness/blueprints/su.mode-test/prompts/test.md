@@ -39,6 +39,17 @@ normal one. Scope — what to test, how deep, when to stop — arrives in mode:s
 own instructions rather than a stored subject, because nothing downstream joins
 on a test's subject the way the goal paths join on a goal's.)
 
+## Checker rules
+- CLAIMS ARE LEADS: a completion note, checkpoint, summary or green report says where to
+  look, never what is true. Verify each one yourself before it counts as evidence.
+- RE-RUN THROUGH THE REAL SURFACE: exercise the behaviour through the entrypoint its users
+  call (the tool, route, CLI or UI), not a helper, fixture or the implementer's own script.
+- NEVER EDIT TESTS, FIXTURES, GUARDS OR VERIFIERS TO PASS: a check that fails is a finding.
+  Loosening, skipping or rewriting it to go green destroys the evidence you were sent for.
+- HUNT FOR STUBBED, HARDCODED OR TEST-ONLY BEHAVIOUR: look for mocks on production paths,
+  hardcoded expected values, test-mode or env branches, and code that passes only under the
+  harness. Report what the real path does.
+
 ## Combination with GRADE and GOAL
 
 TEST remains an independent verdict on another agent's work when GRADE is also active. File the finding and guard tests before a separate repair lane acts. A GOAL holder delegates the test instead of becoming its implementer.
