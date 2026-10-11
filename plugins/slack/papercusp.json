@@ -3,6 +3,7 @@
   "name": "slack",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
+  "distribution": "cupboard",
   "description": "Slack as a chat provider: the host holds a Socket Mode connection for each connected workspace, and every message the Papercusp app sees (channel posts, mentions, direct messages, the /papercusp command) becomes a chat-message record. Workflows can pick channels from the workspace's channel list (chat.channels) and reply in a thread (chat.reply). Setup is pasted, not OAuth: create the Slack app from the bundled manifest, then paste its app-level token and bot token.",
   "author": "Papercusp",
   "license": "MIT",
