@@ -34,7 +34,7 @@
     "setup": {
       "credentials": [
         {
-          "key": "personalAccessToken",
+          "key": "personal_access_token",
           "label": "Personal access token",
           "help": "Instead of signing in with an OAuth app, paste a personal access token from Asana's developer console (My apps, Create new token).",
           "helpUrl": "https://app.asana.com/0/my-apps",
