@@ -116,8 +116,12 @@ test('GOLDEN — historical builtins keep pre-P-019 bytes; the new named SU comp
   for (const must of ['base', 'coding', 'single-agent', 'papercusp-engineer', 'su-collaborator']) {
     assert.ok(ids.includes(must), `builtin ${must} missing from the golden population`);
   }
+  // Builtins AUTHORED after P-019 on top of the rule-driven merge, whose difference
+  // from the historical array-replace rule is the intent. Each is asserted exactly
+  // below instead; everything else must keep its pre-P-019 bytes.
+  const authoredUnderRules = new Set(['su', 'morning-ai-intelligence']);
   const diffs: string[] = [];
-  for (const id of ids.filter((entry) => entry !== 'su')) {
+  for (const id of ids.filter((entry) => !authoredUnderRules.has(entry))) {
     const path = builtinBlueprintPath(id);
     const byRules = resolveLayers(readYaml(path), resolveBuiltinExtends, path).merged;
     const byRaw = resolveWithMergeRaw(readYaml(path), resolveBuiltinExtends);
@@ -136,6 +140,20 @@ test('GOLDEN — historical builtins keep pre-P-019 bytes; the new named SU comp
     ['domain', 'collaboration-stance', 'practice'],
     'the named SU root keeps its selected parent identities under the declared slot merge rule');
   assert.deepEqual(suRaw.slots, [], 'the historical array-replace rule would erase every parent slot');
+
+  // morning-ai-intelligence (2026-10-08) declares its own dependencies.tools on top of
+  // `research`. Under the setUnion rule it keeps research's read-only findings tools as
+  // well as its own; array-replace would have silently dropped them. Exact sets on both
+  // sides, so any widening of either layer fails here (WI-6554700010008491).
+  const maiPath = builtinBlueprintPath('morning-ai-intelligence');
+  const researchTools = getPath(readYaml(builtinBlueprintPath('research')), 'dependencies.tools') as string[];
+  const ownTools = getPath(readYaml(maiPath), 'dependencies.tools') as string[];
+  const maiRules = getPath(resolveLayers(readYaml(maiPath), resolveBuiltinExtends, maiPath).merged, 'dependencies.tools') as string[];
+  const maiRaw = getPath(resolveWithMergeRaw(readYaml(maiPath), resolveBuiltinExtends), 'dependencies.tools') as string[];
+  assert.deepEqual(researchTools, ['features:get', 'plans:items', 'work_items:list'], 'research contributes only its read-only findings tools');
+  assert.deepEqual([...maiRules].sort(), [...new Set([...researchTools, ...ownTools])].sort(),
+    'morning-ai-intelligence resolves to exactly research ∪ its own tools');
+  assert.deepEqual(maiRaw, ownTools, 'the historical array-replace rule would drop the inherited research tools');
 });
 
 test('GOLDEN — no builtin child is clamped by a parent cap: every resolved cap equals the LEAF-MOST layer that sets it (templates carry the loosest bound, D-020)', () => {
