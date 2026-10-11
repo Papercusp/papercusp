@@ -38,8 +38,10 @@
 -- 2^53, so no node can ever mint them. EI- ids get a 20-digit 1443-prefixed
 -- tail; F- ids keep their kind prefix (F-FIX-1443nnnnnnnnn).
 --
--- Evidence: every touched work_items row, spec-revision edge, carry note and
--- coord link is copied into a bak_20261011_*_1443 table first, and each row's
+-- Evidence: every touched work_items row, spec-revision edge, dependency edge,
+-- carry note and coord link is copied into a bak_20261011_*_1443 table first
+-- (dependency edges must be lifted before the deletes: migration 988's
+-- endpoint-delete guard refuses a delete while any edge names the row), and each row's
 -- action is recorded in bak_20261011_work_item_twin_manifest_1443. Kopia
 -- snapshot 78509 (a314919e2ae98662e9152e2e4b3e01db) was taken before arming.
 --
@@ -93,6 +95,11 @@ CREATE TABLE IF NOT EXISTS harness_shared.bak_20261011_work_item_twin_links_1443
   (LIKE harness_shared.coord_links INCLUDING DEFAULTS);
 CREATE UNIQUE INDEX IF NOT EXISTS bak_20261011_work_item_twin_links_1443_uq
   ON harness_shared.bak_20261011_work_item_twin_links_1443 (id);
+
+CREATE TABLE IF NOT EXISTS harness_shared.bak_20261011_work_item_twin_deps_1443
+  (LIKE harness_shared.work_item_deps INCLUDING DEFAULTS);
+CREATE UNIQUE INDEX IF NOT EXISTS bak_20261011_work_item_twin_deps_1443_uq
+  ON harness_shared.bak_20261011_work_item_twin_deps_1443 (id);
 
 CREATE TEMP TABLE twin_1443 ON COMMIT DROP AS
 SELECT w.workspace_id,
@@ -355,6 +362,56 @@ DELETE FROM harness_shared.work_item_claims x
  WHERE t.action IN ('merge-delete', 'fixture-delete', 'stale-delete') AND x.workspace_id = t.workspace_id
    AND x.harness_slug = t.harness_slug AND x.work_item_id = t.feature_id;
 
+-- Dependency edges (work_item_deps). An edge names a feature as
+-- '<harness>#<id>' and an issue by its bare id, and the endpoint-delete guard
+-- of migration 988 refuses to delete a row while ANY edge, in any workspace,
+-- names it. So every edge naming a row that is deleted or renamed is backed
+-- up and removed here, and put back below once the rows have moved:
+--   fixture-delete                 -> dropped;
+--   merge-delete (feature)         -> '<survivor>#<survivor's final id>';
+--   rekey / stale-delete (feature) -> '<harness>#<new id>';
+--   issue endpoint                 -> unchanged (a bare id keeps naming the row
+--                                     that kept the id); dropped when no row keeps it.
+-- An edge in a workspace where that ref is not a twin is put back unchanged.
+CREATE TEMP TABLE twin_ref_1443 ON COMMIT DROP AS
+SELECT DISTINCT t.workspace_id, k.kind,
+       CASE k.kind WHEN 'issue' THEN t.feature_id
+                   ELSE t.harness_slug || '#' || t.feature_id END AS old_ref,
+       CASE
+         WHEN k.kind = 'issue' THEN
+           CASE WHEN EXISTS (SELECT 1 FROM twin_1443 o
+                              WHERE o.workspace_id = t.workspace_id
+                                AND o.feature_id = t.feature_id AND o.action = 'keep')
+                THEN t.feature_id END
+         WHEN t.action = 'fixture-delete' THEN NULL
+         WHEN t.action IN ('rekey', 'stale-delete') THEN t.harness_slug || '#' || t.new_id
+         WHEN t.action = 'merge-delete' THEN s.harness_slug || '#'
+              || CASE WHEN s.action IN ('rekey', 'stale-delete') THEN s.new_id ELSE s.feature_id END
+       END AS new_ref
+  FROM twin_1443 t
+  JOIN harness_shared.work_items w USING (workspace_id, harness_slug, feature_id)
+  CROSS JOIN LATERAL (SELECT CASE WHEN w.item_kind IN ('bug', 'change', 'task')
+                                  THEN 'issue' ELSE 'feature' END AS kind) k
+  LEFT JOIN twin_1443 s
+    ON t.action = 'merge-delete' AND s.workspace_id = t.workspace_id
+   AND s.harness_slug = t.survivor_harness AND s.feature_id = t.feature_id
+ WHERE t.action <> 'keep';
+
+CREATE TEMP TABLE twin_dep_1443 ON COMMIT DROP AS
+SELECT d.*
+  FROM harness_shared.work_item_deps d
+ WHERE EXISTS (SELECT 1 FROM twin_ref_1443 r
+                WHERE (d.blocked_kind = r.kind AND d.blocked_ref = r.old_ref)
+                   OR (d.blocker_kind = r.kind AND d.blocker_ref = r.old_ref));
+
+INSERT INTO harness_shared.bak_20261011_work_item_twin_deps_1443
+SELECT * FROM twin_dep_1443
+ON CONFLICT (id) DO NOTHING;
+
+DELETE FROM harness_shared.work_item_deps d
+ USING twin_dep_1443 x
+ WHERE d.id = x.id;
+
 -- Merge each same-title source into its survivor. The most advanced source
 -- (then the most recent) supplies the state; completion fields are filled
 -- only when the survivor ends terminal.
@@ -461,6 +518,30 @@ DELETE FROM harness_shared.work_items w
    AND w.workspace_id = t.workspace_id
    AND w.harness_slug = t.harness_slug
    AND w.feature_id = t.feature_id;
+
+-- Put the dependency edges back, re-pointed (see the block above the merge).
+INSERT INTO harness_shared.work_item_deps
+       (id, workspace_id, blocked_kind, blocked_ref, blocker_kind, blocker_ref,
+        dep_type, created_by, created_at, satisfaction)
+SELECT x.id, x.workspace_id, x.blocked_kind, bm.ref, x.blocker_kind, km.ref,
+       x.dep_type, x.created_by, x.created_at, x.satisfaction
+  FROM twin_dep_1443 x
+  CROSS JOIN LATERAL (
+    SELECT CASE WHEN r.old_ref IS NULL THEN x.blocked_ref ELSE r.new_ref END AS ref
+      FROM (SELECT 1) one
+      LEFT JOIN twin_ref_1443 r
+        ON r.workspace_id = x.workspace_id AND r.kind = x.blocked_kind AND r.old_ref = x.blocked_ref
+     LIMIT 1) bm
+  CROSS JOIN LATERAL (
+    SELECT CASE WHEN r.old_ref IS NULL THEN x.blocker_ref ELSE r.new_ref END AS ref
+      FROM (SELECT 1) one
+      LEFT JOIN twin_ref_1443 r
+        ON r.workspace_id = x.workspace_id AND r.kind = x.blocker_kind AND r.old_ref = x.blocker_ref
+     LIMIT 1) km
+ WHERE bm.ref IS NOT NULL
+   AND km.ref IS NOT NULL
+   AND NOT (x.blocked_kind = x.blocker_kind AND bm.ref = km.ref)
+ON CONFLICT DO NOTHING;
 
 DO $post1443$
 DECLARE bad text;
