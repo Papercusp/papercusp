@@ -26,6 +26,19 @@
         "displayNameField": "login"
       }
     },
+    "setup": {
+      "credentials": [
+        {
+          "key": "personal_access_token",
+          "label": "Personal access token",
+          "help": "Instead of signing in with an OAuth app, paste a GitHub personal access token that can read and comment on the repository's issues. Issues and comments are then created as that token's account.",
+          "helpUrl": "https://github.com/settings/personal-access-tokens",
+          "placeholder": "github_pat_...",
+          "pattern": "(?:ghp_|gho_|ghu_|github_pat_)[A-Za-z0-9_]{20,255}",
+          "hosts": ["api.github.com"]
+        }
+      ]
+    },
     "membership": { "identityProvider": "github" },
     "egressHosts": ["api.github.com", "github.com"],
     "defaultDestinations": {
