@@ -1,0 +1,117 @@
+-- 1459-canonicalize-papercusp-server-tool-names.sql — WI-6554700010008643
+--
+-- Follow-up to 1130 (EI-22420642374429444). 1130 and its companion writer
+-- canonicalized the two client spellings of the `papercusp-su` MCP server:
+--   mcp__papercusp-su__<group>_<verb>   (Claude)
+--   mcp__papercusp_su.<group>_<verb>    (Codex)
+-- but spawned agents and console launches register the SAME catalog under a
+-- second server name, `papercusp` (role-launch-spec / console-launcher /
+-- Codex homes). Their spellings were never canonicalized:
+--   mcp__papercusp__<group>_<verb>      (Claude)
+--   mcp__papercusp.<group>_<verb>       (Codex)
+-- The writer now derives its accepted prefixes from PAPERCUSP_MCP_SERVER_NAMES
+-- (packages/operator-core/lib/papercusp-mcp-servers.ts), so new rows land
+-- canonical; this migration rewrites the historic rows.
+--
+-- MEASURED BEFORE AUTHORING (2026-10-11 17:55Z, workspace_id='default'):
+--   generated full catalog (.papercusp/tool-catalog.json): 961 tools
+--   `papercusp`-server spellings observed: 52 distinct / 85,725 rows
+--   (oldest 2026-09-01, newest 2026-10-11)
+--   resolved by the REAL writer function (canonicalSessionPartToolName)
+--   against that catalog: 49 distinct / 85,721 rows
+--   deliberately untouched: 3 distinct / 4 rows, all malformed
+--   (`..._list_proxy_placeholder`, `tool_search_tool_bm25`, and a value with a
+--   `</parameter` tail)
+--
+-- Same shape as 1130: an EXPLICIT map, not a separator normalizer. Native
+-- names, unknown wrappers, malformed values and separator collisions are
+-- untouched. Fixed 50,000-row pages bound the lock footprint. Idempotent:
+-- canonical rows no longer match the map, and a re-run after a partial failure
+-- resumes from the remaining aliases.
+--
+-- FORWARD-COMPAT: every deployed reader treats session_turn_parts.tool_name as
+-- opaque text, and canonical `group:verb` values are already the majority form
+-- in the table (written by the su writer since 1130). No DDL.
+-- The migration runner supplies the transaction; do not add BEGIN/COMMIT.
+
+CREATE TEMP TABLE session_part_papercusp_server_tool_name_map (
+  alias text PRIMARY KEY,
+  canonical text NOT NULL
+) ON COMMIT DROP;
+
+INSERT INTO session_part_papercusp_server_tool_name_map (alias, canonical) VALUES
+  ('mcp__papercusp__capability_git', 'capability:git'),
+  ('mcp__papercusp__capability_list', 'capability:list'),
+  ('mcp__papercusp__capability_read', 'capability:read'),
+  ('mcp__papercusp__code_run', 'code:run'),
+  ('mcp__papercusp__code_tools', 'code:tools'),
+  ('mcp__papercusp__conversations_get', 'conversations:get'),
+  ('mcp__papercusp__coord_inbox', 'coord:inbox'),
+  ('mcp__papercusp__coord_orient', 'coord:orient'),
+  ('mcp__papercusp__coord_send', 'coord:send'),
+  ('mcp__papercusp__dev_pg_query', 'dev:pg_query'),
+  ('mcp__papercusp__facts_assert', 'facts:assert'),
+  ('mcp__papercusp__facts_list', 'facts:list'),
+  ('mcp__papercusp__improvements_capture', 'improvements:capture'),
+  ('mcp__papercusp__memory_remember', 'memory:remember'),
+  ('mcp__papercusp__memory_search', 'memory:search'),
+  ('mcp__papercusp__plans_add-decision', 'plans:add-decision'),
+  ('mcp__papercusp__plans_get', 'plans:get'),
+  ('mcp__papercusp__plans_get-spec-evidence', 'plans:get-spec-evidence'),
+  ('mcp__papercusp__plans_set-now', 'plans:set-now'),
+  ('mcp__papercusp__reports_get', 'reports:get'),
+  ('mcp__papercusp__reports_search', 'reports:search'),
+  ('mcp__papercusp__rubrics_get', 'rubrics:get'),
+  ('mcp__papercusp__rubrics_list', 'rubrics:list'),
+  ('mcp__papercusp__scorecards_emit', 'scorecards:emit'),
+  ('mcp__papercusp__scorecards_evaluate', 'scorecards:evaluate'),
+  ('mcp__papercusp__scorecards_get', 'scorecards:get'),
+  ('mcp__papercusp__scorecards_list', 'scorecards:list'),
+  ('mcp__papercusp__search_fulltext', 'search:fulltext'),
+  ('mcp__papercusp__session_request-compaction', 'session:request-compaction'),
+  ('mcp__papercusp__tools_find', 'tools:find'),
+  ('mcp__papercusp__tools_invoke', 'tools:invoke'),
+  ('mcp__papercusp__work_items_checkpoint', 'work_items:checkpoint'),
+  ('mcp__papercusp__work_items_comment', 'work_items:comment'),
+  ('mcp__papercusp__work_items_complete', 'work_items:complete'),
+  ('mcp__papercusp__work_items_get', 'work_items:get'),
+  ('mcp__papercusp__work_items_list', 'work_items:list'),
+  ('mcp__papercusp.code_run', 'code:run'),
+  ('mcp__papercusp.coord_inbox', 'coord:inbox'),
+  ('mcp__papercusp.coord_orient', 'coord:orient'),
+  ('mcp__papercusp.coord_send', 'coord:send'),
+  ('mcp__papercusp.dev_pg_query', 'dev:pg_query'),
+  ('mcp__papercusp.facts_list', 'facts:list'),
+  ('mcp__papercusp.improvements_capture', 'improvements:capture'),
+  ('mcp__papercusp.plans_get', 'plans:get'),
+  ('mcp__papercusp.recipes_search', 'recipes:search'),
+  ('mcp__papercusp.tools_find', 'tools:find'),
+  ('mcp__papercusp.tools_invoke', 'tools:invoke'),
+  ('mcp__papercusp.work_items_comment', 'work_items:comment'),
+  ('mcp__papercusp.work_items_get', 'work_items:get');
+
+DO $session_part_papercusp_server_tool_names$
+DECLARE
+  changed bigint;
+BEGIN
+  LOOP
+    WITH batch AS MATERIALIZED (
+      SELECT p.ctid, m.canonical
+        FROM harness_shared.session_turn_parts AS p
+        JOIN session_part_papercusp_server_tool_name_map AS m
+          ON m.alias = p.tool_name
+       WHERE p.workspace_id = 'default'
+         AND p.tool_name IS DISTINCT FROM m.canonical
+       ORDER BY p.ingested_at ASC, p.source_kind ASC, p.session_id ASC, p.part_idx ASC
+       LIMIT 50000
+    )
+    UPDATE harness_shared.session_turn_parts AS p
+       SET tool_name = batch.canonical
+      FROM batch
+     WHERE p.ctid = batch.ctid;
+
+    GET DIAGNOSTICS changed = ROW_COUNT;
+    EXIT WHEN changed = 0;
+  END LOOP;
+END
+$session_part_papercusp_server_tool_names$;
