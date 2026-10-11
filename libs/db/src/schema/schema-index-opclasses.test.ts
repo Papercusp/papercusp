@@ -255,4 +255,12 @@ describe('stripConcurrentBuildLeftoverIndexes (WI-6554700010008628)', () => {
     expect(once.source).toContain('index("ccnew_is_not_a_suffix_here")');
     expect(stripConcurrentBuildLeftoverIndexes(once.source)).toEqual({ source: once.source, stripped: [] });
   });
+
+  it('keeps the committed generated mirror free of concurrent-build leftover indexes', () => {
+    const generated = readFileSync(join(__dirname, 'generated.ts'), 'utf8');
+
+    // Positive control: the mirror really declares indexes in the shape the stripper matches.
+    expect(generated).toMatch(/^\t(?:uniqueIndex|index)\("/m);
+    expect(stripConcurrentBuildLeftoverIndexes(generated).stripped).toEqual([]);
+  });
 });
