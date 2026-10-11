@@ -1,5 +1,10 @@
 -- P-011: seconds exposure, separate from money; account tutorials need no workspace.
 -- Fixed read-only bridge to existing global policy; no hosted table/DML grant.
+-- FORWARD-COMPAT: this migration creates the reservation table before its indexes;
+-- deployed issuance remains disabled. Existing reservation writers omit the new
+-- nullable attempt/conversation columns, so their NULL values do not conflict in
+-- the unique identity indexes. The one-live-user index enforces the admission
+-- invariant already used by the store; no old column or writer shape is removed.
 CREATE OR REPLACE FUNCTION papercusp_auth.lock_tutorial_voice_global_flags()
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = pg_catalog
