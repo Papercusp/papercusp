@@ -1,0 +1,47 @@
+-- P-011: seconds exposure, separate from money; account tutorials need no workspace.
+CREATE TABLE IF NOT EXISTS papercusp_auth.tutorial_voice_reservations (
+  id uuid PRIMARY KEY,
+  control_workspace_id text NOT NULL,
+  organization_id text NOT NULL,
+  user_id text NOT NULL,
+  customer_workspace_id text,
+  day date NOT NULL,
+  maximum_seconds integer NOT NULL CHECK (maximum_seconds BETWEEN 1 AND 7200),
+  provider_limit_ref text NOT NULL CHECK (length(provider_limit_ref) BETWEEN 1 AND 256),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  provider_final_ref text CHECK (length(provider_final_ref) BETWEEN 1 AND 256)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS tutorial_voice_one_live_user
+  ON papercusp_auth.tutorial_voice_reservations (user_id) WHERE provider_final_ref IS NULL;
+CREATE INDEX IF NOT EXISTS tutorial_voice_daily ON papercusp_auth.tutorial_voice_reservations (day);
+ALTER TABLE papercusp_auth.tutorial_voice_reservations OWNER TO hosted_owner;
+ALTER TABLE papercusp_auth.tutorial_voice_reservations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE papercusp_auth.tutorial_voice_reservations FORCE ROW LEVEL SECURITY;
+REVOKE ALL ON papercusp_auth.tutorial_voice_reservations FROM PUBLIC, harness_app, harness_zero, harness_admin, hosted_app, hosted_service;
+GRANT SELECT, INSERT ON papercusp_auth.tutorial_voice_reservations TO hosted_service;
+GRANT UPDATE (provider_final_ref) ON papercusp_auth.tutorial_voice_reservations TO hosted_service;
+DROP POLICY IF EXISTS tutorial_voice_service ON papercusp_auth.tutorial_voice_reservations;
+CREATE POLICY tutorial_voice_service ON papercusp_auth.tutorial_voice_reservations
+  TO hosted_service USING (true) WITH CHECK (true);
+CREATE OR REPLACE FUNCTION papercusp_auth.tutorial_voice_reservations_guard()
+RETURNS trigger LANGUAGE plpgsql AS $body$
+BEGIN
+  IF TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND (
+    OLD.provider_final_ref IS NOT NULL OR NEW.provider_final_ref IS NULL OR
+    ROW(NEW.id, NEW.control_workspace_id, NEW.organization_id, NEW.user_id,
+      NEW.customer_workspace_id, NEW.day, NEW.maximum_seconds, NEW.provider_limit_ref, NEW.created_at)
+    IS DISTINCT FROM ROW(OLD.id, OLD.control_workspace_id, OLD.organization_id, OLD.user_id,
+      OLD.customer_workspace_id, OLD.day, OLD.maximum_seconds, OLD.provider_limit_ref, OLD.created_at)
+  )) THEN
+    RAISE EXCEPTION 'tutorial voice exposure is immutable' USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$body$;
+ALTER FUNCTION papercusp_auth.tutorial_voice_reservations_guard() OWNER TO hosted_owner;
+DROP TRIGGER IF EXISTS tutorial_voice_reservations_guard ON papercusp_auth.tutorial_voice_reservations;
+CREATE TRIGGER tutorial_voice_reservations_guard BEFORE UPDATE OR DELETE
+  ON papercusp_auth.tutorial_voice_reservations FOR EACH ROW
+  EXECUTE FUNCTION papercusp_auth.tutorial_voice_reservations_guard();
+COMMENT ON TABLE papercusp_auth.tutorial_voice_reservations IS
+  'Full enforced duration charged at admission. No browser refunds or expiry release. Verified provider finality clears live-user exclusion; seconds remain charged.';

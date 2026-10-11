@@ -620,28 +620,37 @@ function containerOf(item, kind, parentId) {
  * (default: the source's configured `projectGids`) also carry their sections, in Asana's order,
  * which is what `sectionCategories` maps. A read of Asana's catalogue only: it syncs nothing and
  * writes nothing.
+ *
+ * `{ purpose: 'create' }` (the provider-neutral ticket.containers argument a trigger pack's
+ * destination picker passes, plan cupboard-distributable-integrations-2026-10-10 D-012) narrows
+ * the list to the containers `ticket.create` accepts: the source's configured projects, no
+ * workspaces and no sections. Without it the picker would offer projects a filing then refuses.
  */
 async function listContainers(request, host) {
   const args = request.args || {};
   const onlyWorkspace = text(args.workspaceGid);
+  const forCreate = text(args.purpose) === 'create';
+  const fileable = new Set(projectsOf(request.config));
   const workspaces = await readList(host, request.source, '/workspaces', { opt_fields: WORKSPACE_FIELDS });
   let truncated = workspaces.truncated;
   const containers = [];
   const projects = new Map();
   for (const workspace of workspaces.items) {
     if (onlyWorkspace && text(workspace.gid) !== onlyWorkspace) continue;
-    containers.push(containerOf(workspace, 'workspace'));
+    if (!forCreate) containers.push(containerOf(workspace, 'workspace'));
     const listed = await readList(host, request.source, '/projects', {
       workspace: text(workspace.gid), archived: false, opt_fields: PROJECT_FIELDS,
     });
     truncated = truncated || listed.truncated;
     for (const project of listed.items) {
       if (projects.has(text(project.gid))) continue;
+      if (forCreate && !fileable.has(text(project.gid))) continue;
       const container = containerOf(project, 'project', text(workspace.gid));
       projects.set(container.id, container);
       containers.push(container);
     }
   }
+  if (forCreate) return { containers, truncated };
   const wanted = Array.isArray(args.projectGids) ? [...new Set(args.projectGids.map(text).filter(Boolean))] : projectsOf(request.config);
   const withSections = wanted.filter((gid) => projects.has(gid));
   if (withSections.length > SECTION_PROJECTS_MAX) truncated = true;
@@ -723,11 +732,13 @@ async function unsubscribePush(request, host) {
 }
 
 /** OAuth external.gid is lookup, not an exactly-once POST guarantee. The host
- * commits an attempt first; later invocations use recoveryOnly and never POST. */
+ * commits an attempt first; later invocations use recoveryOnly and never POST.
+ * The project is `containerId` (the provider-neutral name the ticket:file tool passes,
+ * D-012) or the older `projectGid`; either must be one of the source's configured projects. */
 async function createTicket(request, host) {
   const args = request.args || {};
   const correlationId = text(args.correlationId);
-  const projectGid = text(args.projectGid);
+  const projectGid = text(args.containerId) || text(args.projectGid);
   const title = text(args.title);
   if (!correlationId || correlationId.length > 1024) throw new Error('ticket_create_correlation_required');
   if (!projectGid || !projectsOf(request.config).includes(projectGid)) throw new Error('ticket_create_project_out_of_scope');
