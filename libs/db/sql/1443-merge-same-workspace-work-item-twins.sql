@@ -503,8 +503,14 @@ ON CONFLICT DO NOTHING;
 
 -- Local-only deletion: the outbox capture skips rows whose origin is not
 -- 'local', so mark the doomed rows first (see the Federation note above).
+-- fed_ts MUST move too: stamp_local_federated_write re-stamps origin='local' on
+-- a local write it judges content-changing (measured 2026-10-11: an origin-only
+-- UPDATE on xbench fixture rows came back 'local' and their deletes federated);
+-- a write that moves fed_ts is treated as an apply/repair and left as written.
+-- (Edited after this node applied it, D-010: same end state, no federated deletes.)
 UPDATE harness_shared.work_items w
-   SET origin = 'remote'
+   SET origin = 'remote',
+       fed_ts = coalesce(w.fed_ts, 0) + 1
   FROM twin_1443 t
  WHERE t.action IN ('merge-delete', 'fixture-delete', 'stale-delete')
    AND w.workspace_id = t.workspace_id
