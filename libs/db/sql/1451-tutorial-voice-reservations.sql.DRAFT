@@ -1,4 +1,30 @@
 -- P-011: seconds exposure, separate from money; account tutorials need no workspace.
+-- Fixed read-only bridge to existing global policy; no hosted table/DML grant.
+CREATE OR REPLACE FUNCTION papercusp_auth.lock_tutorial_voice_global_flags()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog
+AS $body$
+DECLARE policy jsonb;
+BEGIN
+  SELECT payload INTO policy FROM harness_shared.operator_flag_overrides
+    WHERE workspace_id = '@global' FOR UPDATE;
+  IF policy IS NULL OR jsonb_typeof(policy) <> 'object' THEN
+    RETURN NULL;
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_each(policy) AS entry
+    WHERE jsonb_typeof(entry.value) <> 'boolean') THEN
+    RETURN NULL;
+  END IF;
+  RETURN policy;
+END;
+$body$;
+ALTER FUNCTION papercusp_auth.lock_tutorial_voice_global_flags() OWNER TO harness_admin;
+REVOKE ALL ON FUNCTION papercusp_auth.lock_tutorial_voice_global_flags()
+  FROM PUBLIC, harness_app, harness_zero, hosted_app, hosted_service;
+GRANT EXECUTE ON FUNCTION papercusp_auth.lock_tutorial_voice_global_flags() TO hosted_service;
+COMMENT ON FUNCTION papercusp_auth.lock_tutorial_voice_global_flags() IS
+  'Service-only fixed global boolean policy read; caller transaction retains the row lock. No defaults, cutover creation, workspace selection or DML authority.';
+
 CREATE TABLE IF NOT EXISTS papercusp_auth.tutorial_voice_reservations (
   id uuid PRIMARY KEY,
   control_workspace_id text NOT NULL,
