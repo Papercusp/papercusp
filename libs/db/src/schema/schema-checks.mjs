@@ -101,3 +101,49 @@ export function repairNotValidChecks(source) {
 
   return { source: repaired, fixed };
 }
+
+/**
+ * drizzle-kit derives a check's expression from `pg_get_constraintdef()` with
+ * `def.replace(/^CHECK\s*\(\(/, '').replace(/\)\)\s*$/, '')`, which assumes
+ * PostgreSQL's `CHECK ((expr))` rendering. A check whose top-level expression
+ * needs no extra parentheses — a bare function call or column, e.g.
+ * `CHECK (fn(col))` — keeps its `CHECK (` prefix, and when the definition ends
+ * in `))` the second replace also eats the call's own closer, leaving
+ * `CHECK (fn(col`. Invert exactly those two replaces:
+ *   balance 2 → the `))` replace fired: expression = rest + ')'
+ *   balance 0 → it did not: expression = rest minus the CHECK's own ')'
+ * Anything else is left unchanged; never guess.
+ */
+function repairCheckPrefixBody(body) {
+  const prefix = /^\s*CHECK\s*\(/i.exec(body);
+  if (!prefix) return null;
+
+  const rest = body.slice(prefix[0].length);
+  const balance = parenBalance(body);
+  let expression;
+  if (balance === 2) expression = `${rest})`;
+  else if (balance === 0 && /\)\s*$/.test(rest)) expression = rest.replace(/\)\s*$/, '');
+  else return null;
+
+  return expression.trim() !== '' && parenBalance(expression) === 0 ? expression : null;
+}
+
+/**
+ * Repair checks whose generated body still starts with `CHECK (`. Run after
+ * {@link repairNotValidChecks}: a NOT VALID function-call check
+ * (`CHECK (fn(col)) NOT VALID`) needs both repairs, in that order.
+ *
+ * @param {string} source generated schema source
+ * @returns {{source: string, fixed: number}}
+ */
+export function repairCheckPrefixes(source) {
+  let fixed = 0;
+  const repaired = source.replace(CHECK_SQL_RE, (full, prefix, body, quote) => {
+    const expression = repairCheckPrefixBody(body);
+    if (expression == null) return full;
+    fixed += 1;
+    return prefix + expression + quote;
+  });
+
+  return { source: repaired, fixed };
+}

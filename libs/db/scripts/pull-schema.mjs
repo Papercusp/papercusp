@@ -63,12 +63,15 @@ import {
   promoteGeneratedSchemaArtifacts,
   repairCompositeForeignKeyArtifacts,
 } from '../src/schema-generated-artifacts.mjs';
-import { repairIndexOperatorClasses } from '../src/schema/schema-index-opclasses.mjs';
+import {
+  repairIndexOperatorClasses,
+  repairTruncatedIndexExpressions,
+} from '../src/schema/schema-index-opclasses.mjs';
 import {
   sortTopLevelDeclarations,
   sortPgCoreImportSpecifiers,
 } from '../src/schema/schema-declaration-order.mjs';
-import { repairNotValidChecks } from '../src/schema/schema-checks.mjs';
+import { repairCheckPrefixes, repairNotValidChecks } from '../src/schema/schema-checks.mjs';
 import { repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
 import {
   MIGRATION_FINGERPRINT_SQL,
@@ -303,6 +306,14 @@ const repairedNotValidChecks = repairNotValidChecks(schema);
 schema = repairedNotValidChecks.source;
 if (repairedNotValidChecks.fixed > 0) {
   console.log(`    Fix 11: repaired ${repairedNotValidChecks.fixed} NOT VALID check(s)`);
+}
+// Fix 11b (WI-6554700010008565): drizzle-kit strips `CHECK ((`…`))`, so a
+// check whose expression is a bare function call keeps `CHECK (` and loses
+// its closers. Must run after Fix 11 (a NOT VALID one needs both).
+const repairedCheckPrefixes = repairCheckPrefixes(schema);
+schema = repairedCheckPrefixes.source;
+if (repairedCheckPrefixes.fixed > 0) {
+  console.log(`    Fix 11b: repaired ${repairedCheckPrefixes.fixed} check(s) that kept a CHECK ( prefix`);
 }
 
 // Fix 0: drop MIGRATION-INTERNAL scratch/backup tables (leading underscore or
@@ -854,7 +865,8 @@ const indexOpclassQuery = [
   "SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.schema_name, q.table_name, q.index_name), '[]'::json)",
   "FROM (",
   "  SELECT n.nspname AS schema_name, t.relname AS table_name, i.relname AS index_name,",
-  "    json_agg(json_build_object('opclass', opc.opcname, 'expression', u.attnum = 0) ORDER BY u.ord) AS keys",
+  "    json_agg(json_build_object('opclass', opc.opcname, 'expression', u.attnum = 0,",
+  "      'definition', pg_get_indexdef(ix.indexrelid, u.ord::int, false)) ORDER BY u.ord) AS keys",
   "  FROM pg_index ix",
   "  JOIN pg_class i ON i.oid = ix.indexrelid",
   "  JOIN pg_class t ON t.oid = ix.indrelid",
@@ -882,6 +894,25 @@ if (indexOpclasses.status === 0) {
     schema = repaired.source;
     fixedIndexOperatorClasses = repaired.changed;
     matchedIndexOperatorClasses = repaired.matched;
+
+    // Fix 14 (WI-6554700010008565): drizzle-kit reads each index key as
+    // coalesce(attname, pg_get_indexdef(...)), which resolves to type `name`
+    // and cuts expression keys at 63 bytes. Restore them from the catalog.
+    const expressionFix = repairTruncatedIndexExpressions(
+      schema,
+      catalogRows.map((row) => ({
+        schemaName: row.schema_name,
+        tableName: row.table_name,
+        indexName: row.index_name,
+        keys: Array.isArray(row.keys)
+          ? row.keys.map((key) => ({ expression: key.expression === true, definition: key.definition ?? null }))
+          : [],
+      })),
+    );
+    schema = expressionFix.source;
+    console.log(
+      `    Fix 14: restored ${expressionFix.repairedKeys} truncated index expression(s) in ${expressionFix.changed} index(es)`,
+    );
   } catch (error) {
     console.warn(
       '    skipped Fix 10 (index operator-class metadata was not valid JSON):',
