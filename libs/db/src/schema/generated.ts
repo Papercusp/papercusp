@@ -3075,6 +3075,115 @@ END`),
 	check("customer_workspaces_tenant_concurrency_ck", sql`tenant_concurrency_limit > 0`),
 ]);
 
+export const daoHrAdminsInHarnessShared = harnessShared.table("dao_hr_admins", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	personId: text("person_id").notNull(),
+	grantedBy: text("granted_by").notNull(),
+	grantedAt: timestamp("granted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.daoSlug, table.personId, table.workspaceId], name: "dao_hr_admins_pkey"}),
+	pgPolicy("dao_hr_admins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("dao_hr_admins_dao_slug_check", sql`(length(btrim(dao_slug)) >= 1) AND (length(btrim(dao_slug)) <= 200)`),
+	check("dao_hr_admins_granted_by_check", sql`(length(btrim(granted_by)) >= 1) AND (length(btrim(granted_by)) <= 200)`),
+	check("dao_hr_admins_person_id_check", sql`person_id ~ '^PER-'::text`),
+]);
+
+export const daoHrContractTemplateVersionsInHarnessShared = harnessShared.table("dao_hr_contract_template_versions", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	templateKey: text("template_key").notNull(),
+	version: integer().notNull(),
+	body: text().notNull(),
+	mergeFields: jsonb("merge_fields").notNull(),
+	contentHash: text("content_hash").notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.templateKey],
+			foreignColumns: [daoHrContractTemplatesInHarnessShared.workspaceId, daoHrContractTemplatesInHarnessShared.daoSlug, daoHrContractTemplatesInHarnessShared.templateKey],
+			name: "dao_hr_contract_template_vers_workspace_id_dao_slug_templa_fkey"
+		}),
+	primaryKey({ columns: [table.daoSlug, table.templateKey, table.version, table.workspaceId], name: "dao_hr_contract_template_versions_pkey"}),
+	pgPolicy("dao_hr_contract_template_versions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("dao_hr_contract_template_versions_body_check", sql`(length(btrim(body)) >= 1) AND (length(btrim(body)) <= 200000)`),
+	check("dao_hr_contract_template_versions_content_hash_check", sql`content_hash ~ '^sha256:[0-9a-f]{64}$'::text`),
+	check("dao_hr_contract_template_versions_created_by_check", sql`(length(btrim(created_by)) >= 1) AND (length(btrim(created_by)) <= 200)`),
+	check("dao_hr_contract_template_versions_merge_fields_check", sql`jsonb_typeof(merge_fields) = 'array'::text`),
+	check("dao_hr_contract_template_versions_version_check", sql`version > 0`),
+]);
+
+export const daoHrContractTemplatesInHarnessShared = harnessShared.table("dao_hr_contract_templates", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	templateKey: text("template_key").notNull(),
+	documentKind: text("document_kind").notNull(),
+	engagementType: text("engagement_type").notNull(),
+	jurisdiction: text().notNull(),
+	title: text().notNull(),
+	isSample: boolean("is_sample").default(false).notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.daoSlug, table.templateKey, table.workspaceId], name: "dao_hr_contract_templates_pkey"}),
+	unique("dao_hr_contract_templates_slot_uniq").on(table.daoSlug, table.documentKind, table.engagementType, table.isSample, table.jurisdiction, table.workspaceId),
+	pgPolicy("dao_hr_contract_templates_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("dao_hr_contract_templates_created_by_check", sql`(length(btrim(created_by)) >= 1) AND (length(btrim(created_by)) <= 200)`),
+	check("dao_hr_contract_templates_dao_slug_check", sql`(length(btrim(dao_slug)) >= 1) AND (length(btrim(dao_slug)) <= 200)`),
+	check("dao_hr_contract_templates_document_kind_check", sql`document_kind = ANY (ARRAY['employment-agreement'::text, 'contractor-agreement'::text, 'ip-assignment'::text, 'equity-grant-agreement'::text, 'onboarding-forms-list'::text])`),
+	check("dao_hr_contract_templates_engagement_type_check", sql`engagement_type = ANY (ARRAY['employee'::text, 'contractor'::text])`),
+	check("dao_hr_contract_templates_jurisdiction_check", sql`(length(btrim(jurisdiction)) >= 2) AND (length(btrim(jurisdiction)) <= 64)`),
+	check("dao_hr_contract_templates_template_key_check", sql`template_key ~ '^[a-z0-9][a-z0-9-]{0,119}$'::text`),
+	check("dao_hr_contract_templates_title_check", sql`(length(btrim(title)) >= 1) AND (length(btrim(title)) <= 200)`),
+]);
+
+export const daoHrCounselApprovalsInHarnessShared = harnessShared.table("dao_hr_counsel_approvals", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	templateKey: text("template_key").notNull(),
+	version: integer().notNull(),
+	contentHash: text("content_hash").notNull(),
+	approverRef: text("approver_ref").notNull(),
+	approvedOn: date("approved_on").notNull(),
+	reference: text().notNull(),
+	recordedBy: text("recorded_by").notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("dao_hr_counsel_approvals_version_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.templateKey.asc().nullsLast().op("text_ops"), table.version.asc().nullsLast().op("int4_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.templateKey, table.version],
+			foreignColumns: [daoHrContractTemplateVersionsInHarnessShared.workspaceId, daoHrContractTemplateVersionsInHarnessShared.daoSlug, daoHrContractTemplateVersionsInHarnessShared.templateKey, daoHrContractTemplateVersionsInHarnessShared.version],
+			name: "dao_hr_counsel_approvals_workspace_id_dao_slug_template_ke_fkey"
+		}),
+	pgPolicy("dao_hr_counsel_approvals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("dao_hr_counsel_approvals_approver_ref_check", sql`(length(btrim(approver_ref)) >= 1) AND (length(btrim(approver_ref)) <= 300)`),
+	check("dao_hr_counsel_approvals_content_hash_check", sql`content_hash ~ '^sha256:[0-9a-f]{64}$'::text`),
+	check("dao_hr_counsel_approvals_recorded_by_check", sql`recorded_by ~ '^PER-'::text`),
+	check("dao_hr_counsel_approvals_reference_check", sql`(length(btrim(reference)) >= 1) AND (length(btrim(reference)) <= 300)`),
+]);
+
+export const daoHrIssuingEntitiesInHarnessShared = harnessShared.table("dao_hr_issuing_entities", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	registeredTitle: text("registered_title").notNull(),
+	jurisdiction: text().notNull(),
+	registrationReference: text("registration_reference").notNull(),
+	formedOn: date("formed_on").notNull(),
+	recordedBy: text("recorded_by").notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.daoSlug, table.workspaceId], name: "dao_hr_issuing_entities_pkey"}),
+	pgPolicy("dao_hr_issuing_entities_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("dao_hr_issuing_entities_dao_slug_check", sql`(length(btrim(dao_slug)) >= 1) AND (length(btrim(dao_slug)) <= 200)`),
+	check("dao_hr_issuing_entities_jurisdiction_check", sql`(length(btrim(jurisdiction)) >= 2) AND (length(btrim(jurisdiction)) <= 64)`),
+	check("dao_hr_issuing_entities_recorded_by_check", sql`recorded_by ~ '^PER-'::text`),
+	check("dao_hr_issuing_entities_registered_title_check", sql`(length(btrim(registered_title)) >= 1) AND (length(btrim(registered_title)) <= 300)`),
+	check("dao_hr_issuing_entities_registration_reference_check", sql`(length(btrim(registration_reference)) >= 1) AND (length(btrim(registration_reference)) <= 300)`),
+]);
+
 export const daoHrWorkProfilesInHarnessShared = harnessShared.table("dao_hr_work_profiles", {
 	workspaceId: text("workspace_id").notNull(),
 	daoSlug: text("dao_slug").notNull(),
@@ -4119,18 +4228,12 @@ export const federationProbesInHarnessShared = harnessShared.table("federation_p
 	emittedBy: text("emitted_by").notNull(),
 	emittedAt: timestamp("emitted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }),
-	drainedAt: timestamp("drained_at", { withTimezone: true, mode: 'string' }),
-	replicatedAt: timestamp("replicated_at", { withTimezone: true, mode: 'string' }),
-	mergedAt: timestamp("merged_at", { withTimezone: true, mode: 'string' }),
-	memberGuardAt: timestamp("member_guard_at", { withTimezone: true, mode: 'string' }),
-	projectedAt: timestamp("projected_at", { withTimezone: true, mode: 'string' }),
-	status: text().default('pending').notNull(),
+	status: text().notNull(),
 	refusalReason: text("refusal_reason"),
-	detail: text(),
 }, (table) => [
 	uniqueIndex("federation_probes_probe_key").using("btree", table.probeKey.asc().nullsLast().op("text_ops")),
 	index("federation_probes_recent").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.emittedAt.desc().nullsFirst().op("timestamptz_ops")),
-	check("federation_probes_status_check", sql`status = ANY (ARRAY['pending'::text, 'acked'::text, 'refused'::text, 'timed_out'::text])`),
+	check("federation_probes_capture_state_check", sql`((status = 'acked'::text) AND (captured_at IS NOT NULL) AND (refusal_reason IS NULL)) OR ((status = 'refused'::text) AND (captured_at IS NULL) AND (refusal_reason IS NOT NULL))`),
 ]);
 
 export const federationRefusedOpCountersInHarnessShared = harnessShared.table("federation_refused_op_counters", {
