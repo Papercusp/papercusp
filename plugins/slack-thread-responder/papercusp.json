@@ -10,50 +10,6 @@
   "license": "MIT",
   "versionPin": { "mode": "exact" },
   "capabilities": [],
-  "oauth": [
-    {
-      "provider": "slack",
-      "scopes": [
-        "app_mentions:read",
-        "channels:history",
-        "groups:history",
-        "im:history",
-        "mpim:history",
-        "commands",
-        "chat:write",
-        "connections:write"
-      ],
-      "fieldName": "slackSocket"
-    }
-  ],
-  "configSchema": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": ["slackSocket"],
-    "properties": {
-      "slackSocket": {
-        "type": "string",
-        "title": "Slack Socket Mode connection",
-        "secret": true,
-        "shareable": false,
-        "snapshotPolicy": "strip",
-        "oauth": {
-          "provider": "slack",
-          "scopes": [
-            "app_mentions:read",
-            "channels:history",
-            "groups:history",
-            "im:history",
-            "mpim:history",
-            "commands",
-            "chat:write",
-            "connections:write"
-          ]
-        },
-        "description": "Opaque dual-token Socket Mode connection. App and bot tokens never enter the pack or a snapshot."
-      }
-    }
-  },
   "triggerPack": {
     "inputs": {
       "type": "object",
@@ -120,8 +76,7 @@
         "id": "slack-mention-to-thread-reply",
         "source": {
           "kind": "external",
-          "sourceKind": "slack",
-          "oauthField": "slackSocket"
+          "sourceKind": "slack"
         },
         "target": "thread-reply",
         "eventPattern": "ext:slack:mention",
