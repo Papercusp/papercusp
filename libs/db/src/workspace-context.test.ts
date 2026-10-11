@@ -60,7 +60,8 @@ describe('withWorkspace — EI-9279 connect-retry wiring', () => {
   });
 
   it('applies read-only mode and per-call query bounds before workspace setup', async () => {
-    const tx = vi.fn(async () => []);
+    // Typed parameters so `tx.mock.calls` is `unknown[][]`, not the empty tuple `[]`.
+    const tx = vi.fn(async (..._args: unknown[]) => []);
     h.begin.mockImplementation(async (cb: (sql: Sql) => Promise<unknown>) => cb(tx as unknown as Sql));
 
     await withWorkspace('ws-bounded', async () => 'ok', {
