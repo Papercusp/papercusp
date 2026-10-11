@@ -481,10 +481,16 @@ BEGIN
             SELECT 1 FROM harness_shared.work_items w
              WHERE w.workspace_id = t.workspace_id AND w.harness_slug = t.harness_slug
                AND w.feature_id = t.new_id))
+      -- The survivor may itself have been renamed in step 3 (it collided with
+      -- a different-title row), so look it up under its FINAL id.
       OR (t.action = 'merge-delete' AND NOT EXISTS (
-            SELECT 1 FROM harness_shared.work_items w
-             WHERE w.workspace_id = t.workspace_id AND w.harness_slug = t.survivor_harness
-               AND w.feature_id = t.feature_id))
+            SELECT 1 FROM twin_1443 s
+              JOIN harness_shared.work_items w
+                ON w.workspace_id = s.workspace_id AND w.harness_slug = s.harness_slug
+               AND w.feature_id = CASE WHEN s.action IN ('rekey', 'stale-delete')
+                                       THEN s.new_id ELSE s.feature_id END
+             WHERE s.workspace_id = t.workspace_id AND s.harness_slug = t.survivor_harness
+               AND s.feature_id = t.feature_id))
       OR (t.action <> 'keep' AND NOT EXISTS (
             SELECT 1 FROM harness_shared.bak_20261011_work_item_twins_1443 b
              WHERE b.workspace_id = t.workspace_id AND b.harness_slug = t.harness_slug
