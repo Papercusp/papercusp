@@ -890,6 +890,52 @@ function sameLayerPin(prior: ResolvedPackageInput, next: ResolvedPackageInput): 
     stableStringify(priorContent) === stableStringify(nextContent);
 }
 
+/**
+ * WI-6554700010008567: blueprintPackageInputs re-reads each layer's blueprint.yaml
+ * to prove it has not changed since resolution. Parsing the YAML was the cost:
+ * every turn-start identity binding parsed every layer again, about 10% of
+ * bg-host main-thread work (profile 2026-10-11). The two hashes it compares
+ * depend only on the file bytes, so they are memoized by a digest of those
+ * bytes. An edited file has different bytes, misses the memo, and is parsed and
+ * checked exactly as before. Parse failures and non-mapping documents are never
+ * memoized, so they fail the same way on every call.
+ *
+ * This is a pure memo, not shared state: if the module loads twice, each copy
+ * keeps its own memo and only the hit rate changes, never a result.
+ */
+const LAYER_SOURCE_HASH_MEMO_MAX = 512;
+const layerSourceHashMemo = new Map<string, { layerContentHash: string; canonicalHash: string }>();
+const layerSourceHashMemoStats = { hits: 0, misses: 0 };
+
+function layerSourceFileHashes(bytes: Buffer, layerId: string): { layerContentHash: string; canonicalHash: string } | null {
+  const key = createHash('sha256').update(bytes).digest('hex');
+  const memoized = layerSourceHashMemo.get(key);
+  if (memoized) {
+    layerSourceHashMemoStats.hits += 1;
+    // Least-recently-used order: a hit moves the entry to the back.
+    layerSourceHashMemo.delete(key);
+    layerSourceHashMemo.set(key, memoized);
+    return memoized;
+  }
+  layerSourceHashMemoStats.misses += 1;
+  let raw: unknown;
+  try { raw = parseYaml(bytes.toString('utf8')); }
+  catch (error) { fail('source-invalid', String(error), layerId); }
+  if (!isRecord(raw)) return null;
+  const hashes = { layerContentHash: layerContentHash(raw), canonicalHash: canonicalHash(raw) };
+  layerSourceHashMemo.set(key, hashes);
+  if (layerSourceHashMemo.size > LAYER_SOURCE_HASH_MEMO_MAX) {
+    const oldest = layerSourceHashMemo.keys().next().value;
+    if (oldest !== undefined) layerSourceHashMemo.delete(oldest);
+  }
+  return hashes;
+}
+
+/** Observability and tests: how often the layer-source check reused a parse. */
+export function layerSourceHashMemoSnapshot(): { hits: number; misses: number; size: number } {
+  return { ...layerSourceHashMemoStats, size: layerSourceHashMemo.size };
+}
+
 export function blueprintPackageInputs(loaded: Pick<LoadedBlueprint, 'layers'>, additional: readonly ResolvedAgentInput[]): ResolvedPackageInput[] {
   const packages: ResolvedPackageInput[] = [];
   // WI-10003294: a diamond extends (root -> [pot, X], pot -> X) visits layer X
@@ -909,10 +955,8 @@ export function blueprintPackageInputs(loaded: Pick<LoadedBlueprint, 'layers'>, 
       let bytes: Buffer;
       try { bytes = readFileSync(layer.sourcePath); }
       catch (error) { fail('package-read-failed', String(error), layer.sourcePath); }
-      let raw: unknown;
-      try { raw = parseYaml(bytes.toString('utf8')); }
-      catch (error) { fail('source-invalid', String(error), layer.id); }
-      if (!isRecord(raw) || layerContentHash(raw) !== layer.contentHash || canonicalHash(raw) !== canonicalHash(document)) {
+      const onDisk = layerSourceFileHashes(bytes, layer.id);
+      if (!onDisk || onDisk.layerContentHash !== layer.contentHash || onDisk.canonicalHash !== canonicalHash(document)) {
         fail('source-invalid', 'source file changed after resolution', layer.id);
       }
       files.push({ path: 'blueprint.yaml', bytes });

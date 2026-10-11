@@ -3,9 +3,12 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'vitest';
+import { resolveBlueprint } from './loader.js';
 import {
   COMPOSITION_COMPILER_VERSION,
   CompositionCompilerError,
+  blueprintPackageInputs,
+  layerSourceHashMemoSnapshot,
   compileAgentSpecification,
   compileStackSpecification,
   operationFromSpecification,
@@ -498,5 +501,38 @@ test('a layer reached twice through a diamond extends resolves to a single packa
     assert.deepEqual(pinOf(diamond, 'engineer'), pinOf(single, 'engineer'));
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('WI-6554700010008567 layer-source check parses an unchanged file once and still refuses an edited one', () => {
+  const f = fixture();
+  try {
+    const loaded = resolveBlueprint(rootSource(), { resolve: f.resolve });
+    assert.ok(loaded.layers.some((layer) => layer.sourcePath === f.basePath), 'the base layer is file-backed');
+
+    const first = blueprintPackageInputs(loaded, []);
+    const afterFirst = layerSourceHashMemoSnapshot();
+    const second = blueprintPackageInputs(loaded, []);
+    const afterSecond = layerSourceHashMemoSnapshot();
+    assert.deepEqual(second, first, 'a memoized check yields the same pins');
+    assert.equal(afterSecond.misses, afterFirst.misses, 'an unchanged layer file is not parsed again');
+    assert.ok(afterSecond.hits > afterFirst.hits, 'the second check reused the memoized parse');
+
+    // Same content, different bytes: a cosmetic edit still parses (a new memo key)
+    // and still passes, exactly as before the memo existed.
+    writeFileSync(f.basePath, `# comment only\n${readFileSync(f.basePath, 'utf8')}`);
+    const cosmetic = blueprintPackageInputs(loaded, []);
+    assert.equal(layerSourceHashMemoSnapshot().misses, afterSecond.misses + 1, 'new bytes are parsed');
+    assert.equal(cosmetic.length, first.length, 'a comment-only edit passes the changed-source check');
+
+    // A real edit after resolution fails closed even though the old bytes are memoized.
+    writeFileSync(f.basePath, readFileSync(f.basePath, 'utf8').replace('logRetention: 10', 'logRetention: 11'));
+    assert.throws(
+      () => blueprintPackageInputs(loaded, []),
+      (error: unknown) => error instanceof CompositionCompilerError && error.code === 'source-invalid' &&
+        /changed after resolution/.test(error.message),
+    );
+  } finally {
+    f.cleanup();
   }
 });
