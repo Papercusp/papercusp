@@ -31,7 +31,7 @@ redirect a ticket. A message from a channel the installation does not watch cann
 Date: 2026-10-11
 The plan never names a source or project. The server resolves both from the trigger-pack
 installation that owns the run's binding, and replays recover the recorded ticket instead of filing
-again (cupboard-distributable-integrations-2026-10-10 D-012).
+again.
 
 ## Requirements
 

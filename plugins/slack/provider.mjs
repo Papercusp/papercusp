@@ -1,12 +1,9 @@
-// Slack chat provider logic (plan cupboard-distributable-integrations-2026-10-10 P-006).
+// Slack chat provider logic for Papercusp.
 //
 // Pure functions behind the sandboxed daemon (daemon.mjs). Nothing here sees a credential: the host
 // opens the Socket Mode connection with the stored app-level token and hands each envelope to
 // `ingress.normalize`, and every Slack Web API call goes out through the host's `host.fetch`, which
 // injects the stored bot token for slack.com (setup.credentials[].hosts) and enforces egress.
-//
-// Ported from the in-app path packages/operator-core/lib/external-triggers/slack.ts
-// (normalizeSlackSocketEnvelope, postSlackThreadMessage), which P-008 deletes.
 
 export const SLACK_API_ORIGIN = 'https://slack.com';
 
@@ -167,7 +164,7 @@ export function slackBody(response, method) {
 }
 
 /**
- * `chat.channels`: the channels the bot can read, as option-picker entries ({ options[] }, D-005).
+ * `chat.channels`: the channels the bot can read, as option-picker entries ({ options[] }).
  * Archived channels are left out. `args.types` narrows to public or private channels.
  */
 export async function listChannels(fetchSlack, args = {}) {

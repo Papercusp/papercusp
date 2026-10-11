@@ -1,4 +1,4 @@
-// Slack provider daemon (plan cupboard-distributable-integrations-2026-10-10 P-006).
+// Slack provider daemon for Papercusp.
 //
 // Cupboard-installed providers run as sandboxed daemons (runtime.kind "daemon"): no network, no host
 // files, no credentials. This process speaks the provider daemon protocol — newline-delimited
