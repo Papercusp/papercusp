@@ -12,6 +12,12 @@ export const FLEET_SANDBOX_DENY_READ = Object.freeze([
 ]);
 export const FLEET_SANDBOX_CACHE_ROOT = join(homedir(), '.cache', 'papercusp-fleet-sandbox');
 
+/** Expand real root entries only; root symlink aliases are covered at their target. */
+export function rootReadDenyPaths(entries) {
+  return entries.filter(entry => !entry.isSymbolicLink() && !['proc', 'dev', 'sys'].includes(entry.name))
+    .map(entry => join('/', entry.name));
+}
+
 /** Network entries are resolved by the caller, never from ambient defaults here. */
 export function buildProcessSrtSettings({ cwd, agentHomes = [], allowedDomains, denyWrite = [] }) {
   const home = homedir();
@@ -143,9 +149,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
       // Expand real root entries ourselves. SRT's '/' preset also tmpfs-mounts
       // root symlink aliases after their targets have been hidden and can fail
       // before execution. Alias targets remain subject to the same real mounts.
-      const rootDenies = readdirSync('/', { withFileTypes: true })
-        .filter(entry => !entry.isSymbolicLink() && !['proc', 'dev', 'sys'].includes(entry.name))
-        .map(entry => join('/', entry.name));
+      const rootDenies = rootReadDenyPaths(readdirSync('/', { withFileTypes: true }));
       policy.filesystem.denyRead = [...rootDenies, ...policy.filesystem.denyRead];
       policy.filesystem.allowRead = [cwd, codexHome, nativeTmp, '/usr', '/bin', '/sbin', '/lib', '/lib64',
         '/etc/ssl', '/etc/ld.so.cache', '/etc/ld.so.conf', '/etc/ld.so.conf.d', '/etc/nsswitch.conf',

@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
+import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, rootReadDenyPaths, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
 
 const route = { baseURL: 'http://127.0.0.1:32001', token: 'a'.repeat(64) };
 const fixture = () => {
@@ -15,6 +15,12 @@ const fixture = () => {
 describe('required scoped native process boundary', () => {
   it('leaves ordinary native launches unchanged', () => {
     expect(createScopedNativeSandboxSpawn({ cwd: '/checkout', env: {} })).toBeNull();
+  });
+  it('omits root symlink aliases while retaining the real target entry in read denies', () => {
+    const entry = (name: string, symlink = false) => ({ name, isSymbolicLink: () => symlink });
+    expect(rootReadDenyPaths([
+      entry('home'), entry('sessions', true), entry('proc'), entry('dev'), entry('sys'), entry('etc'),
+    ])).toEqual(['/home', '/etc']);
   });
   it('pins only the exact gateway and MCP ports on every native generation', () => {
     const f = fixture(); let policyDir: string | undefined; let privateTmp: string | undefined;
