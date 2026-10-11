@@ -33,6 +33,7 @@ import {
   intersectConstraint,
   schemaInteriorPaths,
   stableStringify,
+  isPlainObject,
   type RawDocument,
 } from './merge.js';
 import {
@@ -516,4 +517,59 @@ test('property — {} is the identity of mergeByRules on both sides, and an abse
     );
     assert.equal(applyMergeRule(rule, undefined, 7), 7, `${rule.rule}: an absent base takes the child`);
   }
+});
+
+/**
+ * WI-10008284: stableStringify's bytes are a HASH INPUT (every stored
+ * specificationRevision is sha256 of them), so the single-pass implementation must
+ * stay byte-identical to the original recursive form. That form is kept HERE as the
+ * oracle; a divergence on any input — a key order, a quirk — fails this test.
+ */
+function stableStringifyOracle(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringifyOracle).join(',')}]`;
+  if (isPlainObject(v)) {
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringifyOracle(v[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
+test('stableStringify: byte-identical to the recursive oracle on arbitrary JSON-ish values', () => {
+  fc.assert(
+    fc.property(
+      fc.anything({
+        withNullPrototype: true,
+        withObjectString: true,
+        withDate: true,
+        withSparseArray: true,
+        withBigInt: false,
+        maxDepth: 6,
+      }),
+      (value) => {
+        assert.equal(stableStringify(value), stableStringifyOracle(value));
+      },
+    ),
+    { numRuns: 500 },
+  );
+});
+
+test('stableStringify: preserves the recursive form\'s quirks exactly', () => {
+  const cases: unknown[] = [
+    { a: undefined }, // bare word `undefined` inside an object
+    [undefined, 1], // an undefined element renders as nothing
+    [1, undefined],
+    [() => 1, 'x'],
+    { d: new Date(0) }, // a Date renders by its (zero) enumerable keys
+    { f: () => 1 },
+    { b: [{}, []], a: { y: 1, x: [2, { z: null }] }, 'é': true, 'A': 0 },
+    'x',
+    0,
+    null,
+    true,
+  ];
+  for (const value of cases) assert.equal(stableStringify(value), stableStringifyOracle(value));
+  assert.equal(stableStringify(undefined), undefined);
+  assert.equal(stableStringify(() => 1), undefined);
 });

@@ -66,16 +66,53 @@ export function isPlainObject(v: unknown): v is RawDocument {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-/** Sorted-key JSON — the structural identity of a value (order-independent for objects). */
+/**
+ * Sorted-key JSON — the structural identity of a value (order-independent for objects).
+ *
+ * ⚠ The output is a HASH INPUT: `canonicalHash` (composition-compiler) hashes it into
+ * every stored `specificationRevision`, so a single changed byte turns every launched
+ * identity into a stale artifact. The bytes are pinned against the original recursive
+ * form (kept as the oracle in merge.test.ts), including its quirks: an `undefined`
+ * object value renders as the bare word `undefined`, an `undefined`/function array
+ * element renders as nothing, and any non-array object (a Date included) renders by
+ * its own enumerable keys.
+ *
+ * Single pass into one parts buffer (WI-10008284). The recursive form joined a fresh
+ * string at every nesting level, re-copying each subtree once per ancestor; on the
+ * largest launch artifacts (14 MB of canonical JSON) that was ~3.7× slower and blocked
+ * the bg-host event loop for seconds per identity replay.
+ */
 export function stableStringify(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
-  if (isPlainObject(v)) {
-    return `{${Object.keys(v)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${stableStringify(v[k])}`)
-      .join(',')}}`;
+  const parts: string[] = [];
+  return writeStable(v, parts) ? parts.join('') : (undefined as unknown as string);
+}
+
+/** Append `v`'s canonical text to `parts`; false when it renders as JS `undefined`. */
+function writeStable(v: unknown, parts: string[]): boolean {
+  if (Array.isArray(v)) {
+    parts.push('[');
+    for (let i = 0; i < v.length; i += 1) {
+      if (i > 0) parts.push(',');
+      writeStable(v[i], parts);
+    }
+    parts.push(']');
+    return true;
   }
-  return JSON.stringify(v);
+  if (isPlainObject(v)) {
+    const keys = Object.keys(v).sort();
+    parts.push('{');
+    for (let i = 0; i < keys.length; i += 1) {
+      if (i > 0) parts.push(',');
+      parts.push(JSON.stringify(keys[i]), ':');
+      if (!writeStable(v[keys[i]], parts)) parts.push('undefined');
+    }
+    parts.push('}');
+    return true;
+  }
+  const text = JSON.stringify(v);
+  if (text === undefined) return false;
+  parts.push(text);
+  return true;
 }
 
 /**
