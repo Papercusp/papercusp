@@ -81,6 +81,27 @@ describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
     expect(promoteDriftCheck).toBeLessThan(promote);
   });
 
+  it('refuses a database that lags the armed migrations before any introspection (WI-6554700010008404)', () => {
+    const source = readFileSync(new URL('./pull-schema.mjs', import.meta.url), 'utf8');
+    const precheck = source.indexOf("spawnSync('psql', [dbUrl, '-tAc', 'SELECT 1']");
+    const lagRead = source.indexOf("spawnSync('psql', [dbUrl, '-tA', '-c', APPLIED_MIGRATIONS_SQL]");
+    const lagRefusal = source.indexOf('REFUSING TO PULL: ${message}');
+    const fingerprint = source.indexOf('const catalogBefore = readMigrationFingerprint();');
+    const introspect = source.indexOf('const introspectArgs = [');
+
+    for (const at of [precheck, lagRead, lagRefusal, fingerprint, introspect]) {
+      expect(at).toBeGreaterThanOrEqual(0);
+    }
+    // Only a reachable database is checked for lag...
+    expect(precheck).toBeLessThan(lagRead);
+    // ...and a lagging one is refused before drizzle-kit or any schema write runs.
+    expect(lagRefusal).toBeLessThan(fingerprint);
+    expect(lagRefusal).toBeLessThan(introspect);
+    // The refusal sets a failing exit code and stops the run.
+    const refusalBlock = source.slice(lagRefusal, lagRefusal + 200);
+    expect(refusalBlock).toMatch(/process\.exitCode = 1;\s*return;/);
+  });
+
   it('excludes drizzle-kit intermediate TypeScript files from the database package typecheck', () => {
     const tsconfig = JSON.parse(readFileSync(new URL('../tsconfig.json', import.meta.url), 'utf8'));
 

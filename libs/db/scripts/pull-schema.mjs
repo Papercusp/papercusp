@@ -55,7 +55,7 @@
  *           pull — re-run" instead of blaming the projector (WI-10006614).
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync, rmSync, readdirSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
 import { repairEmptyArrayDefaults } from '../src/schema/schema-defaults.mjs';
 import {
@@ -75,6 +75,13 @@ import {
   describeCatalogDrift,
   parseMigrationFingerprint,
 } from '../src/schema/schema-catalog-drift.mjs';
+import {
+  ALLOW_LAGGING_LEDGER_ENV,
+  APPLIED_MIGRATIONS_SQL,
+  describeLaggingLedger,
+  findUnappliedMigrations,
+  parseAppliedMigrations,
+} from '../src/schema/schema-ledger-lag.mjs';
 import { resolveAdminUrlWithSource, redactAdminUrl } from '../src/resolve-cli-admin-url.mjs';
 import {
   createSchemaCliSpawnOptions,
@@ -162,6 +169,44 @@ const { url: dbUrl, source: dbUrlSource } = resolveAdminUrlWithSource();
     );
     process.exitCode = 1;
     return;
+  }
+}
+
+// Fix 15 (WI-6554700010008404): refuse to introspect a database that lags the
+// armed migrations. A reachable DB can still be the wrong one: with the desktop
+// running, the resolver returns its embedded PG, which only migrates at desktop
+// boot, and the pull then writes a generated.ts missing applied tables while
+// exiting 0. Runs before Fix 14 and drizzle-kit, so a refusal changes nothing.
+{
+  const appliedRead = spawnSync('psql', [dbUrl, '-tA', '-c', APPLIED_MIGRATIONS_SQL], {
+    encoding: 'utf8',
+  });
+  const applied =
+    appliedRead.error == null && appliedRead.status === 0
+      ? parseAppliedMigrations(appliedRead.stdout)
+      : null;
+  if (applied == null) {
+    console.warn(
+      '    ⚠ could not read harness_shared.schema_migrations — ledger-lag detection is OFF ' +
+        'for this run',
+    );
+  } else {
+    const unapplied = findUnappliedMigrations(readdirSync(join(DB_ROOT, 'sql')), applied);
+    if (unapplied.length > 0) {
+      const message = describeLaggingLedger({
+        unapplied,
+        source: dbUrlSource,
+        redactedUrl: redactAdminUrl(dbUrl),
+      });
+      if (process.env[ALLOW_LAGGING_LEDGER_ENV] === '1') {
+        console.warn(`    ⚠ ${ALLOW_LAGGING_LEDGER_ENV}=1: pulling anyway; ${message}`);
+      } else {
+        console.error(`\n==> REFUSING TO PULL: ${message}`);
+        console.error('    generated.ts is UNCHANGED.');
+        process.exitCode = 1;
+        return;
+      }
+    }
   }
 }
 

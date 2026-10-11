@@ -31,6 +31,17 @@
       }
     },
     "egressHosts": ["app.asana.com"],
+    "setup": {
+      "credentials": [
+        {
+          "key": "personalAccessToken",
+          "label": "Personal access token",
+          "help": "Instead of signing in with an OAuth app, paste a personal access token from Asana's developer console (My apps, Create new token).",
+          "helpUrl": "https://app.asana.com/0/my-apps",
+          "hosts": ["app.asana.com"]
+        }
+      ]
+    },
     "defaultDestinations": {
       "ticket": ["record"],
       "ticket-status-change": ["event"],
