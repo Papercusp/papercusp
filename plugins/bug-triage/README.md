@@ -12,7 +12,7 @@ receive the tickets.
 
 1. Install a chat provider and a ticket provider from the Cupboard and connect both on
    Settings → Integrations.
-2. Install this pack. Its section on the same page asks for:
+2. Install this pack. Its section on the same page asks which project it runs in, then for:
    - **Channels to watch**: filled from the chat provider's `chat.channels`.
    - **File bugs in**: filled from the ticket provider's `ticket.containers { purpose: 'create' }`,
      which lists only the projects a ticket can actually be filed in.
@@ -27,4 +27,6 @@ receive the tickets.
 - Each trigger run files at most once: the attempt is recorded before any provider call, and a
   replay recovers the recorded ticket.
 
-Design: plan `cupboard-distributable-integrations-2026-10-10`, decision D-012.
+## License
+
+MIT.
