@@ -1,6 +1,12 @@
 -- 1452 — Retire the legacy stored tsvector columns on the corpora that BM25 serves.
 -- Plan bm25-lexical-search-evoke-adoption-2026-10-10 P-009 (R-14, with R-10 kept working);
--- decisions D-011 §2-§5 and D-012.
+-- decisions D-011 §2-§5, D-012 and D-016.
+--
+-- KEPT (D-016). work_items._search and session_turns.text_tsv are NOT retired: the work_item
+-- and session_turn sources of search:semantic fuse an exact list (legacy AND + ts_rank_cd)
+-- with their BM25 list, and that list reads the stored column and its GIN index. Their
+-- bm25_legacy_tsv_columns() rows carry kept_for = 'exact-list', and the function reports them
+-- as 'kept:exact-list' without touching them.
 --
 -- WHAT. On each corpus whose BM25 index is valid on this host, the stored legacy tsvector
 -- column, and with it its GIN index, is replaced by a column of the same name and type defined
@@ -23,9 +29,9 @@
 -- subtransaction under lock_timeout 1s. A busy table, or any error, skips that table with a
 -- reason; the function never raises to its caller, so it can never fail boot.
 --
--- VIEWS (D-012 §2). DROP COLUMN refuses while a view reads the column (today engineer_issues,
--- harness_features_consolidated and work_items_claimable on work_items._search, and
--- personal_documents on documents.text_tsv). Each dependent view is redefined in place with
+-- VIEWS (D-012 §2). DROP COLUMN refuses while a view reads the column (today personal_documents
+-- on documents.text_tsv; the views on work_items._search are not touched, since that column is
+-- kept). Each dependent view is redefined in place with
 -- CREATE OR REPLACE VIEW, which keeps its grants, triggers, comments and dependent views, using
 -- a copy of its definition in which the column reference reads NULL::tsvector. Then the column
 -- is swapped, and the view is redefined again from its ORIGINAL pg_get_viewdef text with its
@@ -41,31 +47,33 @@
 --
 -- FORWARD-COMPAT: the release serving :3070 keeps working, because every retired column keeps its name, type and values (computed on read), so that release's legacy queries and views resolve exactly as before.
 
--- One row per BM25 corpus: its legacy tsvector column and, for the three trigger-maintained
+-- One row per BM25 corpus: its legacy tsvector column; for the three trigger-maintained
 -- columns, the trigger function's expression (a stored generated column's expression is read
--- from pg_attrdef). The (table_name, column_name) pairs must match legacyTsvColumn in
--- packages/operator-core/lib/search/lexical/corpora.ts (pinned by corpora.test.ts).
+-- from pg_attrdef); and kept_for, non-NULL when a search source still reads the stored column
+-- (D-016). The (table_name, column_name) pairs must match legacyTsvColumn, and the kept_for
+-- rows keepLegacyColumn, in packages/operator-core/lib/search/lexical/corpora.ts (pinned by
+-- corpora.test.ts).
 CREATE OR REPLACE FUNCTION harness_shared.bm25_legacy_tsv_columns()
-RETURNS TABLE (table_name text, column_name text, trigger_expr text)
+RETURNS TABLE (table_name text, column_name text, trigger_expr text, kept_for text)
 LANGUAGE sql IMMUTABLE PARALLEL SAFE
 AS $fn$
   VALUES
-    ('work_items', '_search', NULL::text),
-    ('harness_plans', '_search', NULL),
-    ('goals', '_search', NULL),
-    ('report_library', 'search_tsv', NULL),
-    ('session_turns', 'text_tsv', NULL),
-    ('documents', 'text_tsv', NULL),
-    ('coord_thread_posts', 'body_tsv', NULL),
-    ('carry_notes', 'note_tsv', NULL),
-    ('code_recipes', 'title_tsv', NULL),
-    ('datatype_registry', 'title_tsv', NULL),
-    ('event_key_registry', 'title_tsv', NULL),
-    ('capability_class_registry', 'title_tsv', NULL),
-    ('audit_log', '_search', NULL),
-    ('harness_escalations', 'body_tsv', $e$setweight(to_tsvector('english'::regconfig, COALESCE(escalation, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(supervisor_notes, ''::text)), 'B'::"char")$e$),
-    ('harness_decisions', 'body_tsv', $e$to_tsvector('english'::regconfig, (COALESCE(verb, ''::text) || ' '::text) || COALESCE(args, ''::text))$e$),
-    ('harness_brainstorm', 'content_tsv', $e$to_tsvector('english'::regconfig, COALESCE(content, ''::text))$e$)
+    ('work_items', '_search', NULL::text, 'exact-list'::text),
+    ('harness_plans', '_search', NULL, NULL),
+    ('goals', '_search', NULL, NULL),
+    ('report_library', 'search_tsv', NULL, NULL),
+    ('session_turns', 'text_tsv', NULL, 'exact-list'),
+    ('documents', 'text_tsv', NULL, NULL),
+    ('coord_thread_posts', 'body_tsv', NULL, NULL),
+    ('carry_notes', 'note_tsv', NULL, NULL),
+    ('code_recipes', 'title_tsv', NULL, NULL),
+    ('datatype_registry', 'title_tsv', NULL, NULL),
+    ('event_key_registry', 'title_tsv', NULL, NULL),
+    ('capability_class_registry', 'title_tsv', NULL, NULL),
+    ('audit_log', '_search', NULL, NULL),
+    ('harness_escalations', 'body_tsv', $e$setweight(to_tsvector('english'::regconfig, COALESCE(escalation, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(supervisor_notes, ''::text)), 'B'::"char")$e$, NULL),
+    ('harness_decisions', 'body_tsv', $e$to_tsvector('english'::regconfig, (COALESCE(verb, ''::text) || ' '::text) || COALESCE(args, ''::text))$e$, NULL),
+    ('harness_brainstorm', 'content_tsv', $e$to_tsvector('english'::regconfig, COALESCE(content, ''::text))$e$, NULL)
 $fn$;
 
 -- p_def with every reference to the column p_col, bare or alias-qualified, replaced by
@@ -127,12 +135,20 @@ BEGIN
   END IF;
 
   FOR c IN
-    SELECT l.table_name AS tbl, l.column_name AS col, l.trigger_expr, i.index_name
+    SELECT l.table_name AS tbl, l.column_name AS col, l.trigger_expr, l.kept_for, i.index_name
       FROM harness_shared.bm25_legacy_tsv_columns() l
       LEFT JOIN harness_shared.bm25_corpus_indexes() i ON i.table_name = l.table_name
   LOOP
     table_name := c.tbl; column_name := c.col;
     detail := NULL; freed_index_bytes := NULL; est_column_bytes := NULL;
+
+    -- D-016: a search source reads this stored column and its GIN index (the exact list).
+    IF c.kept_for IS NOT NULL THEN
+      outcome := 'kept:' || c.kept_for;
+      detail := 'D-016: a search source reads the stored column and its GIN index';
+      RETURN NEXT;
+      CONTINUE;
+    END IF;
 
     v_table := to_regclass(format('harness_shared.%I', c.tbl));
     IF v_table IS NULL THEN
