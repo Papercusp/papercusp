@@ -1,0 +1,97 @@
+{
+  "kind": "plugin",
+  "name": "slack",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Slack as a chat provider: the host holds a Socket Mode connection for each connected workspace, and every message the Papercusp app sees (channel posts, mentions, direct messages, the /papercusp command) becomes a chat-message record. Workflows can pick channels from the workspace's channel list (chat.channels) and reply in a thread (chat.reply). Setup is pasted, not OAuth: create the Slack app from the bundled manifest, then paste its app-level token and bot token.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "protocol": "^1",
+  "runtime": {
+    "kind": "daemon",
+    "daemonCommand": ["node", "daemon.mjs"]
+  },
+  "capabilities": [],
+  "tools": [],
+  "icon": "MessageSquare",
+  "provider": {
+    "id": "slack",
+    "contractVersion": 1,
+    "displayName": "Slack",
+    "datatypes": ["chat-message"],
+    "capabilities": ["ingress.normalize", "chat.channels", "chat.reply"],
+    "egressHosts": ["slack.com"],
+    "defaultDestinations": {
+      "chat-message": ["document", "event"]
+    },
+    "ingress": {
+      "socket": {
+        "credential": "app_token",
+        "open": { "url": "https://slack.com/api/apps.connections.open", "method": "POST", "urlField": "url" },
+        "ackField": "envelope_id",
+        "reconnect": { "field": "type", "values": ["disconnect"] }
+      }
+    },
+    "setup": {
+      "credentials": [
+        {
+          "key": "app_token",
+          "label": "App-level token",
+          "pattern": "xapp-[A-Za-z0-9-]{10,}",
+          "placeholder": "xapp-1-...",
+          "help": "Basic Information → App-Level Tokens → Generate Token with the connections:write scope. Papercusp uses it only to open the Socket Mode connection."
+        },
+        {
+          "key": "bot_token",
+          "label": "Bot token",
+          "pattern": "xoxb-[A-Za-z0-9-]{10,}",
+          "placeholder": "xoxb-...",
+          "help": "OAuth & Permissions → Install to Workspace, then copy the Bot User OAuth Token.",
+          "hosts": ["slack.com"]
+        }
+      ],
+      "appRegistration": {
+        "createUrl": "https://api.slack.com/apps?new_app=1&manifest_json={definition}",
+        "docsUrl": "https://api.slack.com/reference/manifests#creating_apps",
+        "copyHint": "Create New App → From a manifest → paste this JSON.",
+        "definition": {
+          "_metadata": { "major_version": 2 },
+          "display_information": {
+            "name": "Papercusp",
+            "description": "Brings messages from the channels you add it to into Papercusp, and replies in their threads.",
+            "background_color": "#312e81"
+          },
+          "features": {
+            "bot_user": { "display_name": "Papercusp", "always_online": false },
+            "slash_commands": [
+              { "command": "/papercusp", "description": "Send a request to Papercusp", "should_escape": false }
+            ]
+          },
+          "oauth_config": {
+            "scopes": {
+              "bot": [
+                "app_mentions:read",
+                "channels:history",
+                "groups:history",
+                "im:history",
+                "mpim:history",
+                "channels:read",
+                "groups:read",
+                "commands",
+                "chat:write"
+              ]
+            }
+          },
+          "settings": {
+            "socket_mode_enabled": true,
+            "token_rotation_enabled": false,
+            "event_subscriptions": {
+              "bot_events": ["app_mention", "message.channels", "message.groups", "message.im"]
+            },
+            "interactivity": { "is_enabled": true }
+          }
+        }
+      }
+    }
+  }
+}
