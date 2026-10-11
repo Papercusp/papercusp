@@ -4140,6 +4140,25 @@ export const externalPrerequisiteAttestationsInHarnessShared = harnessShared.tab
 	check("external_prerequisite_attestations_provenance_chk", sql`provenance = ANY (ARRAY['probe'::text, 'operator'::text, 'imported'::text])`),
 ]);
 
+export const fallbackObservationsInHarnessShared = harnessShared.table("fallback_observations", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.fallback_observations_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
+	workspaceId: text("workspace_id").default('default').notNull(),
+	mechanism: text().notNull(),
+	eligible: integer().notNull(),
+	applied: integer().notNull(),
+	reason: text().notNull(),
+	scope: text(),
+	processTag: text("process_tag"),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("fallback_observations_mechanism_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.mechanism.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("fallback_observations_observed_at_idx").using("btree", table.observedAt.asc().nullsLast().op("timestamptz_ops")),
+	check("fallback_observations_counts_valid", sql`(eligible >= 0) AND (applied >= 0) AND (applied <= eligible)`),
+	check("fallback_observations_mechanism_nonempty", sql`length(btrim(mechanism)) > 0`),
+	check("fallback_observations_reason_nonempty", sql`length(btrim(reason)) > 0`),
+]);
+
 export const featureAuditConsolidatedInHarnessShared = harnessShared.table("feature_audit_consolidated", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
