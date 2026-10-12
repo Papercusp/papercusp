@@ -55,13 +55,12 @@ import { stampedTag } from './build-stamp';
 
 /** Host-installed telemetry; identity validation must remain independent and fail-soft. */
 const discoveryIdentityTelemetry = pinModuleState<{
-  observer: ((outcome: 'verified' | 'quarantined') => void) | null;
-}>('@papercusp/db.discovery-identity-telemetry', () => ({ observer: null }));
-export function setDiscoveryIdentityObserver(observer: ((outcome: 'verified' | 'quarantined') => void) | null): void {
-  discoveryIdentityTelemetry.observer = observer;
-}
-function observeDiscoveryIdentity(outcome: 'verified' | 'quarantined'): void {
-  try { discoveryIdentityTelemetry.observer?.(outcome); } catch { /* telemetry never changes routing */ }
+  observeFallback: ((mechanism: 'db-discovery-identity', decision: {
+    eligible: 1; applied: 0 | 1; reason: 'applied' | 'foreign-discovery-endpoint';
+  }) => unknown) | null;
+}>('@papercusp/db.discovery-identity-telemetry', () => ({ observeFallback: null }));
+export function setDiscoveryIdentityObserver(observer: typeof discoveryIdentityTelemetry.observeFallback): void {
+  discoveryIdentityTelemetry.observeFallback = observer;
 }
 
 // This package is `"type": "module"`, so ESM has no ambient `require`.
@@ -486,7 +485,11 @@ export function _quarantineDiscoveryEndpointIfProvenForeign(
   if (!pinnedKey || pinnedKey === discKey) return false; // (3) the pin came from here
 
   // Every proven fallback counts, even when the warning was already emitted.
-  observeDiscoveryIdentity('quarantined');
+  try {
+    discoveryIdentityTelemetry.observeFallback?.('db-discovery-identity', {
+      eligible: 1, applied: 0, reason: 'foreign-discovery-endpoint',
+    });
+  } catch { /* telemetry never changes routing */ }
 
   if (!_quarantinedDiscoveryEndpoints.has(discKey)) {
     _quarantinedDiscoveryEndpoints.add(discKey);
@@ -1729,7 +1732,11 @@ function validateDiscoveryTargetOnce(
         );
       }
       const verdict = pinOrVerifyStoreIdentity(parseStoreIdentity(rows), opts.url);
-      if (verdict.kind === 'match' || verdict.kind === 'pinned') observeDiscoveryIdentity('verified');
+      if (verdict.kind === 'match' || verdict.kind === 'pinned') {
+        try {
+          discoveryIdentityTelemetry.observeFallback?.('db-discovery-identity', { eligible: 1, applied: 1, reason: 'applied' });
+        } catch { /* telemetry never changes routing */ }
+      }
       if (verdict.kind === 'mismatch') {
         console.error(
           `${describeStoreIdentityMismatch(verdict.pinned, verdict.observed)}\n  pool: ${label}`,

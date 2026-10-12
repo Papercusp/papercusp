@@ -113,7 +113,9 @@ describe('a proven-foreign discovery endpoint is refused, not just reported', ()
     for (let i = 0; i < 2; i++) {
       expect(_quarantineDiscoveryEndpointIfProvenForeign({ url: PINNED_ENV_URL }, { url: IMPOSTOR_URL })).toBe(true);
     }
-    expect(observe.mock.calls).toEqual([['quarantined'], ['quarantined']]);
+    expect(observe.mock.calls).toEqual(Array.from({ length: 2 }, () => [
+      'db-discovery-identity', { eligible: 1, applied: 0, reason: 'foreign-discovery-endpoint' },
+    ]));
     expect(errSpy).toHaveBeenCalledTimes(1);
     setDiscoveryIdentityObserver(() => { throw new Error('telemetry unavailable'); });
     expect(_quarantineDiscoveryEndpointIfProvenForeign({ url: PINNED_ENV_URL }, { url: IMPOSTOR_URL })).toBe(true);

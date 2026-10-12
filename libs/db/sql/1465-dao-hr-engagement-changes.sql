@@ -1,4 +1,4 @@
--- P008 reuses signed contracts and offers, without another document/member store.
+-- P008 reuses signed contracts and offers; verified in the real PG/EVM suite.
 -- FORWARD-COMPAT: nullable fields preserve all existing writers and primary keys.
 ALTER TABLE harness_shared.dao_hr_offers ADD COLUMN IF NOT EXISTS amends_offer_id text;
 DO $$ BEGIN
