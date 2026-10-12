@@ -1963,22 +1963,26 @@ export function getOrgPg(): OrgPgHandle {
  * This is built through the same `buildClient` chokepoint as `getOrgPg()` —
  * same URL resolution, pgbouncer routing, type parsers, serializer repairs and
  * store-identity validation — so a dedicated client behaves identically to the
- * shared one. It is deliberately NOT cached: the caller owns it and MUST
+ * shared one. `sessionAffinity` bypasses transaction pooling for session advisory
+ * locks, session GUCs and concurrent DDL; reserving a pooled client alone cannot
+ * keep statements on the same backend. It is NOT cached: the caller owns it and MUST
  * `await sql.end(...)` it. Default pool `max` is small because a short-lived
  * process wants the fewest sockets that still allow its concurrent work.
  */
 export function createDedicatedOrgPg(
   label: string,
-  options: { readonly max?: number } = {},
+  options: { readonly max?: number; readonly sessionAffinity?: boolean } = {},
 ): { sql: Sql; url: string } {
-  const url = maybePgbouncer(adminUrl());
+  const pooled = !options.sessionAffinity && pgbouncerEnabled();
+  const resolvedUrl = adminUrl();
+  const url = options.sessionAffinity ? resolvedUrl : maybePgbouncer(resolvedUrl);
   const poolLabel = `org-admin-${label}`;
   const sql = buildClient(
     url,
     ['harness_shared', 'papercusp_shared', 'public'],
     Math.max(1, Math.floor(options.max ?? 2)),
     poolLabel,
-    pgbouncerEnabled(),
+    pooled,
   );
   validateDiscoveryTargetOnce(sql, poolLabel, {
     url,
