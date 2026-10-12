@@ -181,4 +181,41 @@ describe('withAcquisitionDeadline ticket diagnostics', () => {
       }],
     });
   });
+
+  it('aborts a pending acquisition promptly, marks it expired, and clears its deadline timer', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const reason = new Error('source budget expired');
+    let phase: { disarm: () => void; expired: () => boolean } | undefined;
+    const result = withAcquisitionDeadline(
+      (current) => {
+        phase = current;
+        return new Promise<never>(() => {});
+      },
+      { ms: 10_000, label: 'session-turn-availability', signal: controller.signal },
+    );
+    const assertion = expect(result).rejects.toBe(reason);
+
+    controller.abort(reason);
+    await assertion;
+
+    expect(phase?.expired()).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+  });
+
+  it('does not start acquisition work for an already-aborted source signal', async () => {
+    const controller = new AbortController();
+    const reason = new Error('source already expired');
+    controller.abort(reason);
+    const run = vi.fn(async () => 'unreachable');
+
+    await expect(withAcquisitionDeadline(run, {
+      ms: 10_000,
+      label: 'session-turn-availability',
+      signal: controller.signal,
+    })).rejects.toBe(reason);
+
+    expect(run).not.toHaveBeenCalled();
+  });
 });
