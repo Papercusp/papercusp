@@ -1,0 +1,235 @@
+-- 1467-issue-receiver-equal-key-apply-clock.sql.DRAFT
+-- WI-6554700010008773 / report-plan D033: extend the existing statement-only
+-- receiver seam with typed issue-family admission. This forward candidate
+-- retains the separate 1466 feature candidate verbatim except for admitting
+-- the issue token; 1466 must precede this candidate in any separately approved
+-- rollout. No new table, column, clock, GUC, or transaction state.
+-- DRAFT ONLY: disposable migrated-PG verification; no live schema rollout.
+
+-- Completion normalization runs BEFORE the federation stamp. The same bounded
+-- receiver UPDATE must keep the publisher's payload even when its clock does
+-- not move. Leave the token intact for stamp_local_federated_write to validate
+-- and consume; all ordinary local close/reopen/ack branches remain unchanged.
+CREATE OR REPLACE FUNCTION harness_shared.stamp_work_item_completion_event_intent()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, harness_shared
+AS $fn$
+DECLARE
+  prior_intent text;
+  acknowledged boolean;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.payload := COALESCE(NEW.payload, '{}'::jsonb) - '_completionEventIntentId';
+    RETURN NEW;
+  END IF;
+
+  IF TG_TABLE_NAME = 'work_items' AND TG_OP = 'UPDATE' THEN
+    IF ((NEW.origin = 'remote:features-by-id'
+          AND COALESCE(OLD.item_kind, '') NOT IN ('bug', 'change', 'task')
+          AND COALESCE(NEW.item_kind, '') NOT IN ('bug', 'change', 'task'))
+        OR (NEW.origin = 'remote:engineer-issues'
+          AND COALESCE(OLD.item_kind, '') IN ('bug', 'change', 'task')
+          AND COALESCE(NEW.item_kind, '') IN ('bug', 'change', 'task')))
+       AND NULLIF(NEW.author_pubkey, '') IS NOT NULL
+       AND NULLIF(to_jsonb(OLD)->>'signer_device_pubkey', '') IS NULL
+       AND NULLIF(to_jsonb(NEW)->>'signer_device_pubkey', '') IS NULL THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF NEW.fed_ts IS DISTINCT FROM OLD.fed_ts
+     OR NEW.fed_hlc IS DISTINCT FROM OLD.fed_hlc THEN
+    RETURN NEW;
+  END IF;
+  IF NOT harness_shared.work_item_status_is_terminal(OLD.status)
+     AND harness_shared.work_item_status_is_terminal(NEW.status) THEN
+    NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+      || jsonb_build_object('_completionEventIntentId', gen_random_uuid()::text);
+  ELSIF NOT harness_shared.work_item_status_is_terminal(NEW.status) THEN
+    NEW.payload := COALESCE(NEW.payload, '{}'::jsonb) - '_completionEventIntentId';
+  ELSE
+    prior_intent := OLD.payload->>'_completionEventIntentId';
+    IF prior_intent IS NULL THEN
+      NEW.payload := COALESCE(NEW.payload, '{}'::jsonb) - '_completionEventIntentId';
+    ELSIF NEW.payload->>'_completionEventIntentId' IS DISTINCT FROM prior_intent THEN
+      IF NEW.payload->>'_completionEventIntentId' IS NOT NULL THEN
+        NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+          || jsonb_build_object('_completionEventIntentId', prior_intent);
+      ELSE
+        SELECT EXISTS (
+          SELECT 1 FROM harness_shared.event_key_fires AS fire
+           WHERE fire.workspace_id = 'default'
+             AND fire.event_key = 'work-item:done:' || OLD.feature_id
+             AND fire.last_payload->>'completionIntentId' = prior_intent
+        ) INTO acknowledged;
+        IF acknowledged THEN
+          NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+            - '_completionEventIntentId';
+        ELSE
+          NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+            || jsonb_build_object('_completionEventIntentId', prior_intent);
+        END IF;
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+
+CREATE OR REPLACE FUNCTION harness_shared.stamp_local_federated_write()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  mask text[] := ARRAY[
+    'fed_ts', 'fed_hlc', 'origin', 'author_pubkey', 'updated_at',
+    '_search', 'version', 'local_disposition'
+  ];
+  gen_cols text[];
+  content_changed boolean;
+  wire_clock_keys text[] := ARRAY['fed_ts', 'fed_hlc', 'origin', 'author_pubkey'];
+  -- WI-10002882: a feature wire row also carries ts/updated_ts, which the generic mask
+  -- has always treated as bookkeeping for work_items. They are not content.
+  feature_non_content_keys text[] := ARRAY['fed_ts', 'fed_hlc', 'origin', 'author_pubkey', 'ts', 'updated_ts'];
+BEGIN
+  -- WI-6554700010008759 / WI-6554700010008773: the typed receivers emit a token only in their
+  -- ON CONFLICT UPDATE, after source-log/member/admission checks. A plain remote
+  -- origin is NOT sufficient: genuine local content edits of remote rows still
+  -- follow the local stamp and publisher-signed guard below. Consume the token
+  -- before constraints/capture; there is no session state to leak across batches.
+  IF NEW.origin IN ('remote:features-by-id', 'remote:engineer-issues') THEN
+    IF TG_TABLE_NAME <> 'work_items' OR TG_OP <> 'UPDATE' THEN
+      RAISE EXCEPTION 'typed receiver token requires a work_items UPDATE'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.origin = 'remote:features-by-id' AND (
+         COALESCE(OLD.item_kind, '') IN ('bug', 'change', 'task')
+         OR COALESCE(NEW.item_kind, '') IN ('bug', 'change', 'task')
+         OR NULLIF(NEW.author_pubkey, '') IS NULL) THEN
+      RAISE EXCEPTION 'feature receiver token requires feature-family publisher provenance'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.origin = 'remote:engineer-issues' AND (
+         COALESCE(OLD.item_kind, '') NOT IN ('bug', 'change', 'task')
+         OR COALESCE(NEW.item_kind, '') NOT IN ('bug', 'change', 'task')
+         OR NULLIF(NEW.author_pubkey, '') IS NULL) THEN
+      RAISE EXCEPTION 'issue receiver token requires issue-family publisher provenance'
+        USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.origin := 'remote';
+    -- Never turn this seam into a signed-publisher local-write bypass. Signed
+    -- rows continue through the existing clock-move and signed-content checks.
+    IF NULLIF(to_jsonb(OLD)->>'signer_device_pubkey', '') IS NULL
+       AND NULLIF(to_jsonb(NEW)->>'signer_device_pubkey', '') IS NULL THEN
+      IF NEW.fed_hlc IS NOT NULL THEN
+        PERFORM harness_shared.hlc_recv(NEW.fed_hlc);
+      END IF;
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  -- A write that moves either component of the wire order key is a projection
+  -- apply or an explicit repair/backfill. Respect it verbatim and advance the PG
+  -- HLC clock so a later legitimate local write is causally after it.
+  IF TG_OP = 'UPDATE'
+     AND (NEW.fed_ts IS DISTINCT FROM OLD.fed_ts
+          OR NEW.fed_hlc IS DISTINCT FROM OLD.fed_hlc) THEN
+    IF NEW.fed_hlc IS NOT NULL THEN
+      PERFORM harness_shared.hlc_recv(NEW.fed_hlc);
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    -- A projection INSERT carries the op's fed_ts AND origin='remote'; a local
+    -- INSERT carries neither. Gate the stamp on origin so a remote ts-less op
+    -- cannot receive a fresh local clock and pass the projection's LWW guard.
+    IF NEW.fed_ts IS NULL AND COALESCE(NEW.origin, 'local') = 'local' THEN
+      NEW.fed_ts := (extract(epoch FROM clock_timestamp()) * 1000)::bigint;
+      NEW.fed_hlc := harness_shared.hlc_now();
+    ELSIF NEW.fed_hlc IS NOT NULL THEN
+      PERFORM harness_shared.hlc_recv(NEW.fed_hlc);
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  -- UPDATE with the wire clock untouched is a local write or a same-op re-fold.
+  -- Stamp only when a real content column changed. Bookkeeping and generated
+  -- columns retain their prior clock and origin.
+  -- This function serves ~22 tables. PL/pgSQL resolves a record field reference
+  -- (OLD.item_kind) when the statement runs, NOT lazily inside a short-circuited AND,
+  -- so the work_items-only fields must sit behind a NESTED IF on the table name.
+  content_changed := NULL;
+  IF TG_TABLE_NAME = 'work_items' THEN
+    IF OLD.item_kind IN ('bug', 'change', 'task')
+       AND NEW.item_kind IN ('bug', 'change', 'task') THEN
+      -- WI-10002875: for an issue-family row, "content" is exactly what ships — the
+      -- engineer-issues wire row (shared with capture_work_items_outbox) minus its
+      -- clock/provenance keys. A write to a local-only column (embeddings, release
+      -- and attempt bookkeeping, ...) keeps the clock, so it emits no wire op.
+      -- `lane` (which the capture triggers gate on) is GENERATED as payload->>'lane'
+      -- and payload is on the wire, so a promoted observation still stamps. Do not
+      -- read NEW.lane here: generated columns are computed AFTER BEFORE triggers.
+      content_changed :=
+        (harness_shared.engineer_issue_wire_row(NEW, NEW.workspace_id, NULL, NULL) - wire_clock_keys)
+          IS DISTINCT FROM
+        (harness_shared.engineer_issue_wire_row(OLD, OLD.workspace_id, NULL, NULL) - wire_clock_keys);
+    ELSIF COALESCE(OLD.item_kind, '') NOT IN ('bug', 'change', 'task')
+          AND COALESCE(NEW.item_kind, '') NOT IN ('bug', 'change', 'task') THEN
+      -- WI-10002882: for a feature-family row, "content" is exactly what a peer
+      -- APPLIES — feature_wire_row (shared with capture_work_items_outbox) minus its
+      -- clock/provenance and ts/updated_ts bookkeeping keys. A write to a local-only
+      -- column (embeddings, verifier/audit/rank/schedule bookkeeping, release history,
+      -- ...) keeps the clock and origin, so it can no longer mint a wire version — the
+      -- write that let two peers re-stamp one row back and forth forever (WI-10003230).
+      content_changed :=
+        (harness_shared.feature_wire_row(NEW) - feature_non_content_keys)
+          IS DISTINCT FROM
+        (harness_shared.feature_wire_row(OLD) - feature_non_content_keys);
+    END IF;
+  END IF;
+
+  IF content_changed IS NULL THEN
+    IF TG_TABLE_NAME = 'work_items' THEN
+      mask := mask || ARRAY['updated_ts', 'ts'];
+    END IF;
+
+    SELECT coalesce(array_agg(a.attname::text), ARRAY[]::text[])
+      INTO gen_cols
+      FROM pg_attribute a
+     WHERE a.attrelid = TG_RELID
+       AND a.attgenerated <> ''
+       AND a.attnum > 0
+       AND NOT a.attisdropped;
+    mask := mask || gen_cols;
+
+    content_changed := (to_jsonb(NEW) - mask) IS DISTINCT FROM (to_jsonb(OLD) - mask);
+  END IF;
+
+  -- WI-6250: this host is a receiver, not the publisher, when a signed row's
+  -- current provenance is remote. A clock-stationary content mutation therefore
+  -- cannot be authorized or re-signed here. Fail loudly before an unsigned local
+  -- replacement can mint a newer LWW clock and permanently shadow the publisher.
+  IF content_changed
+     AND COALESCE(OLD.origin, 'local') = 'remote'
+     AND NULLIF(to_jsonb(OLD)->>'signer_device_pubkey', '') IS NOT NULL THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'check_violation',
+      MESSAGE = format(
+        'publisher-signed remote row on %I.%I cannot be changed by a local write',
+        TG_TABLE_SCHEMA,
+        TG_TABLE_NAME
+      ),
+      DETAIL = 'Move fed_ts or fed_hlc only when applying an authenticated projection op or an explicit repair.';
+  END IF;
+
+  IF content_changed THEN
+    NEW.fed_ts := (extract(epoch FROM clock_timestamp()) * 1000)::bigint;
+    NEW.fed_hlc := harness_shared.hlc_now();
+    NEW.origin := 'local';
+  END IF;
+  RETURN NEW;
+END;
+$function$;
