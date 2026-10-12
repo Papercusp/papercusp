@@ -1,10 +1,10 @@
 {
   "kind": "plugin",
   "name": "slack",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "papercusp": "^0.1.0",
   "distribution": "cupboard",
-  "description": "Slack as a chat provider: the host holds a Socket Mode connection for each connected workspace, and every message the Papercusp app sees (channel posts, mentions, direct messages, the /papercusp command) becomes a chat-message record. Workflows can pick channels from the workspace's channel list (chat.channels) and reply in a thread (chat.reply). Setup is pasted, not OAuth: create the Slack app from the bundled manifest, then paste its app-level token and bot token.",
+  "description": "Slack as a chat provider: the host holds a Socket Mode connection for each connected workspace, and every message the Papercusp app sees (channel posts, mentions, direct messages, the /papercusp command) becomes a chat-message record. A reaction on a message is a `reaction` record of that message, and a message reported through the app's \"Report a bug\" shortcut (it opens a short form) is a `report` record of it. Workflows can pick channels from the workspace's channel list (chat.channels) and reply in a thread (chat.reply). Setup is pasted, not OAuth: create the Slack app from the bundled manifest, then paste its app-level token and bot token.",
   "author": "Papercusp",
   "license": "MIT",
   "protocol": "^1",
@@ -30,7 +30,8 @@
         "credential": "app_token",
         "open": { "url": "https://slack.com/api/apps.connections.open", "method": "POST", "urlField": "url" },
         "ackField": "envelope_id",
-        "reconnect": { "field": "type", "values": ["disconnect"] }
+        "reconnect": { "field": "type", "values": ["disconnect"] },
+        "immediate": { "field": "type", "values": ["interactive"] }
       }
     },
     "setup": {
@@ -66,6 +67,9 @@
             "bot_user": { "display_name": "Papercusp", "always_online": false },
             "slash_commands": [
               { "command": "/papercusp", "description": "Send a request to Papercusp", "should_escape": false }
+            ],
+            "shortcuts": [
+              { "name": "Report a bug", "type": "message", "callback_id": "report_bug", "description": "Report this message to Papercusp as a bug" }
             ]
           },
           "oauth_config": {
@@ -79,7 +83,8 @@
                 "channels:read",
                 "groups:read",
                 "commands",
-                "chat:write"
+                "chat:write",
+                "reactions:read"
               ]
             }
           },
@@ -87,7 +92,7 @@
             "socket_mode_enabled": true,
             "token_rotation_enabled": false,
             "event_subscriptions": {
-              "bot_events": ["app_mention", "message.channels", "message.groups", "message.im"]
+              "bot_events": ["app_mention", "message.channels", "message.groups", "message.im", "reaction_added"]
             },
             "interactivity": { "is_enabled": true }
           }
