@@ -3813,6 +3813,46 @@ export const directiveSummariesConsolidatedInHarnessShared = harnessShared.table
 	primaryKey({ columns: [table.harnessSlug, table.id], name: "directive_summaries_consolidated_pkey"}),
 ]);
 
+export const diskCensusConsumersInHarnessShared = harnessShared.table("disk_census_consumers", {
+	runId: uuid("run_id").notNull(),
+	consumer: text().notNull(),
+	kind: text().notNull(),
+	depth: smallint().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	bytes: bigint({ mode: "number" }).notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.runId],
+			foreignColumns: [diskCensusRunsInHarnessShared.runId],
+			name: "disk_census_consumers_run_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.consumer, table.runId], name: "disk_census_consumers_pkey"}),
+	check("disk_census_consumers_bytes_check", sql`bytes >= 0`),
+	check("disk_census_consumers_kind_check", sql`kind = ANY (ARRAY['dir'::text, 'files'::text, 'file'::text, 'postgres'::text, 'docker'::text, 'unattributed'::text])`),
+]);
+
+export const diskCensusRunsInHarnessShared = harnessShared.table("disk_census_runs", {
+	runId: uuid("run_id").primaryKey().notNull(),
+	host: text().notNull(),
+	device: text().notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	usedBytes: bigint("used_bytes", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	availBytes: bigint("avail_bytes", { mode: "number" }).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	attributedBytes: bigint("attributed_bytes", { mode: "number" }).notNull(),
+	complete: boolean().notNull(),
+	note: text(),
+}, (table) => [
+	index("disk_census_runs_host_device_finished_idx").using("btree", table.host.asc().nullsLast().op("text_ops"), table.device.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.runId], name: "disk_census_runs_pkey"}),
+
+]);
+
 export const docRevisionsInHarnessShared = harnessShared.table("doc_revisions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").default('default').notNull(),
