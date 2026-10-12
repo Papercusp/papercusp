@@ -16,6 +16,35 @@ export function createPostgresLogWindow(size?: number): {
     lines: () => readonly string[];
 };
 /**
+ * Add actionable context when embedded-postgres fails before the postmaster is ready.
+ * Its start promise can reject with a non-Error value, including undefined, so the
+ * captured postmaster output is part of the only useful diagnostic in that case.
+ * @param {{ cause: unknown, port: number, dataDir: string, recentLines: readonly string[] }} opts
+ * @returns {Error}
+ */
+export function createPostgresStartupError({ cause, port, dataDir, recentLines }: {
+    cause: unknown;
+    port: number;
+    dataDir: string;
+    recentLines: readonly string[];
+}): Error;
+/**
+ * Normalize embedded-postgres startup failures while preserving the original cause.
+ * @param {{
+ *   start: () => Promise<void>,
+ *   port: number,
+ *   dataDir: string,
+ *   recentLines: () => readonly string[],
+ * }} opts
+ * @returns {Promise<void>}
+ */
+export function startPostgresWithDiagnostics({ start, port, dataDir, recentLines }: {
+    start: () => Promise<void>;
+    port: number;
+    dataDir: string;
+    recentLines: () => readonly string[];
+}): Promise<void>;
+/**
  * True when a child process has already exited, so waiting for its 'exit' event
  * would hang forever (node emits 'exit' once and never replays it).
  * @param {{ exitCode?: number | null, signalCode?: string | null } | undefined | null} child

@@ -22,7 +22,10 @@ export function migrationRelationNames(ddl: string): string[];
 export function describeMigrationLockHolders(client: {
     unsafe: (sql: string) => Promise<unknown>;
 }, ddl: string): Promise<string>;
-/** @param {string} ddl */
+/**
+ * @param {string} ddl
+ * @returns {string[]}
+ */
 export function migrationTransactionChunks(ddl: string): string[];
 export function defaultSkipFile(f: any): any;
 /**

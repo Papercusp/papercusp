@@ -52,6 +52,70 @@ export function createPostgresLogWindow(size = PG_DEATH_LOG_WINDOW) {
 }
 
 /**
+ * Add actionable context when embedded-postgres fails before the postmaster is ready.
+ * Its start promise can reject with a non-Error value, including undefined, so the
+ * captured postmaster output is part of the only useful diagnostic in that case.
+ * @param {{ cause: unknown, port: number, dataDir: string, recentLines: readonly string[] }} opts
+ * @returns {Error}
+ */
+export function createPostgresStartupError({ cause, port, dataDir, recentLines }) {
+  let causeDescription;
+  if (cause instanceof Error) {
+    causeDescription = cause.message
+      ? `${cause.name || 'Error'}: ${cause.message}`
+      : `${cause.name || 'Error'} without a message`;
+  } else if (cause === undefined) {
+    causeDescription = 'embedded-postgres start promise rejected without an error value';
+  } else if (cause === null) {
+    causeDescription = 'embedded-postgres start promise rejected with null';
+  } else if (typeof cause === 'string') {
+    causeDescription = `embedded-postgres start promise rejected with ${JSON.stringify(cause)}`;
+  } else {
+    let rendered;
+    try {
+      rendered = JSON.stringify(cause);
+    } catch {
+      rendered = undefined;
+    }
+    causeDescription = rendered
+      ? `embedded-postgres start promise rejected with ${rendered}`
+      : 'embedded-postgres start promise rejected with a non-Error value';
+  }
+
+  const lines = recentLines.slice(-PG_DEATH_LOG_WINDOW);
+  const logContext = lines.length > 0
+    ? `\nRecent PostgreSQL startup output (last ${lines.length} lines):\n${lines.join('\n')}`
+    : '\nNo PostgreSQL startup output was captured.';
+  return new Error(
+    `PostgreSQL failed to start on localhost:${port} using data directory ${JSON.stringify(dataDir)}: ${causeDescription}${logContext}`,
+    { cause },
+  );
+}
+
+/**
+ * Normalize embedded-postgres startup failures while preserving the original cause.
+ * @param {{
+ *   start: () => Promise<void>,
+ *   port: number,
+ *   dataDir: string,
+ *   recentLines: () => readonly string[],
+ * }} opts
+ * @returns {Promise<void>}
+ */
+export async function startPostgresWithDiagnostics({ start, port, dataDir, recentLines }) {
+  try {
+    await start();
+  } catch (cause) {
+    throw createPostgresStartupError({
+      cause,
+      port,
+      dataDir,
+      recentLines: recentLines(),
+    });
+  }
+}
+
+/**
  * True when a child process has already exited, so waiting for its 'exit' event
  * would hang forever (node emits 'exit' once and never replays it).
  * @param {{ exitCode?: number | null, signalCode?: string | null } | undefined | null} child

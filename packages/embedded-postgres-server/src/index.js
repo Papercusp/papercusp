@@ -46,7 +46,12 @@ import { randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { applyPendingMigrations } from './migration-runner.js';
-import { childHasExited, createPostgresLogWindow, superviseEmbeddedPostgres } from './pg-supervisor.js';
+import {
+  childHasExited,
+  createPostgresLogWindow,
+  startPostgresWithDiagnostics,
+  superviseEmbeddedPostgres,
+} from './pg-supervisor.js';
 export { applyPendingMigrations, defaultSkipFile, migrationTransactionChunks } from './migration-runner.js';
 export {
   PG_DEATH_LOG_WINDOW,
@@ -882,6 +887,7 @@ export function restoreLogicalSeed(seedPath, {
 
 /**
  * @param {object} opts
+ * @param {readonly string[]} [opts.preloadLibraries] Override the bundled preload-library detection.
  * @param {string} [opts.dataDir]      Postgres data dir. Default: ~/.papercusp/embedded-pg-data
  * @param {number} [opts.port]         TCP port. Default: 5532 (avoiding 5432 collision with system PG).
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
@@ -1035,7 +1041,12 @@ export async function startEmbeddedPostgresServer(opts = {}) {
 
   try {
     log(`starting postgres on localhost:${port}`);
-    await pg.start();
+    await startPostgresWithDiagnostics({
+      start: () => pg.start(),
+      port,
+      dataDir,
+      recentLines: pgLogWindow.lines,
+    });
 
     // Create the target database if missing. embedded-postgres always
     // creates `postgres` as superuser; we add `papercusp` separately so

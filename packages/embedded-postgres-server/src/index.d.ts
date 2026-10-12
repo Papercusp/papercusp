@@ -1,4 +1,30 @@
 /**
+ * The `postgres` binary path for this platform, resolved exactly the way
+ * embedded-postgres's own `dist/binary.js` does. The package's `exports` map hides that
+ * file, so the switch is repeated with LITERAL specifiers: any bundler or loader that can
+ * resolve the library's own imports resolves these too.
+ * @returns {Promise<string | null>}
+ */
+export function resolveEmbeddedPostgresBinary(): Promise<string | null>;
+/**
+ * Which of `libraries` the binary tree that holds `postgresBinary` actually contains.
+ * Checks both layouts the sidecar assembles: Debian (`lib/postgresql/`, the npm
+ * binaries) and PostgreSQL's relocatable prefix (`lib/`, the pinned source build).
+ * @param {string | null} postgresBinary  absolute path of `<root>/bin/postgres[.exe]`
+ * @param {readonly string[]} [libraries]
+ * @param {(p: string) => boolean} [exists]
+ * @returns {string[]}
+ */
+export function presentPreloadLibraries(postgresBinary: string | null, libraries?: readonly string[], exists?: (p: string) => boolean): string[];
+/**
+ * The `-c shared_preload_libraries=…` flags for the postmaster command line, or none.
+ * An explicit `shared_preload_libraries` in the caller's settings wins (it is appended
+ * later and PostgreSQL honours the last `-c` for a key).
+ * @param {readonly string[]} libraries
+ * @returns {string[]}
+ */
+export function preloadFlags(libraries: readonly string[]): string[];
+/**
  * True when `value` holds a strong, non-default password for every role slot.
  * @param {unknown} value
  * @returns {boolean}
@@ -208,6 +234,7 @@ export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBi
 }): void;
 /**
  * @param {object} opts
+ * @param {readonly string[]} [opts.preloadLibraries] Override the bundled preload-library detection.
  * @param {string} [opts.dataDir]      Postgres data dir. Default: ~/.papercusp/embedded-pg-data
  * @param {number} [opts.port]         TCP port. Default: 5532 (avoiding 5432 collision with system PG).
  * @param {string} [opts.dbName]       Database to create + connect to. Default: papercusp.
@@ -244,15 +271,8 @@ export function restoreLogicalSeed(seedPath: string, { port, dbName, pgRestoreBi
  * @param {(e: { attempt: number }) => void} [opts.onPostgresRestarted]
  *        Called when a supervised restart reaches "ready to accept connections".
  */
-/** Extension libraries preloaded when the embedded binary tree ships them (pg_textsearch). */
-export const OPTIONAL_PRELOAD_LIBRARIES: readonly string[];
-/** The platform's embedded `postgres` binary path, or null when no platform package resolves. */
-export function resolveEmbeddedPostgresBinary(): Promise<string | null>;
-/** The subset of `libraries` present in the binary tree that holds `postgresBinary`. */
-export function presentPreloadLibraries(postgresBinary: string | null, libraries?: readonly string[], exists?: (p: string) => boolean): string[];
-/** `-c shared_preload_libraries=…` postmaster flags, or [] when `libraries` is empty. */
-export function preloadFlags(libraries: readonly string[]): string[];
 export function startEmbeddedPostgresServer(opts?: {
+    preloadLibraries?: readonly string[] | undefined;
     dataDir?: string | undefined;
     port?: number | undefined;
     dbName?: string | undefined;
@@ -261,8 +281,6 @@ export function startEmbeddedPostgresServer(opts?: {
     seedPath?: string | undefined;
     pgRestoreBin?: string | undefined;
     extraPostgresSettings?: Record<string, string> | undefined;
-    /** Override the libraries preloaded via shared_preload_libraries (default: the bundled subset of OPTIONAL_PRELOAD_LIBRARIES). */
-    preloadLibraries?: readonly string[] | undefined;
     credentialsFile?: string | undefined;
     onLog?: ((m: string) => void) | undefined;
     supervise?: boolean | undefined;
@@ -295,6 +313,19 @@ export function startEmbeddedPostgresServer(opts?: {
     health(): import("./pg-supervisor.js").PostgresSupervisorHealth | null;
     stop(): Promise<void>;
 }>;
+/**
+ * Extension libraries the postmaster preloads WHEN the embedded binary tree ships them.
+ *
+ * pg_textsearch (BM25 lexical search, plan bm25-lexical-search-evoke-adoption-2026-10-10)
+ * refuses `CREATE EXTENSION` and BM25 index scans unless it is in
+ * `shared_preload_libraries`, and the setting is postmaster-level, so it must be on the
+ * command line at start. It is preloaded only when its library file is present: naming a
+ * missing library in `shared_preload_libraries` makes the postmaster refuse to start,
+ * and some desktop targets (Windows today) do not bundle it. A target without the
+ * library boots normally; the BM25 migration then skips its indexes, search ranks with
+ * the legacy tsvector path, and the BM25 health check reports the gap instead of hiding it.
+ */
+export const OPTIONAL_PRELOAD_LIBRARIES: readonly string[];
 /**
  * The repo-public default role passwords (WI-10003627). They are the documented
  * DEV convention libs/db/src/connection.ts falls back to, and they are safe only
