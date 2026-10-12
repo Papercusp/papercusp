@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -7,12 +7,15 @@ import {
   _defaultIsPortServed,
   _resetUrlCacheForTests,
   _resolveAdminUrlForTests,
+  _resolveUrlsForTests,
 } from './connection';
 
 const ENV_KEYS = [
   'PAPERCUSP_HOME',
+  'PAPERCUSP_PG_PORT',
   'PAPERCUSP_SKIP_PG_DISCOVERY',
   'HARNESS_ADMIN_DATABASE_URL',
+  'HARNESS_DATABASE_URL',
   'DATABASE_URL',
 ] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]])) as Record<
@@ -23,6 +26,7 @@ let fixtureHome: string | undefined;
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   for (const key of ENV_KEYS) {
     const value = savedEnv[key];
     if (value === undefined) delete process.env[key];
@@ -34,6 +38,58 @@ afterEach(() => {
 });
 
 describe('discovery port-probe cost on the getOrgPg resolver path', () => {
+  it('uses the operator DB pin before a live desktop discovery endpoint and logs only the redacted target once', () => {
+    fixtureHome = mkdtempSync(join(tmpdir(), 'papercusp-discovery-probe-'));
+    process.env.PAPERCUSP_HOME = fixtureHome;
+    delete process.env.PAPERCUSP_SKIP_PG_DISCOVERY;
+    delete process.env.PAPERCUSP_PG_PORT;
+    delete process.env.HARNESS_ADMIN_DATABASE_URL;
+    delete process.env.HARNESS_DATABASE_URL;
+    delete process.env.DATABASE_URL;
+    _resetUrlCacheForTests();
+
+    writeFileSync(
+      join(fixtureHome, 'embedded-pg.json'),
+      JSON.stringify({
+        url: 'postgresql://harness_admin:desktop-secret@127.0.0.1:55101/papercusp',
+        port: 55101,
+        pid: process.pid,
+      }),
+    );
+    const operatorEnvFile = join(fixtureHome, 'operator', '.env.local');
+    mkdirSync(join(fixtureHome, 'operator'), { recursive: true });
+    writeFileSync(
+      operatorEnvFile,
+      "DATABASE_URL='postgresql://harness_admin:operator-secret@127.0.0.1:5432/papercusp'\n",
+    );
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+
+    const operatorUrl = 'postgresql://harness_admin:operator-secret@127.0.0.1:5432/papercusp';
+    const urls = _resolveUrlsForTests(operatorEnvFile);
+    expect(urls.admin).toBe(operatorUrl);
+    expect(urls.app).toBe('postgresql://harness_app:harness_app_pwd@127.0.0.1:5432/papercusp');
+    expect(_resolveAdminUrlForTests(() => true, operatorEnvFile)).toBe(operatorUrl);
+    expect(info).toHaveBeenCalledTimes(1);
+    const report = String(info.mock.calls[0]?.[0]);
+    expect(report).toContain('source=operator-env-file');
+    expect(report).toContain('endpoint=127.0.0.1:5432');
+    expect(report).not.toContain('operator-secret');
+  });
+
+  it('does not load the operator DB pin for a discovery-skipped isolated caller', () => {
+    fixtureHome = mkdtempSync(join(tmpdir(), 'papercusp-discovery-probe-'));
+    process.env.PAPERCUSP_HOME = fixtureHome;
+    process.env.PAPERCUSP_SKIP_PG_DISCOVERY = '1';
+    const operatorEnvFile = join(fixtureHome, 'operator', '.env.local');
+    mkdirSync(join(fixtureHome, 'operator'), { recursive: true });
+    writeFileSync(operatorEnvFile, 'DATABASE_URL=postgresql://harness_admin:operator-secret@127.0.0.1:5432/papercusp\n');
+    _resetUrlCacheForTests();
+
+    expect(_resolveAdminUrlForTests(() => true, operatorEnvFile)).toBe(
+      'postgresql://harness_admin:harness_admin_pwd@localhost:5432/papercusp',
+    );
+  });
+
   it('uses the lazy Node monotonic clock independently of the global performance object', () => {
     vi.stubGlobal('performance', { now: () => { throw new Error('global performance is unavailable'); } });
     _resetUrlCacheForTests();
@@ -61,6 +117,9 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
         }),
       );
     };
+    const operatorEnvFile = join(fixtureHome, 'operator', '.env.local');
+    mkdirSync(join(fixtureHome, 'operator'), { recursive: true });
+    writeFileSync(operatorEnvFile, '');
     const probes: number[] = [];
     const instrumentedProbe = (port: number) => {
       probes.push(port);
@@ -69,14 +128,14 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
 
     writeEndpoint(55101);
     for (let i = 0; i < 32; i += 1) {
-      expect(_resolveAdminUrlForTests(instrumentedProbe)).toBe(
+      expect(_resolveAdminUrlForTests(instrumentedProbe, operatorEnvFile)).toBe(
         'postgresql://harness_admin:harness_admin_pwd@127.0.0.1:55101/papercusp',
       );
     }
     expect(probes).toEqual(Array.from({ length: 32 }, () => 55101));
 
     writeEndpoint(55102);
-    expect(_resolveAdminUrlForTests(instrumentedProbe)).toBe(
+    expect(_resolveAdminUrlForTests(instrumentedProbe, operatorEnvFile)).toBe(
       'postgresql://harness_admin:harness_admin_pwd@127.0.0.1:55102/papercusp',
     );
     expect(probes).toHaveLength(33);

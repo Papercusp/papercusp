@@ -138,33 +138,139 @@ const fullSchema = {
 // HARNESS_DATABASE_URL after this module is imported) take effect.
 //
 // Resolution chain (added 2026-05-12 — superseded the bare native fallback):
-//   1. Explicit env (HARNESS_DATABASE_URL / HARNESS_ADMIN_DATABASE_URL,
+//   1. Explicit process env (HARNESS_DATABASE_URL / HARNESS_ADMIN_DATABASE_URL,
 //      then DATABASE_URL as an endpoint pin — admin DSN as-is, app role
-//      re-keyed onto its host:port). Set by Tauri main when spawning the
-//      desktop sidecar, and by every managed host's systemd unit — that
-//      path always wins.
-//   2. Discovery file at $HOME/.papercusp/embedded-pg.json — written
-//      by the desktop's Rust main on embedded-PG ready, deleted on
-//      shutdown. Lets `apps/operator npm run dev` (no env set) share
-//      the SAME embedded PG the desktop is running.
-//   3. Native :5432 fallback — only when neither (1) nor (2) is
-//      available. Same string as before so nothing breaks for users
-//      who don't run the desktop.
+//      re-keyed onto its host:port). Set by Tauri main and managed service units.
+//   2. The operator's apps/operator/.env.local DB pins. This is the same file
+//      sourced by the operator service; an env-less CLI must follow that target
+//      before consulting desktop discovery.
+//   3. Discovery file at $HOME/.papercusp/embedded-pg.json. This lets desktop
+//      development share its embedded PG when no operator DB pin exists.
+//   4. Native :5432 fallback when neither an explicit/operator pin nor discovery
+//      is available.
 //
-// Cached per-process so we don't fs-stat every connection. Re-reading
-// would also produce stale results when the desktop port changes
-// across restarts — env-set callers (Tauri sidecar) get a fresh module
-// load anyway.
+// Process env and the operator env file are stable for this process and cached.
+// Discovery is re-read because the desktop port can change across restarts.
 let _resolvedAppUrl: string | null = null;
-let _resolvedAppUrlSource: 'env' | 'discovery' | null = null;
+let _resolvedAppUrlSource: 'env' | 'operator-env-file' | 'discovery' | 'fallback' | null = null;
 let _resolvedAdminUrl: string | null = null;
-let _resolvedAdminUrlSource: 'env' | 'discovery' | null = null;
+let _resolvedAdminUrlSource: 'env' | 'operator-env-file' | 'discovery' | 'fallback' | null = null;
+type OperatorDbEnv = Partial<Record<'HARNESS_ADMIN_DATABASE_URL' | 'HARNESS_DATABASE_URL' | 'DATABASE_URL', string>>;
+let _operatorDbEnvLocalCache: { loaded: boolean; values: OperatorDbEnv } = { loaded: false, values: {} };
+const _reportedDbTargets = new Set<string>();
 // Test resets intentionally rotate this process between independent Postgres clusters. Identity
 // probes are fire-and-forget, so closing an old pool cannot guarantee its already-issued probe's
 // `.then` callback runs before the replacement pool is built. Fence those pre-reset callbacks or
 // they can poison the replacement generation with a correctly-read but now-stale identity.
 // Production never calls `_resetForTests`, so its process-lifetime identity contract is unchanged.
 let _identityProbeTestGeneration = 0;
+
+/**
+ * Locate the operator's .env.local from either this source file or the caller's
+ * working directory. Service units source this exact file; consulting it before
+ * desktop discovery keeps an env-less CLI on the same database as the operator.
+ * Keep Node-only access lazy because connection.ts is also imported by browser
+ * bundles.
+ */
+function findOperatorEnvLocalPath(): string | null {
+  try {
+    const fs = nodeRequire('node:fs') as typeof import('node:fs');
+    const path = nodeRequire('node:path') as typeof import('node:path');
+    const { fileURLToPath } = nodeRequire('node:url') as typeof import('node:url');
+    const starts: string[] = [];
+    try { starts.push(path.dirname(fileURLToPath(import.meta.url))); } catch { /* non-file URL */ }
+    try { starts.push(process.cwd()); } catch { /* unavailable in edge runtimes */ }
+
+    const visited = new Set<string>();
+    for (const start of starts) {
+      let dir = start;
+      for (let depth = 0; depth < 12; depth += 1) {
+        if (visited.has(dir)) break;
+        visited.add(dir);
+        const isOperatorDir = path.basename(dir) === 'operator' && path.basename(path.dirname(dir)) === 'apps';
+        const candidates = isOperatorDir
+          ? [path.join(dir, '.env.local')]
+          : [path.join(dir, 'apps', 'operator', '.env.local')];
+        for (const candidate of candidates) {
+          try {
+            if (fs.statSync(candidate).isFile()) return candidate;
+          } catch { /* keep walking */ }
+        }
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+    }
+  } catch { /* browser/edge import: no filesystem-backed operator config */ }
+  return null;
+}
+
+/** Parse only the DB URL assignments supported by scripts/lib/pg-url.mjs; never shell-evaluate. */
+function parseOperatorEnvLocal(text: string): OperatorDbEnv {
+  const values: OperatorDbEnv = {};
+  const keys = new Set(['HARNESS_ADMIN_DATABASE_URL', 'HARNESS_DATABASE_URL', 'DATABASE_URL']);
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
+    if (!match || !keys.has(match[1])) continue;
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+    ) value = value.slice(1, -1);
+    if (value) values[match[1] as keyof OperatorDbEnv] = value;
+  }
+  return values;
+}
+
+/** Read only DB pins; do not source the file or copy unrelated secrets into process.env. */
+function readOperatorDbEnvLocal(fileOverride?: string): OperatorDbEnv {
+  // An isolated test/PG must not inherit the live operator database from .env.local.
+  if (process.env.PAPERCUSP_PG_PORT || process.env.PAPERCUSP_SKIP_PG_DISCOVERY === '1') {
+    return {};
+  }
+  if (fileOverride) {
+    try {
+      const fs = nodeRequire('node:fs') as typeof import('node:fs');
+      return parseOperatorEnvLocal(fs.readFileSync(fileOverride, 'utf8'));
+    } catch { return {}; }
+  }
+  if (_operatorDbEnvLocalCache.loaded) return _operatorDbEnvLocalCache.values;
+  let values: OperatorDbEnv = {};
+  const file = findOperatorEnvLocalPath();
+  if (file) {
+    try {
+      const fs = nodeRequire('node:fs') as typeof import('node:fs');
+      values = parseOperatorEnvLocal(fs.readFileSync(file, 'utf8'));
+    } catch { /* an unreadable local file is not an operator DB pin */ }
+  }
+  _operatorDbEnvLocalCache = { loaded: true, values };
+  return values;
+}
+
+function appUrlFromAdminPin(pinned: string): string | null {
+  try {
+    const u = new URL(pinned);
+    return `postgresql://harness_app:harness_app_pwd@${u.hostname}:${u.port || 5432}${u.pathname || '/papercusp'}`;
+  } catch { return null; }
+}
+
+/** Log a redacted target once per source/host/port; never expose DSN credentials. */
+function reportResolvedDatabaseTarget(url: string, source: string): string {
+  let endpoint = '<unparseable>';
+  try {
+    const parsed = new URL(url);
+    endpoint = `${parsed.hostname}:${parsed.port || '5432'}`;
+  } catch { /* keep the redacted placeholder */ }
+  const key = `${source}:${endpoint}`;
+  if (!_reportedDbTargets.has(key)) {
+    _reportedDbTargets.add(key);
+    console.info(`[db] target source=${source} endpoint=${endpoint}`);
+  }
+  return url;
+}
+
 /**
  * `appPassword` is harness_app's password when the advertiser keys roles to per-host
  * secrets (a multi-account hosted VM, WI-10003627); absent ⇒ the DEV default applies.
@@ -631,15 +737,18 @@ function noteServedAppUrl(url: string): string {
   return url;
 }
 
-function appUrl(): string {
+function appUrl(opts?: { operatorEnvironmentFile?: string }): string {
   // Single funnel: every resolution path returns through here, so a future branch
   // added to resolveAppUrl() inherits the rebind guard instead of having to
   // remember its own teardown — the failure mode this whole class came from.
-  return noteServedAppUrl(resolveAppUrl());
+  const url = noteServedAppUrl(resolveAppUrl(opts));
+  return reportResolvedDatabaseTarget(url, _resolvedAppUrlSource ?? 'fallback');
 }
 
-function resolveAppUrl(): string {
-  if (_resolvedAppUrl && _resolvedAppUrlSource === 'env') return _resolvedAppUrl;
+function resolveAppUrl(opts?: { operatorEnvironmentFile?: string }): string {
+  if (_resolvedAppUrl && (_resolvedAppUrlSource === 'env' || _resolvedAppUrlSource === 'operator-env-file')) {
+    return _resolvedAppUrl;
+  }
   if (process.env.HARNESS_DATABASE_URL) {
     _resolvedAppUrl = process.env.HARNESS_DATABASE_URL;
     _resolvedAppUrlSource = 'env';
@@ -666,14 +775,25 @@ function resolveAppUrl(): string {
   for (const pinVar of ['HARNESS_ADMIN_DATABASE_URL', 'DATABASE_URL'] as const) {
     const pinned = process.env[pinVar];
     if (!pinned) continue;
-    try {
-      const u = new URL(pinned);
-      _resolvedAppUrl = `postgresql://harness_app:harness_app_pwd@${u.hostname}:${u.port || 5432}${u.pathname || '/papercusp'}`;
+    const appUrl = appUrlFromAdminPin(pinned);
+    if (appUrl) {
+      _resolvedAppUrl = appUrl;
       _resolvedAppUrlSource = 'env';
       return _resolvedAppUrl;
-    } catch {
-      // unparseable pin — try the next pin, then the discovery file
     }
+  }
+  const operatorEnv = readOperatorDbEnvLocal(opts?.operatorEnvironmentFile);
+  if (operatorEnv.HARNESS_DATABASE_URL) {
+    _resolvedAppUrl = operatorEnv.HARNESS_DATABASE_URL;
+    _resolvedAppUrlSource = 'operator-env-file';
+    return _resolvedAppUrl;
+  }
+  for (const pinVar of ['HARNESS_ADMIN_DATABASE_URL', 'DATABASE_URL'] as const) {
+    const appUrl = operatorEnv[pinVar] ? appUrlFromAdminPin(operatorEnv[pinVar]!) : null;
+    if (!appUrl) continue;
+    _resolvedAppUrl = appUrl;
+    _resolvedAppUrlSource = 'operator-env-file';
+    return _resolvedAppUrl;
   }
   const disc = readDiscoveryFile();
   if (disc) {
@@ -707,11 +827,17 @@ function resolveAppUrl(): string {
   // made an EARLY getOrgPg caller (e.g. the home=<none> owner-bootstrap-admit) connect to a
   // nonexistent :5432 on a fresh VM → unhandled pool error → sidecar crash. Falls back to 5432
   // only when PAPERCUSP_PG_PORT is unset (a real native-PG-on-5432 host).
+  _resolvedAppUrlSource = 'fallback';
   return `postgresql://harness_app:harness_app_pwd@localhost:${Number(process.env.PAPERCUSP_PG_PORT) || 5432}/papercusp`;
 }
-function adminUrl(opts?: { isPortServed?: DiscoveryPortProbe }): string {
+function resolveAdminUrl(opts?: {
+  isPortServed?: DiscoveryPortProbe;
+  operatorEnvironmentFile?: string;
+}): string {
   // Env is stable for process lifetime → safe to cache.
-  if (_resolvedAdminUrl && _resolvedAdminUrlSource === 'env') return _resolvedAdminUrl;
+  if (_resolvedAdminUrl && (_resolvedAdminUrlSource === 'env' || _resolvedAdminUrlSource === 'operator-env-file')) {
+    return _resolvedAdminUrl;
+  }
   if (process.env.HARNESS_ADMIN_DATABASE_URL) {
     _resolvedAdminUrl = process.env.HARNESS_ADMIN_DATABASE_URL;
     _resolvedAdminUrlSource = 'env';
@@ -723,6 +849,13 @@ function adminUrl(opts?: { isPortServed?: DiscoveryPortProbe }): string {
   if (process.env.DATABASE_URL) {
     _resolvedAdminUrl = process.env.DATABASE_URL;
     _resolvedAdminUrlSource = 'env';
+    return _resolvedAdminUrl;
+  }
+  const operatorEnv = readOperatorDbEnvLocal(opts?.operatorEnvironmentFile);
+  const operatorUrl = operatorEnv.HARNESS_ADMIN_DATABASE_URL || operatorEnv.DATABASE_URL;
+  if (operatorUrl) {
+    _resolvedAdminUrl = operatorUrl;
+    _resolvedAdminUrlSource = 'operator-env-file';
     return _resolvedAdminUrl;
   }
   // Discovery file can change (desktop restart / port shuffle) — re-read
@@ -760,22 +893,41 @@ function adminUrl(opts?: { isPortServed?: DiscoveryPortProbe }): string {
   // honor PAPERCUSP_PG_PORT (the embedded PG's advertised port) so an early getOrgPg caller
   // before the discovery file/env is ready connects to the real embedded PG, not a nonexistent
   // :5432 (which crashed the sidecar on any host without a stray 5432 PG).
+  _resolvedAdminUrlSource = 'fallback';
   return `postgresql://harness_admin:harness_admin_pwd@localhost:${Number(process.env.PAPERCUSP_PG_PORT) || 5432}/papercusp`;
+}
+function adminUrl(opts?: {
+  isPortServed?: DiscoveryPortProbe;
+  operatorEnvironmentFile?: string;
+}): string {
+  const url = resolveAdminUrl(opts);
+  return reportResolvedDatabaseTarget(url, _resolvedAdminUrlSource ?? 'fallback');
 }
 /** Test-only — clears cached URLs so a test that mutates env between cases sees the change. */
 export function _resetUrlCacheForTests(): void {
+  _servedAppUrl = null;
   _resolvedAppUrl = null;
+  _resolvedAppUrlSource = null;
   _resolvedAdminUrl = null;
+  _resolvedAdminUrlSource = null;
+  _operatorDbEnvLocalCache = { loaded: false, values: {} };
+  _reportedDbTargets.clear();
 }
 
-/** Test-only — resolve the app/admin URLs through the live chain (env → discovery → fallback). */
-export function _resolveUrlsForTests(): { app: string; admin: string } {
-  return { app: appUrl(), admin: adminUrl() };
+/** Test-only — resolve the app/admin URLs through the live chain. */
+export function _resolveUrlsForTests(operatorEnvironmentFile?: string): { app: string; admin: string } {
+  return {
+    app: appUrl({ operatorEnvironmentFile }),
+    admin: adminUrl({ operatorEnvironmentFile }),
+  };
 }
 
 /** Test-only — resolve the exact admin URL path used by getOrgPg with a controlled port probe. */
-export function _resolveAdminUrlForTests(isPortServed: DiscoveryPortProbe): string {
-  return adminUrl({ isPortServed });
+export function _resolveAdminUrlForTests(
+  isPortServed: DiscoveryPortProbe,
+  operatorEnvironmentFile?: string,
+): string {
+  return adminUrl({ isPortServed, operatorEnvironmentFile });
 }
 
 /**
