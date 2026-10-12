@@ -1,0 +1,44 @@
+-- P008 reuses signed contracts and offers, without another document/member store.
+-- FORWARD-COMPAT: nullable fields preserve all existing writers and primary keys.
+ALTER TABLE harness_shared.dao_hr_offers ADD COLUMN IF NOT EXISTS amends_offer_id text;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='harness_shared.dao_hr_offers'::regclass AND conname='dao_hr_amendment_parent_fk') THEN
+    ALTER TABLE harness_shared.dao_hr_offers ADD CONSTRAINT dao_hr_amendment_parent_fk
+      FOREIGN KEY (workspace_id,dao_slug,amends_offer_id) REFERENCES harness_shared.dao_hr_offers;
+  END IF;
+END $$;
+ALTER TABLE harness_shared.dao_hr_contracts
+  ADD COLUMN IF NOT EXISTS fire_plan jsonb,
+  ADD COLUMN IF NOT EXISTS offboarding_proof jsonb,
+  ADD COLUMN IF NOT EXISTS amendment_execution_proof jsonb;
+CREATE OR REPLACE FUNCTION harness_shared.dao_hr_engagement_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.fire_plan IS NOT NULL AND NEW.fire_plan IS DISTINCT FROM OLD.fire_plan THEN
+    RAISE EXCEPTION 'dao_hr fire plan is immutable';
+  END IF;
+  IF OLD.offboarding_proof IS NOT NULL AND NEW.offboarding_proof IS DISTINCT FROM OLD.offboarding_proof THEN
+    RAISE EXCEPTION 'dao_hr offboarding proof is immutable';
+  END IF;
+  IF NEW.offboarding_proof IS NOT NULL AND OLD.admitted_at IS NULL THEN
+    RAISE EXCEPTION 'dao_hr offboarding requires an admitted hire';
+  END IF;
+  IF OLD.amendment_execution_proof IS NOT NULL AND NEW.amendment_execution_proof IS DISTINCT FROM OLD.amendment_execution_proof THEN
+    RAISE EXCEPTION 'dao_hr amendment proof is immutable';
+  END IF;
+  IF NEW.amendment_execution_proof IS NOT NULL AND
+    (NEW.state NOT IN ('signed','binding') OR NEW.document_hash IS NULL OR NEW.sealed_pdf IS NULL OR NEW.audit_certificate IS NULL OR NEW.completed_at IS NULL) THEN
+    RAISE EXCEPTION 'dao_hr amendment execution requires a signed document';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE OR REPLACE TRIGGER dao_hr_engagement_immutable BEFORE UPDATE ON harness_shared.dao_hr_contracts
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.dao_hr_engagement_immutable();
+CREATE OR REPLACE FUNCTION harness_shared.dao_hr_amendment_parent_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.amends_offer_id IS DISTINCT FROM OLD.amends_offer_id THEN
+    RAISE EXCEPTION 'dao_hr amendment parent is immutable';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE OR REPLACE TRIGGER dao_hr_amendment_parent_immutable BEFORE UPDATE ON harness_shared.dao_hr_offers
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.dao_hr_amendment_parent_immutable();
