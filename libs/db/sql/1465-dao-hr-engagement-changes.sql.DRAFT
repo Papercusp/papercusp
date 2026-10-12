@@ -10,6 +10,7 @@ END $$;
 ALTER TABLE harness_shared.dao_hr_contracts
   ADD COLUMN IF NOT EXISTS fire_plan jsonb,
   ADD COLUMN IF NOT EXISTS offboarding_proof jsonb,
+  ADD COLUMN IF NOT EXISTS amendment_plan jsonb,
   ADD COLUMN IF NOT EXISTS amendment_execution_proof jsonb;
 CREATE OR REPLACE FUNCTION harness_shared.dao_hr_engagement_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
@@ -25,8 +26,11 @@ BEGIN
   IF OLD.amendment_execution_proof IS NOT NULL AND NEW.amendment_execution_proof IS DISTINCT FROM OLD.amendment_execution_proof THEN
     RAISE EXCEPTION 'dao_hr amendment proof is immutable';
   END IF;
+  IF OLD.amendment_plan IS NOT NULL AND NEW.amendment_plan IS DISTINCT FROM OLD.amendment_plan THEN
+    RAISE EXCEPTION 'dao_hr amendment plan is immutable';
+  END IF;
   IF NEW.amendment_execution_proof IS NOT NULL AND
-    (NEW.state NOT IN ('signed','binding') OR NEW.document_hash IS NULL OR NEW.sealed_pdf IS NULL OR NEW.audit_certificate IS NULL OR NEW.completed_at IS NULL) THEN
+    (NEW.state NOT IN ('signed','binding') OR NEW.document_hash IS NULL OR NEW.sealed_pdf IS NULL OR NEW.audit_certificate IS NULL OR NEW.completed_at IS NULL OR NEW.amendment_plan IS NULL) THEN
     RAISE EXCEPTION 'dao_hr amendment execution requires a signed document';
   END IF;
   RETURN NEW;
