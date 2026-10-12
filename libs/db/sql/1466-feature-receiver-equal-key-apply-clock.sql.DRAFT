@@ -9,6 +9,75 @@
 -- Compatibility: old receivers continue to work; deploy this trigger before
 -- relying on the receiver token to guarantee equal-key clock preservation.
 
+-- Completion normalization runs BEFORE the federation stamp. The same bounded
+-- receiver UPDATE must keep the publisher's payload even when its clock does
+-- not move. Leave the token intact for stamp_local_federated_write to validate
+-- and consume; all ordinary local close/reopen/ack branches remain unchanged.
+CREATE OR REPLACE FUNCTION harness_shared.stamp_work_item_completion_event_intent()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, harness_shared
+AS $fn$
+DECLARE
+  prior_intent text;
+  acknowledged boolean;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.payload := COALESCE(NEW.payload, '{}'::jsonb) - '_completionEventIntentId';
+    RETURN NEW;
+  END IF;
+
+  IF TG_TABLE_NAME = 'work_items' AND TG_OP = 'UPDATE' THEN
+    IF NEW.origin = 'remote:features-by-id'
+       AND COALESCE(OLD.item_kind, '') NOT IN ('bug', 'change', 'task')
+       AND COALESCE(NEW.item_kind, '') NOT IN ('bug', 'change', 'task')
+       AND NULLIF(NEW.author_pubkey, '') IS NOT NULL
+       AND NULLIF(to_jsonb(OLD)->>'signer_device_pubkey', '') IS NULL
+       AND NULLIF(to_jsonb(NEW)->>'signer_device_pubkey', '') IS NULL THEN
+      RETURN NEW;
+    END IF;
+  END IF;
+
+  IF NEW.fed_ts IS DISTINCT FROM OLD.fed_ts
+     OR NEW.fed_hlc IS DISTINCT FROM OLD.fed_hlc THEN
+    RETURN NEW;
+  END IF;
+  IF NOT harness_shared.work_item_status_is_terminal(OLD.status)
+     AND harness_shared.work_item_status_is_terminal(NEW.status) THEN
+    NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+      || jsonb_build_object('_completionEventIntentId', gen_random_uuid()::text);
+  ELSIF NOT harness_shared.work_item_status_is_terminal(NEW.status) THEN
+    NEW.payload := COALESCE(NEW.payload, '{}'::jsonb) - '_completionEventIntentId';
+  ELSE
+    prior_intent := OLD.payload->>'_completionEventIntentId';
+    IF prior_intent IS NULL THEN
+      NEW.payload := COALESCE(NEW.payload, '{}'::jsonb) - '_completionEventIntentId';
+    ELSIF NEW.payload->>'_completionEventIntentId' IS DISTINCT FROM prior_intent THEN
+      IF NEW.payload->>'_completionEventIntentId' IS NOT NULL THEN
+        NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+          || jsonb_build_object('_completionEventIntentId', prior_intent);
+      ELSE
+        SELECT EXISTS (
+          SELECT 1 FROM harness_shared.event_key_fires AS fire
+           WHERE fire.workspace_id = 'default'
+             AND fire.event_key = 'work-item:done:' || OLD.feature_id
+             AND fire.last_payload->>'completionIntentId' = prior_intent
+        ) INTO acknowledged;
+        IF acknowledged THEN
+          NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+            - '_completionEventIntentId';
+        ELSE
+          NEW.payload := COALESCE(NEW.payload, '{}'::jsonb)
+            || jsonb_build_object('_completionEventIntentId', prior_intent);
+        END IF;
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$fn$;
+
 CREATE OR REPLACE FUNCTION harness_shared.stamp_local_federated_write()
  RETURNS trigger
  LANGUAGE plpgsql
