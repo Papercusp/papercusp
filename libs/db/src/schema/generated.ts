@@ -107,12 +107,12 @@ export const admissionRulesInHarnessShared = harnessShared.table("admission_rule
 			name: "admission_rules_source_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "admission_rules_pkey"}),
-	check("admission_rules_action_check", sql`action = ANY (ARRAY['admit'::text, 'suggest'::text])`),
+	check("admission_rules_action_check", sql`action = 'admit'::text`),
 	check("admission_rules_created_by_check", sql`btrim(created_by) <> ''::text`),
 	check("admission_rules_harness_slug_check", sql`btrim(harness_slug) <> ''::text`),
 	check("admission_rules_lifecycle_check", sql`jsonb_typeof(lifecycle) = 'object'::text`),
 	check("admission_rules_match_check", sql`(jsonb_typeof(match) = 'object'::text) AND (match <> '{}'::jsonb)`),
-	check("admission_rules_source_kind_check", sql`btrim(source_kind) <> ''::text`),
+	check("admission_rules_source_kind_check", sql`source_kind = 'record'::text`),
 	check("admission_rules_title_check", sql`btrim(title) <> ''::text`),
 	check("admission_rules_work_kind_check", sql`btrim(work_kind) <> ''::text`),
 ]);
@@ -1705,8 +1705,8 @@ export const capabilityClassRegistryInHarnessShared = harnessShared.table("capab
 	index("capability_class_registry_tags_idx").using("gin", table.tags.asc().nullsLast().op("array_ops")),
 	index("capability_class_registry_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
 	primaryKey({ columns: [table.id, table.version, table.workspaceId], name: "capability_class_registry_pkey"}),
+	pgPolicy("capability_class_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("capability_class_registry_approved_global_read", { as: "permissive", for: "select", to: ["public"], using: sql`(review_status = 'approved'::text)` }),
-	pgPolicy("capability_class_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("capability_class_registry_import_provenance_ck", sql`(provenance_kind <> 'cupboard-import'::text) OR ((publisher_namespace IS NOT NULL) AND (contract_hash IS NOT NULL) AND (source_artifact_hash IS NOT NULL))`),
 	check("capability_class_registry_provenance_kind_ck", sql`provenance_kind = ANY (ARRAY['platform'::text, 'cupboard-import'::text])`),
 	check("capability_class_registry_review_ck", sql`review_status = ANY (ARRAY['none'::text, 'pending'::text, 'approved'::text, 'rejected'::text])`),
@@ -3059,8 +3059,8 @@ END`),
 	unique("customer_workspaces_host_identity_uq").on(table.workspaceHostId, table.workspaceId),
 	unique("customer_workspaces_org_identity_uq").on(table.id, table.organizationId, table.workspaceId),
 	unique("customer_workspaces_connector_binding_uq").on(table.id, table.organizationId, table.workspaceHostId, table.workspaceId),
-	pgPolicy("customer_workspaces_app_scope", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`((organization_id = NULLIF(current_setting('app.organization_id'::text, true), ''::text)) AND (id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text)))`, withCheck: sql`((organization_id = NULLIF(current_setting('app.organization_id'::text, true), ''::text)) AND (id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text)))`  }),
-	pgPolicy("customer_workspaces_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("customer_workspaces_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
+	pgPolicy("customer_workspaces_app_scope", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`((organization_id = NULLIF(current_setting('app.organization_id'::text, true), ''::text)) AND (id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text)))`, withCheck: sql`((organization_id = NULLIF(current_setting('app.organization_id'::text, true), ''::text)) AND (id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text)))` }),
 	check("customer_workspaces_billing_owner_ck", sql`((billing_owner_kind IS NULL) AND (billing_owner_id IS NULL)) OR ((billing_owner_kind = ANY (ARRAY['organization'::text, 'customer'::text, 'platform'::text])) AND (btrim(billing_owner_id) <> ''::text))`),
 	check("customer_workspaces_creator_ck", sql`(btrim(created_by_principal_kind) <> ''::text) AND (btrim(created_by_principal_id) <> ''::text)`),
 	check("customer_workspaces_deleted_at_ck", sql`(state = 'deleted'::text) = (deleted_at IS NOT NULL)`),
@@ -3087,6 +3087,24 @@ export const daoHrAdminsInHarnessShared = harnessShared.table("dao_hr_admins", {
 	check("dao_hr_admins_dao_slug_check", sql`(length(btrim(dao_slug)) >= 1) AND (length(btrim(dao_slug)) <= 200)`),
 	check("dao_hr_admins_granted_by_check", sql`(length(btrim(granted_by)) >= 1) AND (length(btrim(granted_by)) <= 200)`),
 	check("dao_hr_admins_person_id_check", sql`person_id ~ '^PER-'::text`),
+]);
+
+export const daoHrCandidatesInHarnessShared = harnessShared.table("dao_hr_candidates", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	roleId: text("role_id").notNull(),
+	personId: text("person_id").notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.roleId],
+			foreignColumns: [daoHrRolesInHarnessShared.workspaceId, daoHrRolesInHarnessShared.daoSlug, daoHrRolesInHarnessShared.roleId],
+			name: "dao_hr_candidates_workspace_id_dao_slug_role_id_fkey"
+		}),
+	primaryKey({ columns: [table.daoSlug, table.personId, table.roleId, table.workspaceId], name: "dao_hr_candidates_pkey"}),
+	check("dao_hr_candidates_created_by_check", sql`created_by ~ '^PER-'::text`),
+	check("dao_hr_candidates_person_id_check", sql`person_id ~ '^PER-'::text`),
 ]);
 
 export const daoHrContractTemplateVersionsInHarnessShared = harnessShared.table("dao_hr_contract_template_versions", {
@@ -3139,6 +3157,56 @@ export const daoHrContractTemplatesInHarnessShared = harnessShared.table("dao_hr
 	check("dao_hr_contract_templates_title_check", sql`(length(btrim(title)) >= 1) AND (length(btrim(title)) <= 200)`),
 ]);
 
+export const daoHrContractsInHarnessShared = harnessShared.table("dao_hr_contracts", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	offerId: text("offer_id").notNull(),
+	contractId: text("contract_id").notNull(),
+	state: text().default('prepared').notNull(),
+	templates: jsonb().notNull(),
+	mergeValues: jsonb("merge_values").notNull(),
+	signers: jsonb().notNull(),
+	canBind: boolean("can_bind").notNull(),
+	sourcePdf: byteaCustom("source_pdf").notNull(),
+	envelopeId: text("envelope_id"),
+	signingLinks: jsonb("signing_links"),
+	sealedPdf: byteaCustom("sealed_pdf"),
+	auditCertificate: byteaCustom("audit_certificate"),
+	documentHash: text("document_hash"),
+	completionProof: jsonb("completion_proof"),
+	completedAt: timestamp("completed_at", { withTimezone: true, mode: 'string' }),
+	hireProposalRef: text("hire_proposal_ref"),
+	grantId: text("grant_id"),
+	hireTransactionHash: text("hire_transaction_hash"),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	candidateGithubId: bigint("candidate_github_id", { mode: "number" }),
+	candidateGithubLogin: text("candidate_github_login"),
+	hirePlan: jsonb("hire_plan"),
+	hireExecutionProof: jsonb("hire_execution_proof"),
+	termsAcceptanceProof: jsonb("terms_acceptance_proof"),
+	admittedAt: timestamp("admitted_at", { withTimezone: true, mode: 'string' }),
+	firePlan: jsonb("fire_plan"),
+	offboardingProof: jsonb("offboarding_proof"),
+	amendmentPlan: jsonb("amendment_plan"),
+	amendmentExecutionProof: jsonb("amendment_execution_proof"),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.offerId],
+			foreignColumns: [daoHrOffersInHarnessShared.workspaceId, daoHrOffersInHarnessShared.daoSlug, daoHrOffersInHarnessShared.offerId],
+			name: "dao_hr_contracts_workspace_id_dao_slug_offer_id_fkey"
+		}),
+	primaryKey({ columns: [table.daoSlug, table.offerId, table.workspaceId], name: "dao_hr_contracts_pkey"}),
+	unique("dao_hr_contracts_contract_id_key").on(table.contractId),
+	unique("dao_hr_contracts_envelope_id_key").on(table.envelopeId),
+	check("dao_hr_contracts_candidate_github_id_check", sql`candidate_github_id > 0`),
+	check("dao_hr_contracts_check", sql`(state <> ALL (ARRAY['signed'::text, 'binding'::text])) OR ((sealed_pdf IS NOT NULL) AND (audit_certificate IS NOT NULL) AND (document_hash ~ '^0x[0-9a-f]{64}$'::text) AND (completion_proof IS NOT NULL) AND (completed_at IS NOT NULL))`),
+	check("dao_hr_contracts_check1", sql`(state <> 'binding'::text) OR (can_bind AND (hire_proposal_ref IS NOT NULL) AND (grant_id IS NOT NULL) AND (hire_transaction_hash IS NOT NULL))`),
+	check("dao_hr_contracts_created_by_check", sql`created_by ~ '^PER-'::text`),
+	check("dao_hr_contracts_state_check", sql`state = ANY (ARRAY['prepared'::text, 'dispatching'::text, 'signing'::text, 'signed'::text, 'binding'::text, 'lapsed'::text])`),
+]);
+
 export const daoHrCounselApprovalsInHarnessShared = harnessShared.table("dao_hr_counsel_approvals", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -3165,6 +3233,21 @@ export const daoHrCounselApprovalsInHarnessShared = harnessShared.table("dao_hr_
 	check("dao_hr_counsel_approvals_reference_check", sql`(length(btrim(reference)) >= 1) AND (length(btrim(reference)) <= 300)`),
 ]);
 
+export const daoHrHiringHistoryInHarnessShared = harnessShared.table("dao_hr_hiring_history", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	subjectKind: text("subject_kind").notNull(),
+	subjectId: text("subject_id").notNull(),
+	state: text().notNull(),
+	actorPersonId: text("actor_person_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("dao_hr_hiring_history_subject_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.subjectKind.asc().nullsLast().op("text_ops"), table.subjectId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	check("dao_hr_hiring_history_actor_person_id_check", sql`actor_person_id ~ '^PER-'::text`),
+	check("dao_hr_hiring_history_subject_kind_check", sql`subject_kind = ANY (ARRAY['role'::text, 'candidate'::text, 'offer'::text])`),
+]);
+
 export const daoHrIssuingEntitiesInHarnessShared = harnessShared.table("dao_hr_issuing_entities", {
 	workspaceId: text("workspace_id").notNull(),
 	daoSlug: text("dao_slug").notNull(),
@@ -3182,6 +3265,112 @@ export const daoHrIssuingEntitiesInHarnessShared = harnessShared.table("dao_hr_i
 	check("dao_hr_issuing_entities_recorded_by_check", sql`recorded_by ~ '^PER-'::text`),
 	check("dao_hr_issuing_entities_registered_title_check", sql`(length(btrim(registered_title)) >= 1) AND (length(btrim(registered_title)) <= 300)`),
 	check("dao_hr_issuing_entities_registration_reference_check", sql`(length(btrim(registration_reference)) >= 1) AND (length(btrim(registration_reference)) <= 300)`),
+]);
+
+export const daoHrOfferApprovalsInHarnessShared = harnessShared.table("dao_hr_offer_approvals", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	offerId: text("offer_id").notNull(),
+	actorPersonId: text("actor_person_id").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.offerId],
+			foreignColumns: [daoHrOffersInHarnessShared.workspaceId, daoHrOffersInHarnessShared.daoSlug, daoHrOffersInHarnessShared.offerId],
+			name: "dao_hr_offer_approvals_workspace_id_dao_slug_offer_id_fkey"
+		}),
+	primaryKey({ columns: [table.actorPersonId, table.daoSlug, table.offerId, table.workspaceId], name: "dao_hr_offer_approvals_pkey"}),
+	check("dao_hr_offer_approvals_actor_person_id_check", sql`actor_person_id ~ '^PER-'::text`),
+]);
+
+export const daoHrOffersInHarnessShared = harnessShared.table("dao_hr_offers", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	offerId: text("offer_id").notNull(),
+	roleId: text("role_id").notNull(),
+	personId: text("person_id").notNull(),
+	authoredBy: text("authored_by").notNull(),
+	terms: jsonb().notNull(),
+	approvalsRequired: integer("approvals_required").notNull(),
+	state: text().default('offered').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	amendsOfferId: text("amends_offer_id"),
+}, (table): PgTableExtraConfigValue[] => [
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.amendsOfferId],
+			foreignColumns: [daoHrOffersInHarnessShared.workspaceId, daoHrOffersInHarnessShared.daoSlug, daoHrOffersInHarnessShared.offerId],
+			name: "dao_hr_amendment_parent_fk"
+		}),
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.roleId, table.personId],
+			foreignColumns: [daoHrCandidatesInHarnessShared.workspaceId, daoHrCandidatesInHarnessShared.daoSlug, daoHrCandidatesInHarnessShared.roleId, daoHrCandidatesInHarnessShared.personId],
+			name: "dao_hr_offers_workspace_id_dao_slug_role_id_person_id_fkey"
+		}),
+	primaryKey({ columns: [table.daoSlug, table.offerId, table.workspaceId], name: "dao_hr_offers_pkey"}),
+	check("dao_hr_offers_approvals_required_check", sql`(approvals_required >= 1) AND (approvals_required <= 10)`),
+	check("dao_hr_offers_authored_by_check", sql`authored_by ~ '^PER-'::text`),
+	check("dao_hr_offers_person_id_check", sql`person_id ~ '^PER-'::text`),
+	check("dao_hr_offers_state_check", sql`state = ANY (ARRAY['offered'::text, 'approved'::text, 'contract-generated'::text, 'signed'::text, 'hire-proposed'::text, 'hired'::text, 'rejected'::text, 'lapsed'::text])`),
+	check("dao_hr_offers_terms_check", sql`jsonb_typeof(terms) = 'object'::text`),
+]);
+
+export const daoHrPolicyAuditInHarnessShared = harnessShared.table("dao_hr_policy_audit", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	version: integer().notNull(),
+	actorPersonId: text("actor_person_id").notNull(),
+	changedFields: text("changed_fields").array().notNull(),
+	chainCalls: jsonb("chain_calls").default([]).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	beforeSettings: jsonb("before_settings"),
+	afterSettings: jsonb("after_settings"),
+}, (table) => [
+	index("dao_hr_policy_audit_dao_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.daoSlug, table.version],
+			foreignColumns: [daoHrPolicyVersionsInHarnessShared.workspaceId, daoHrPolicyVersionsInHarnessShared.daoSlug, daoHrPolicyVersionsInHarnessShared.version],
+			name: "dao_hr_policy_audit_workspace_id_dao_slug_version_fkey"
+		}),
+	check("dao_hr_policy_audit_actor_person_id_check", sql`actor_person_id ~ '^PER-'::text`),
+	check("dao_hr_policy_audit_after_settings_check", sql`(after_settings IS NULL) OR (jsonb_typeof(after_settings) = 'object'::text)`),
+	check("dao_hr_policy_audit_before_settings_check", sql`(before_settings IS NULL) OR (jsonb_typeof(before_settings) = 'object'::text)`),
+	check("dao_hr_policy_audit_chain_calls_check", sql`jsonb_typeof(chain_calls) = 'array'::text`),
+	check("dao_hr_policy_audit_changed_fields_check", sql`cardinality(changed_fields) >= 1`),
+]);
+
+export const daoHrPolicyVersionsInHarnessShared = harnessShared.table("dao_hr_policy_versions", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	version: integer().notNull(),
+	settings: jsonb().notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.daoSlug, table.version, table.workspaceId], name: "dao_hr_policy_versions_pkey"}),
+	check("dao_hr_policy_versions_created_by_check", sql`created_by ~ '^PER-'::text`),
+	check("dao_hr_policy_versions_dao_slug_check", sql`(length(btrim(dao_slug)) >= 1) AND (length(btrim(dao_slug)) <= 200)`),
+	check("dao_hr_policy_versions_settings_check", sql`jsonb_typeof(settings) = 'object'::text`),
+	check("dao_hr_policy_versions_version_check", sql`version >= 1`),
+	check("dao_hr_policy_versions_workspace_id_check", sql`(length(btrim(workspace_id)) >= 1) AND (length(btrim(workspace_id)) <= 200)`),
+]);
+
+export const daoHrRolesInHarnessShared = harnessShared.table("dao_hr_roles", {
+	workspaceId: text("workspace_id").notNull(),
+	daoSlug: text("dao_slug").notNull(),
+	roleId: text("role_id").notNull(),
+	title: text().notNull(),
+	level: text().notNull(),
+	managerPersonId: text("manager_person_id"),
+	exclusive: boolean().default(false).notNull(),
+	createdBy: text("created_by").notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.daoSlug, table.roleId, table.workspaceId], name: "dao_hr_roles_pkey"}),
+	check("dao_hr_roles_created_by_check", sql`created_by ~ '^PER-'::text`),
+	check("dao_hr_roles_level_check", sql`(length(btrim(level)) >= 1) AND (length(btrim(level)) <= 60)`),
+	check("dao_hr_roles_manager_person_id_check", sql`manager_person_id ~ '^PER-'::text`),
+	check("dao_hr_roles_title_check", sql`(length(btrim(title)) >= 1) AND (length(btrim(title)) <= 120)`),
 ]);
 
 export const daoHrWorkProfilesInHarnessShared = harnessShared.table("dao_hr_work_profiles", {
@@ -3212,6 +3401,7 @@ export const daoHrWorkProfilesInHarnessShared = harnessShared.table("dao_hr_work
 	index("dao_hr_work_profiles_manager_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.managerPersonId.asc().nullsLast().op("text_ops")).where(sql`(manager_person_id IS NOT NULL)`),
 	uniqueIndex("dao_hr_work_profiles_member_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.memberGithubUserId.asc().nullsLast().op("int8_ops")).where(sql`(member_github_user_id IS NOT NULL)`),
 	index("dao_hr_work_profiles_status_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")),
+	uniqueIndex("dao_hr_work_profiles_verified_wallet_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.daoSlug.asc().nullsLast().op("text_ops"), table.walletChainId.asc().nullsLast().op("int4_ops"), table.walletAddress.asc().nullsLast().op("text_ops")).where(sql`((wallet_verified_at IS NOT NULL) AND (wallet_address IS NOT NULL))`),
 	primaryKey({ columns: [table.daoSlug, table.personId, table.workspaceId], name: "dao_hr_work_profiles_pkey"}),
 	pgPolicy("dao_hr_work_profiles_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("dao_hr_work_profiles_active_is_onboarded", sql`(status <> ALL (ARRAY['active'::text, 'offboarded'::text])) OR (onboarded_at IS NOT NULL)`),
@@ -3376,8 +3566,8 @@ export const datatypeRegistryInHarnessShared = harnessShared.table("datatype_reg
 	uniqueIndex("datatype_registry_ws_kind_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.workItemKind.asc().nullsLast().op("text_ops")).where(sql`(work_item_kind IS NOT NULL)`),
 	index("datatype_registry_ws_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "datatype_registry_pkey"}),
+	pgPolicy("datatype_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("datatype_registry_approved_global_read", { as: "permissive", for: "select", to: ["public"], using: sql`(review_status = 'approved'::text)` }),
-	pgPolicy("datatype_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("datatype_registry_audience_check", sql`((audience IS NULL) OR (audience = ANY (ARRAY['agent'::text, 'human'::text]))) AND ((nature = 'work'::text) = (audience IS NOT NULL))`),
 	check("datatype_registry_nature_check", sql`nature = ANY (ARRAY['work'::text, 'record'::text, 'document'::text, 'event'::text])`),
 ]);
@@ -3998,8 +4188,8 @@ export const eventKeyRegistryInHarnessShared = harnessShared.table("event_key_re
 	index("event_key_registry_title_tsv_idx").using("gin", table.titleTsv.asc().nullsLast().op("tsvector_ops")),
 	index("event_key_registry_underived_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast().op("text_ops")).where(sql`((derived_at IS NULL) OR (emitter_exists IS FALSE))`),
 	primaryKey({ columns: [table.eventKey, table.workspaceId], name: "event_key_registry_pkey"}),
+	pgPolicy("event_key_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("event_key_registry_approved_global_read", { as: "permissive", for: "select", to: ["public"], using: sql`(review_status = 'approved'::text)` }),
-	pgPolicy("event_key_registry_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("event_key_registry_derived_dated_ck", sql`(derived_at IS NOT NULL) OR ((emitter IS NULL) AND (emitter_exists IS NULL) AND (emit_site_count IS NULL))`),
 	check("event_key_registry_emit_count_ck", sql`(emit_site_count IS NULL) OR (emit_site_count >= 0)`),
 	check("event_key_registry_key_ck", sql`length(btrim(event_key)) > 0`),
@@ -6639,8 +6829,8 @@ export const moneyJournalEntriesInHarnessShared = harnessShared.table("money_jou
 	index("money_journal_entries_rollup_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.rollupId.asc().nullsLast().op("text_ops")).where(sql`(rollup_id IS NOT NULL)`),
 	primaryKey({ columns: [table.entryId, table.workspaceId], name: "money_journal_entries_pkey"}),
 	unique("money_journal_entries_posting_seq_key").on(table.postingSeq),
+	pgPolicy("money_journal_entries_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("money_journal_entries_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
-	pgPolicy("money_journal_entries_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("money_journal_entries_check", sql`(rollup_id IS NOT NULL) = (movement = 'usage-settlement'::text)`),
 	check("money_journal_entries_currency_check", sql`currency ~ '^[A-Z]{3}$'::text`),
 	check("money_journal_entries_entry_id_check", sql`(length(entry_id) >= 1) AND (length(entry_id) <= 256)`),
@@ -6666,8 +6856,8 @@ export const moneyJournalLinesInHarnessShared = harnessShared.table("money_journ
 			name: "money_journal_lines_workspace_id_entry_id_fkey"
 		}),
 	primaryKey({ columns: [table.entryId, table.lineNo, table.workspaceId], name: "money_journal_lines_pkey"}),
+	pgPolicy("money_journal_lines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("money_journal_lines_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
-	pgPolicy("money_journal_lines_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("money_journal_lines_account_check", sql`account = ANY (ARRAY['operating'::text, 'customer-credit-reserve'::text, 'refund-chargeback-reserve'::text, 'tax-reserve'::text, 'dao-payable'::text, 'revenue'::text, 'provider-cost'::text])`),
 	check("money_journal_lines_cents_check", sql`cents > 0`),
 	check("money_journal_lines_line_no_check", sql`line_no >= 0`),
@@ -6687,8 +6877,8 @@ export const moneyJournalMicroAccrualsInHarnessShared = harnessShared.table("mon
 			name: "money_journal_micro_accruals_workspace_id_rollup_id_fkey"
 		}),
 	primaryKey({ columns: [table.accrualId, table.rollupId, table.workspaceId], name: "money_journal_micro_accruals_pkey"}),
+	pgPolicy("money_journal_micro_accruals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("money_journal_micro_accruals_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
-	pgPolicy("money_journal_micro_accruals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("money_journal_micro_accruals_accrual_id_check", sql`(length(accrual_id) >= 1) AND (length(accrual_id) <= 256)`),
 	check("money_journal_micro_accruals_decimal_precision", sql`(micros > (0)::numeric) AND (micros <= ('9007199254740991'::bigint)::numeric) AND (scale(micros) <= 324)`),
 	check("money_journal_micro_accruals_micros_check", sql`micros > (0)::numeric`),
@@ -6705,8 +6895,8 @@ export const moneyJournalRollupsInHarnessShared = harnessShared.table("money_jou
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.rollupId, table.workspaceId], name: "money_journal_rollups_pkey"}),
+	pgPolicy("money_journal_rollups_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("money_journal_rollups_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
-	pgPolicy("money_journal_rollups_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("money_journal_rollups_currency_check", sql`currency ~ '^[A-Z]{3}$'::text`),
 	check("money_journal_rollups_decimal_precision", sql`((total_micros >= (0)::numeric) AND (total_micros <= ('9007199254740991'::bigint)::numeric)) AND (scale(total_micros) <= 324) AND ((rounding_micros >= (0)::numeric) AND (rounding_micros <= ('9007199254740991'::bigint)::numeric)) AND (scale(rounding_micros) <= 324)`),
 	check("money_journal_rollups_identity", sql`total_micros = (((settled_cents * 10000))::numeric + rounding_micros)`),
@@ -7869,8 +8059,8 @@ export const paymentReceiptsInHarnessShared = harnessShared.table("payment_recei
 	index("payment_receipts_customer_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceCustomer.asc().nullsLast().op("text_ops")).where(sql`(source_customer IS NOT NULL)`),
 	primaryKey({ columns: [table.balanceTransactionId, table.workspaceId], name: "payment_receipts_pkey"}),
 	unique("payment_receipts_receipt_seq_key").on(table.receiptSeq),
+	pgPolicy("payment_receipts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	pgPolicy("payment_receipts_hosted_funding_read", { as: "permissive", for: "select", to: ["hosted_service"], using: sql`true` }),
-	pgPolicy("payment_receipts_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))` }),
 	check("payment_receipts_balance_transaction_id_check", sql`(length(balance_transaction_id) >= 1) AND (length(balance_transaction_id) <= 255)`),
 	check("payment_receipts_commitment_check", sql`commitment ~ '^[0-9a-f]{64}$'::text`),
 	check("payment_receipts_currency_check", sql`currency ~ '^[a-z]{3}$'::text`),
@@ -11863,7 +12053,6 @@ export const triggerDeliveriesInHarnessShared = harnessShared.table("trigger_del
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	payloadPrunedAt: timestamp("payload_pruned_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
-	index("trigger_deliveries_chat_admission_failed_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.sourceId.asc().nullsLast().op("uuid_ops"), table.updatedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((sink_kind = 'data-source-chat-admission'::text) AND (outcome = 'failed'::text))`),
 	index("trigger_deliveries_payload_held_idx").using("btree", table.completedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(payload IS NOT NULL)`),
 	index("trigger_deliveries_ws_event_key_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.eventKey.asc().nullsLast().op("text_ops"), table.receivedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("trigger_deliveries_ws_outcome_received_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.outcome.asc().nullsLast().op("text_ops"), table.receivedAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -12727,9 +12916,9 @@ export const workspaceHostConnectionsInHarnessShared = harnessShared.table("work
 	authenticatedIdentity: text("authenticated_identity"),
 }, (table) => [
 	primaryKey({ columns: [table.id, table.workspaceId], name: "workspace_host_connections_pkey"}),
-	pgPolicy("workspace_host_connections_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_connection_scope_allows(workspace_id, id)`, withCheck: sql`harness_shared.workspace_host_connection_scope_allows(workspace_id, id)`  }),
+	pgPolicy("workspace_host_connections_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
 	pgPolicy("workspace_host_connections_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
-	pgPolicy("workspace_host_connections_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("workspace_host_connections_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_connection_scope_allows(workspace_id, id)`, withCheck: sql`harness_shared.workspace_host_connection_scope_allows(workspace_id, id)` }),
 	check("workspace_host_connections_authenticated_identity_ck", sql`(authenticated_identity IS NULL) OR (btrim(authenticated_identity) <> ''::text)`),
 	check("workspace_host_connections_images_check", sql`jsonb_typeof(images) = 'array'::text`),
 	check("workspace_host_connections_networks_check", sql`jsonb_typeof(networks) = 'array'::text`),
@@ -12765,9 +12954,9 @@ export const workspaceHostEventsInHarnessShared = harnessShared.table("workspace
 			name: "workspace_host_events_operation_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "workspace_host_events_pkey"}),
-	pgPolicy("workspace_host_events_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`  }),
+	pgPolicy("workspace_host_events_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
 	pgPolicy("workspace_host_events_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
-	pgPolicy("workspace_host_events_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("workspace_host_events_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)` }),
 	check("workspace_host_events_level_check", sql`level = ANY (ARRAY['info'::text, 'warn'::text, 'error'::text])`),
 	check("workspace_host_events_status_check", sql`status = ANY (ARRAY['queued'::text, 'running'::text, 'succeeded'::text, 'failed'::text])`),
 ]);
@@ -12826,9 +13015,9 @@ export const workspaceHostLogsInHarnessShared = harnessShared.table("workspace_h
 			name: "workspace_host_logs_operation_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "workspace_host_logs_pkey"}),
-	pgPolicy("workspace_host_logs_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`  }),
+	pgPolicy("workspace_host_logs_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
 	pgPolicy("workspace_host_logs_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
-	pgPolicy("workspace_host_logs_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("workspace_host_logs_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)` }),
 	check("workspace_host_logs_level_check", sql`level = ANY (ARRAY['info'::text, 'warn'::text, 'error'::text])`),
 	check("workspace_host_logs_stream_check", sql`stream = ANY (ARRAY['cloud-init'::text, 'systemd'::text, 'controller'::text])`),
 ]);
@@ -12891,9 +13080,9 @@ export const workspaceHostOperationsInHarnessShared = harnessShared.table("works
 			name: "workspace_host_operations_host_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "workspace_host_operations_pkey"}),
-	pgPolicy("workspace_host_operations_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`  }),
+	pgPolicy("workspace_host_operations_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
 	pgPolicy("workspace_host_operations_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
-	pgPolicy("workspace_host_operations_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("workspace_host_operations_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)` }),
 	check("workspace_host_operations_action_check", sql`action = ANY (ARRAY['provision'::text, 'start'::text, 'stop'::text, 'restart'::text, 'snapshot'::text, 'restore'::text, 'upgrade'::text, 'repair'::text, 'destroy'::text, 'initialize'::text])`),
 	check("workspace_host_operations_approval_ck", sql`(approval_status IS NULL) OR ((approval_status = ANY (ARRAY['not-required'::text, 'pending'::text, 'approved'::text, 'rejected'::text])) AND (((approval_status = 'approved'::text) AND (approved_by_principal_id IS NOT NULL) AND (approved_at IS NOT NULL)) OR ((approval_status <> 'approved'::text) AND (approved_by_principal_id IS NULL) AND (approved_at IS NULL))))`),
 	check("workspace_host_operations_billing_owner_ck", sql`((billing_owner_kind IS NULL) AND (billing_owner_id IS NULL)) OR ((billing_owner_kind = ANY (ARRAY['organization'::text, 'customer'::text, 'platform'::text])) AND (btrim(billing_owner_id) <> ''::text))`),
@@ -12940,9 +13129,9 @@ export const workspaceHostResourcesInHarnessShared = harnessShared.table("worksp
 			name: "workspace_host_resources_operation_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.hostId, table.logicalKey, table.workspaceId], name: "workspace_host_resources_pkey"}),
-	pgPolicy("workspace_host_resources_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`  }),
+	pgPolicy("workspace_host_resources_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
 	pgPolicy("workspace_host_resources_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
-	pgPolicy("workspace_host_resources_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("workspace_host_resources_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, host_id)` }),
 	check("workspace_host_resources_attempts_check", sql`attempts >= 0`),
 	check("workspace_host_resources_retry_after_ms_check", sql`(retry_after_ms IS NULL) OR (retry_after_ms >= 0)`),
 	check("workspace_host_resources_retry_class_check", sql`(retry_class IS NULL) OR (retry_class = ANY (ARRAY['transient'::text, 'throttled'::text, 'ambiguous'::text, 'terminal'::text]))`),
@@ -12998,9 +13187,9 @@ export const workspaceHostsInHarnessShared = harnessShared.table("workspace_host
 			name: "workspace_hosts_connection_fk"
 		}),
 	primaryKey({ columns: [table.id, table.workspaceId], name: "workspace_hosts_pkey"}),
-	pgPolicy("workspace_hosts_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, id)`  }),
+	pgPolicy("workspace_hosts_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`  }),
 	pgPolicy("workspace_hosts_local_read_isolation", { as: "permissive", for: "select", to: ["harness_zero"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
-	pgPolicy("workspace_hosts_local_workspace_isolation", { as: "permissive", for: "all", to: ["harness_app"], using: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))`, withCheck: sql`(workspace_id = NULLIF(current_setting('app.workspace_id'::text, true), ''::text))` }),
+	pgPolicy("workspace_hosts_hosted_tenant_isolation", { as: "permissive", for: "all", to: ["hosted_app"], using: sql`harness_shared.workspace_host_scope_allows(workspace_id, id)`, withCheck: sql`harness_shared.workspace_host_scope_allows(workspace_id, id)` }),
 	check("workspace_hosts_controller_authority_ck", sql`((controller_id IS NULL) AND (controller_fence = 0)) OR ((controller_id IS NOT NULL) AND (btrim(controller_id) <> ''::text) AND (controller_fence > 0))`),
 	check("workspace_hosts_cost_signals_check", sql`jsonb_typeof(cost_signals) = 'array'::text`),
 	check("workspace_hosts_desired_spec_object", sql`(desired_spec IS NULL) OR (jsonb_typeof(desired_spec) = 'object'::text)`),
