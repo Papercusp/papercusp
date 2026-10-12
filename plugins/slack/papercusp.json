@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "papercusp": "^0.1.0",
   "distribution": "cupboard",
-  "description": "Slack as a chat provider: the host holds a Socket Mode connection for each connected workspace, and every message the Papercusp app sees (channel posts, mentions, direct messages, the /papercusp command) becomes a chat-message record. A reaction on a message is a `reaction` record of that message, and a message reported through the app's \"Report a bug\" shortcut (it opens a short form) is a `report` record of it. Workflows can pick channels from the workspace's channel list (chat.channels) and reply in a thread (chat.reply). Setup is pasted, not OAuth: create the Slack app from the bundled manifest, then paste its app-level token and bot token.",
+  "description": "Slack as a chat provider: the host holds a Socket Mode connection for each connected workspace, and every message the Papercusp app sees (channel posts, mentions, direct messages, the /papercusp command) becomes a chat-message record. A reaction on a message is a `reaction` record of that message, and a message reported through the app's \"Report a bug\" shortcut (it opens a short form) is a `report` record of it. Workflows can pick channels from the workspace's channel list (chat.channels) and reply in a thread (chat.reply). Made organization-wide, the source also backfills the history of every channel the app is in, and each channel's messages are readable only by that channel's members. With live search switched on, a search reads Slack directly with the searching person's own user token and stores nothing (search.live). Setup is pasted, not OAuth: create the Slack app from the bundled manifest, then paste its app-level token and bot token; each person who searches pastes their own user token.",
   "author": "Papercusp",
   "license": "MIT",
   "protocol": "^1",
@@ -20,8 +20,9 @@
     "contractVersion": 1,
     "displayName": "Slack",
     "datatypes": ["chat-message"],
-    "capabilities": ["ingress.normalize", "chat.channels", "chat.reply"],
+    "capabilities": ["ingress.normalize", "chat.channels", "chat.reply", "search.live"],
     "egressHosts": ["slack.com"],
+    "membership": { "identityProvider": "slack", "containers": true },
     "defaultDestinations": {
       "chat-message": ["document", "event"]
     },
@@ -50,6 +51,15 @@
           "placeholder": "xoxb-...",
           "help": "OAuth & Permissions → Install to Workspace, then copy the Bot User OAuth Token.",
           "hosts": ["slack.com"]
+        },
+        {
+          "key": "user_token",
+          "label": "Your Slack user token",
+          "pattern": "xoxp-[A-Za-z0-9-]{10,}",
+          "placeholder": "xoxp-...",
+          "help": "For live search only, and personal: each person pastes their own. OAuth & Permissions shows the User OAuth Token to whoever installed the app; Slack shows you only what you can already see.",
+          "hosts": ["slack.com"],
+          "perPrincipal": true
         }
       ],
       "appRegistration": {
@@ -85,6 +95,12 @@
                 "commands",
                 "chat:write",
                 "reactions:read"
+              ],
+              "user": [
+                "search:read.public",
+                "search:read.private",
+                "search:read.mpim",
+                "search:read.im"
               ]
             }
           },

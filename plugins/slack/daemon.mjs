@@ -9,7 +9,7 @@
 // All Slack logic lives in provider.mjs so it can be tested without a process.
 import fs from 'node:fs';
 import readline from 'node:readline';
-import { invokeCapability } from './provider.mjs';
+import { invokeCapability, syncPage } from './provider.mjs';
 
 const manifest = JSON.parse(fs.readFileSync(new URL('./papercusp.json', import.meta.url), 'utf8'));
 const DESCRIPTOR = manifest.provider;
@@ -30,8 +30,13 @@ function hostFetch(callToken, source, request) {
 async function handle(method, params) {
   if (method === 'papercup.ping') return 'pong';
   if (method === 'provider.describe') return DESCRIPTOR;
-  // Slack arrives over the host-held socket (ingress.normalize); there is nothing to crawl.
-  if (method === 'provider.syncPage') return { records: [], nextCursor: null, hasMore: false };
+  // New messages arrive over the host-held socket (ingress.normalize); syncPage backfills an
+  // organization source's channel history and refreshes who may read each channel.
+  if (method === 'provider.syncPage') {
+    const request = params?.request ?? {};
+    const callToken = params?.callToken;
+    return syncPage(request, (fetchRequest) => hostFetch(callToken, request.source, fetchRequest));
+  }
   if (method === 'provider.invoke') {
     const request = params?.request ?? {};
     const callToken = params?.callToken;
