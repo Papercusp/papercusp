@@ -215,7 +215,10 @@ $projection_backfill_done$;`;
   ];
 }
 
-/** @param {string} ddl */
+/**
+ * @param {string} ddl
+ * @returns {string[]}
+ */
 export function migrationTransactionChunks(ddl) {
   if (!ddl.includes('statement-breakpoint')) return [ddl];
   const chunks = ddl
