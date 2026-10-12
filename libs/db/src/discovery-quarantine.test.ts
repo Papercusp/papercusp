@@ -27,6 +27,7 @@ import {
   _quarantinedDiscoveryEndpointsForTests,
   _resetDiscoveryQuarantineForTests,
   _resetUrlCacheForTests,
+  setDiscoveryIdentityObserver,
 } from './connection';
 
 /**
@@ -93,6 +94,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setDiscoveryIdentityObserver(null);
   errSpy.mockRestore();
   if (priorHome === undefined) delete process.env.PAPERCUSP_HOME;
   else process.env.PAPERCUSP_HOME = priorHome;
@@ -102,6 +104,20 @@ afterEach(() => {
 });
 
 describe('a proven-foreign discovery endpoint is refused, not just reported', () => {
+  it('reports every proven fallback before log deduplication without changing uncertain routing', () => {
+    const observe = vi.fn();
+    setDiscoveryIdentityObserver(observe);
+    writeDiscoveryFile(IMPOSTOR_PORT);
+    expect(_quarantineDiscoveryEndpointIfProvenForeign({ url: IMPOSTOR_URL }, { url: IMPOSTOR_URL })).toBe(false);
+    expect(observe).not.toHaveBeenCalled();
+    for (let i = 0; i < 2; i++) {
+      expect(_quarantineDiscoveryEndpointIfProvenForeign({ url: PINNED_ENV_URL }, { url: IMPOSTOR_URL })).toBe(true);
+    }
+    expect(observe.mock.calls).toEqual([['quarantined'], ['quarantined']]);
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    setDiscoveryIdentityObserver(() => { throw new Error('telemetry unavailable'); });
+    expect(_quarantineDiscoveryEndpointIfProvenForeign({ url: PINNED_ENV_URL }, { url: IMPOSTOR_URL })).toBe(true);
+  });
   it('quarantines the endpoint the discovery file currently advertises', () => {
     writeDiscoveryFile(IMPOSTOR_PORT);
 

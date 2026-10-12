@@ -53,6 +53,17 @@ import {
 } from './acquire-registry';
 import { stampedTag } from './build-stamp';
 
+/** Host-installed telemetry; identity validation must remain independent and fail-soft. */
+const discoveryIdentityTelemetry = pinModuleState<{
+  observer: ((outcome: 'verified' | 'quarantined') => void) | null;
+}>('@papercusp/db.discovery-identity-telemetry', () => ({ observer: null }));
+export function setDiscoveryIdentityObserver(observer: ((outcome: 'verified' | 'quarantined') => void) | null): void {
+  discoveryIdentityTelemetry.observer = observer;
+}
+function observeDiscoveryIdentity(outcome: 'verified' | 'quarantined'): void {
+  try { discoveryIdentityTelemetry.observer?.(outcome); } catch { /* telemetry never changes routing */ }
+}
+
 // This package is `"type": "module"`, so ESM has no ambient `require`.
 // `createRequire` gives us a synchronous loader for the lazy node-builtin
 // reads below (kept lazy so the module can be imported without touching
@@ -473,6 +484,9 @@ export function _quarantineDiscoveryEndpointIfProvenForeign(
 
   const pinnedKey = endpointKeyFromUrl(pinned.url);
   if (!pinnedKey || pinnedKey === discKey) return false; // (3) the pin came from here
+
+  // Every proven fallback counts, even when the warning was already emitted.
+  observeDiscoveryIdentity('quarantined');
 
   if (!_quarantinedDiscoveryEndpoints.has(discKey)) {
     _quarantinedDiscoveryEndpoints.add(discKey);
@@ -1715,6 +1729,7 @@ function validateDiscoveryTargetOnce(
         );
       }
       const verdict = pinOrVerifyStoreIdentity(parseStoreIdentity(rows), opts.url);
+      if (verdict.kind === 'match' || verdict.kind === 'pinned') observeDiscoveryIdentity('verified');
       if (verdict.kind === 'mismatch') {
         console.error(
           `${describeStoreIdentityMismatch(verdict.pinned, verdict.observed)}\n  pool: ${label}`,
