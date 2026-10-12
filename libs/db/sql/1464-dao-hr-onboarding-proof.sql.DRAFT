@@ -1,4 +1,9 @@
 -- P007 extends the existing signed contract. No second identity/member/document store.
+-- Enforce the same refusal under concurrent candidate requests, including other writers.
+CREATE UNIQUE INDEX IF NOT EXISTS dao_hr_work_profiles_verified_wallet_uniq
+  ON harness_shared.dao_hr_work_profiles (workspace_id,dao_slug,wallet_chain_id,wallet_address)
+  WHERE wallet_verified_at IS NOT NULL AND wallet_address IS NOT NULL;
+
 ALTER TABLE harness_shared.dao_hr_contracts
   ADD COLUMN IF NOT EXISTS candidate_github_id bigint CHECK (candidate_github_id > 0),
   ADD COLUMN IF NOT EXISTS candidate_github_login text,
