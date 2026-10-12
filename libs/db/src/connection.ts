@@ -2237,13 +2237,19 @@ export const DEFAULT_TX_ACQUIRE_DEADLINE_MS = Math.max(
  */
 export function withAcquisitionDeadline<T>(
   run: (phase: { disarm: () => void; expired: () => boolean }) => Promise<T>,
-  opts: { ms?: number; label: string; pool?: string },
+  opts: { ms?: number; label: string; pool?: string; signal?: AbortSignal },
 ): Promise<T> {
+  const signal = opts.signal;
+  const abortError = () =>
+    signal?.reason ?? Object.assign(new Error('database acquisition aborted'), { name: 'AbortError' });
+  if (signal?.aborted) return Promise.reject(abortError());
+
   const ms = opts.ms ?? DEFAULT_TX_ACQUIRE_DEADLINE_MS;
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
   let expired = false;
+  let removeAbortListener: (() => void) | undefined;
   // Registered BEFORE the first await so this caller counts itself among the
   // waiters its own error reports — "18 waiting, oldest 44.9s" includes you.
   const ticket = opts.pool ? beginAcquire(opts.pool) : null;
@@ -2253,18 +2259,48 @@ export function withAcquisitionDeadline<T>(
       clearTimeout(timer);
       timer = undefined;
     }
+    removeAbortListener?.();
+    removeAbortListener = undefined;
   };
   // What `run` receives: the connection is in hand and the caller's own work is
   // about to begin, so stop the clock AND move this ticket waiting -> held.
   const disarm = () => {
+    if (settled) return;
     clearDeadlineTimer();
     ticket?.acquired();
   };
+  let rejectAbort: ((reason: unknown) => void) | undefined;
+  const aborted = signal
+    ? new Promise<never>((_, reject) => {
+        rejectAbort = reject;
+      })
+    : undefined;
+  if (signal) {
+    const onAbort = () => {
+      if (settled) return;
+      expired = true;
+      settled = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      removeAbortListener?.();
+      removeAbortListener = undefined;
+      rejectAbort?.(abortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+    if (signal.aborted) onAbort();
+  }
+  if (settled) {
+    ticket?.release();
+    return aborted!;
+  }
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       if (settled) return;
       expired = true;
-      settled = true;
+      clearDeadlineTimer();
       // Constructed while this ticket is still WAITING, on purpose: the snapshot
       // in the message is the state at the moment of the breach.
       reject(new DbCallDeadlineError(opts.label, ms, Date.now() - startedAt, opts.pool));
@@ -2280,7 +2316,7 @@ export function withAcquisitionDeadline<T>(
     ticket?.release();
     return Promise.reject(error);
   }
-  return Promise.race([work, deadline]).finally(() => {
+  return Promise.race(aborted ? [work, deadline, aborted] : [work, deadline]).finally(() => {
     clearDeadlineTimer();
     // Must run on EVERY exit path — a ticket that is never released leaks a
     // waiter and inflates every later snapshot, which would make this
