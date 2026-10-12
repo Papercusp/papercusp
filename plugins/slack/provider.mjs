@@ -30,6 +30,36 @@ export function slackTime(value) {
   return new Date(Number(raw) * 1_000).toISOString();
 }
 
+function strings(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === 'string' && item) : [];
+}
+
+/**
+ * Whether a bot-authored post is the source's declared drill identity
+ * (cupboard-distributable-integrations-2026-10-10 D-023; the in-app rule, unchanged).
+ * `sourceConfig.testBotAllowance` must name botId, appId, userId and channelId, and the post must
+ * match all four exactly, be a plain channel message in one of `sourceConfig.channels`, and not
+ * come from this app's own bot. Any other bot or app post stays unrecorded, so the app never
+ * reacts to its own replies and a declared drill identity grants no other bot, channel or DM.
+ */
+export function drillBotAllowed(event, sourceConfig = {}) {
+  const config = record(sourceConfig) ?? {};
+  const allowance = record(config.testBotAllowance);
+  if (!event || !allowance) return false;
+  const botId = text(allowance.botId);
+  const appId = text(allowance.appId);
+  const userId = text(allowance.userId);
+  const channelId = text(allowance.channelId);
+  const channel = text(event.channel);
+  return event.type === 'message'
+    && !event.subtype
+    && !!botId && !!appId && !!userId && !!channelId
+    && event.bot_id === botId && event.app_id === appId && text(event.user) === userId
+    && event.bot_id !== config.botId && text(event.user) !== text(config.botUserId)
+    && channel === channelId && strings(config.channels).includes(channel)
+    && event.channel_type !== 'im' && event.channel_type !== 'mpim' && !channel.startsWith('D');
+}
+
 function mentionsOf(message) {
   return [...message.matchAll(/<@([A-Z0-9]+)>/g)].map((match) => match[1]);
 }
@@ -38,10 +68,12 @@ function mentionsOf(message) {
  * Which chat event a Slack Events API event is, or null when it is not one this provider records.
  * `app_mention` is a mention; a direct message is a dm; any other channel post is a message. Bot and
  * app posts, and edits/joins/deletions (any `subtype`), are never recorded, so the app never reacts
- * to its own replies.
+ * to its own replies. The one exception is the source's declared drill identity
+ * ({@link drillBotAllowed}), recorded as a plain channel message.
  */
-export function chatEventKind(event) {
-  if (!event || event.bot_id || event.app_id || event.subtype) return null;
+export function chatEventKind(event, sourceConfig = {}) {
+  if (!event || event.subtype) return null;
+  if (event.bot_id || event.app_id) return drillBotAllowed(event, sourceConfig) ? 'message' : null;
   if (event.type === 'app_mention') return 'mention';
   if (event.type !== 'message') return null;
   const channelId = text(event.channel);
@@ -54,14 +86,14 @@ export function chatEventKind(event) {
  * `ingress.normalize`: one Socket Mode envelope → chat-message records (ProviderIngressNormalizeResult).
  * A hello, a disconnect notice, or an event this provider ignores returns no records.
  */
-export function normalizeEnvelope(envelope) {
+export function normalizeEnvelope(envelope, sourceConfig = {}) {
   const env = record(envelope);
   if (!env) return { records: [] };
   const payload = record(env.payload) ?? {};
 
   if (env.type === 'events_api') {
     const event = record(payload.event);
-    const kind = chatEventKind(event);
+    const kind = chatEventKind(event, sourceConfig);
     if (!kind) return { records: [] };
     const channelId = text(event.channel);
     const ts = text(event.ts);
@@ -225,7 +257,7 @@ export async function replyInThread(fetchSlack, args = {}) {
 export async function invokeCapability(request, fetchSlack) {
   const capability = request?.capability;
   const args = record(request?.args) ?? {};
-  if (capability === 'ingress.normalize') return normalizeEnvelope(args.envelope);
+  if (capability === 'ingress.normalize') return normalizeEnvelope(args.envelope, record(args.sourceConfig) ?? {});
   if (capability === 'chat.channels') return listChannels(fetchSlack, args);
   if (capability === 'chat.reply') return replyInThread(fetchSlack, args);
   throw new Error(`provider_capability_unsupported:slack:${String(capability)}`);
