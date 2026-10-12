@@ -28,11 +28,18 @@ describe('isRetriableConnectionSetupError', () => {
   });
 
   it.each([
+    { code: '57P01', message: 'FATAL: terminating connection due to administrator command' },
     { code: '57P03', message: 'FATAL: the database system is starting up' },
+    { code: '08P01', message: 'server_login_retry: database system is not yet accepting connections' },
     { message: 'FATAL: the database system is in recovery mode' },
     { message: 'server_login_retry: database system is not yet accepting connections' },
   ])('matches a transient PostgreSQL recovery/startup signal: $message', (error) => {
     expect(isRetriableConnectionSetupError(error)).toBe(true);
+  });
+
+  it('does not retry a generic 08P01 protocol violation without server_login_retry', () => {
+    expect(isRetriableConnectionSetupError({ code: '08P01', message: 'invalid protocol message' })).toBe(false);
+    expect(isRetriableConnectionSetupError({ code: '08P01', message: 'not yet accepting connections' })).toBe(false);
   });
 
   it('does not match an unrelated error', () => {
@@ -83,6 +90,23 @@ describe('retryBeforeCallbackStarts', () => {
         attempts++;
         if (attempts === 1) {
           throw { code: '57P03', message: 'FATAL: the database system is in recovery mode' };
+        }
+        markStarted();
+        return 'recovered';
+      },
+      { sleep: noSleep },
+    );
+    expect(out).toBe('recovered');
+    expect(attempts).toBe(2);
+  });
+
+  it('retries an administrator-shutdown SQLSTATE BEFORE markStarted(), then succeeds', async () => {
+    let attempts = 0;
+    const out = await retryBeforeCallbackStarts(
+      async (markStarted) => {
+        attempts++;
+        if (attempts === 1) {
+          throw { code: '57P01', message: 'terminating connection due to administrator command' };
         }
         markStarted();
         return 'recovered';

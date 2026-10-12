@@ -259,9 +259,17 @@ export function isRetriableConnectionSetupError(e: unknown): boolean {
   if (e instanceof ConnectPhaseDeadlineError) return false;
   const x = e as { code?: string; message?: string } | null;
   if (!x) return false;
+  const message = x.message ?? '';
+  // SQLSTATE 08P01 is a protocol violation in general. Retry only the specific
+  // postgres-js/server startup signal we measured (`server_login_retry`), never
+  // an arbitrary protocol error with the same SQLSTATE.
+  if (x.code === '08P01') return /\bserver_login_retry\b/i.test(message);
   if (
     x.code === 'CONNECTION_CLOSED' ||
     x.code === 'CONNECT_TIMEOUT' ||
+    // PostgreSQL 57P01: an administrator shutdown interrupted connection setup.
+    // It is safe only here, before markStarted proves caller work began.
+    x.code === '57P01' ||
     // PostgreSQL 57P03: the server is restarting/recovering and cannot accept
     // the connection yet. This is the same pre-callback startup window as a
     // stale pooled socket, so retrying remains safe before markStarted().
@@ -270,9 +278,9 @@ export function isRetriableConnectionSetupError(e: unknown): boolean {
     return true;
   }
   return (
-    /\b(CONNECTION_CLOSED|CONNECT_TIMEOUT|57P03|server_login_retry)\b/i.test(x.message ?? '') ||
+    /\b(CONNECTION_CLOSED|CONNECT_TIMEOUT|57P01|57P03|server_login_retry)\b/i.test(message) ||
     /\b(?:database system is (?:in recovery mode|starting up|not yet accepting connections)|not yet accepting connections)\b/i.test(
-      x.message ?? '',
+      message,
     )
   );
 }
@@ -309,8 +317,10 @@ const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Run `run`, retrying up to `retries` times on a `CONNECTION_CLOSED` /
- * `CONNECT_TIMEOUT` that strikes BEFORE `run`'s own `markStarted()` call —
+ * Run `run`, retrying up to `retries` times on a connection-setup failure
+ * (`CONNECTION_CLOSED`, `CONNECT_TIMEOUT`, PostgreSQL 57P01/57P03, or the
+ * specific 08P01 `server_login_retry` signal) that strikes BEFORE `run`'s own
+ * `markStarted()` call —
  * i.e. before any of the real caller's queries were sent. `run` receives
  * `markStarted` and MUST call it as the first statement of the caller's own
  * callback (after any side-effect-free connection-setup statements the

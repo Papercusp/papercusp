@@ -223,3 +223,10 @@ export {
   type GoalSpend,
   type PotSpend,
 } from './goal-pots';
+
+// Safe only while transaction setup is still before the caller's callback.
+export {
+  isRetriableConnectionSetupError,
+  retryBeforeCallbackStarts,
+  type RetryBeforeCallbackOpts,
+} from './connect-retry';
