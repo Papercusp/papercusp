@@ -35,8 +35,7 @@ function strings(value) {
 }
 
 /**
- * Whether a bot-authored post is the source's declared drill identity
- * (cupboard-distributable-integrations-2026-10-10 D-023; the in-app rule, unchanged).
+ * Whether a bot-authored post is the source's declared drill (test-bot) identity.
  * `sourceConfig.testBotAllowance` must name botId, appId, userId and channelId, and the post must
  * match all four exactly, be a plain channel message in one of `sourceConfig.channels`, and not
  * come from this app's own bot. Any other bot or app post stays unrecorded, so the app never
