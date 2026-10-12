@@ -1,5 +1,8 @@
 export const FLEET_SANDBOX_DENY_READ: readonly string[];
 export const FLEET_SANDBOX_CACHE_ROOT: string;
+export function rootReadDenyPaths(
+  entries: readonly Pick<import('node:fs').Dirent, 'name' | 'isSymbolicLink'>[],
+): string[];
 export function buildProcessSrtSettings(options: {
   cwd: string; agentHomes?: string[]; allowedDomains: readonly string[]; denyWrite?: string[];
 }): Record<string, unknown>;
