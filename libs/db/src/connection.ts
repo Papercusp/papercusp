@@ -266,7 +266,9 @@ function reportResolvedDatabaseTarget(url: string, source: string): string {
   const key = `${source}:${endpoint}`;
   if (!_reportedDbTargets.has(key)) {
     _reportedDbTargets.add(key);
-    console.info(`[db] target source=${source} endpoint=${endpoint}`);
+    // URL resolution also runs in CLIs whose stdout is a JSON/export protocol.
+    // Keep the redacted diagnostic on stderr so those payloads remain parseable.
+    process.stderr.write(`[db] target source=${source} endpoint=${endpoint}\n`);
   }
   return url;
 }

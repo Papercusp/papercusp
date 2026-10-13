@@ -126,18 +126,70 @@ export const PG_TIMESTAMPTZ_AS_STRING_TYPES = {
  * `postgres(url, …)` client that gets drizzle-wrapped must call this too, or
  * it drifts back into the trap (same class as EI-9265's bigint note above).
  */
-const DRIZZLE_MUTATED_DATE_OIDS = ['1184', '1082', '1083', '1114', '1182', '1185', '1115', '1231'] as const;
+const DRIZZLE_MUTATED_DATE_SCALAR_OIDS = ['1184', '1082', '1083', '1114'] as const;
+const DRIZZLE_MUTATED_ARRAY_ELEMENT_OIDS: Readonly<Record<string, number>> = {
+  '1182': 1082, // date[]
+  '1185': 1184, // timestamptz[]
+  '1115': 1114, // timestamp[]
+  '1231': 1700, // numeric[] (also mutated by drizzle)
+};
+
+/**
+ * postgres-js's array serializer is installed on the array OID after its type
+ * catalog fetch. Drizzle replaces that serializer with a scalar passthrough,
+ * so canonical clients install the same small array-text encoding here while
+ * retaining the per-element serializer on the element OID.
+ */
+function serializePgArray(
+  value: any,
+  serializer: ((value: any) => any) | undefined,
+  undefinedValue: unknown,
+): any {
+  if (!Array.isArray(value)) return value;
+  if (value.length === 0) return '{}';
+
+  const first = value[0];
+  if (Array.isArray(first) && !(first as any).type) {
+    return `{${value.map((entry) => serializePgArray(entry, serializer, undefinedValue)).join(',')}}`;
+  }
+
+  return `{${value.map((entry) => {
+    let item = entry;
+    if (item === undefined) {
+      item = undefinedValue;
+      if (item === undefined) throw new TypeError('Undefined values are not allowed');
+    }
+    if (item === null) return 'null';
+    const unwrapped = (item as any)?.type ? (item as any).value : item;
+    const text = serializer ? serializer(unwrapped) : String(unwrapped);
+    return `"${String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }).join(',')}}`;
+}
+
 export function restoreRawDateSerializers(client: Sql): void {
-  const serializers = (client as any)?.options?.serializers as Record<string, (x: any) => any> | undefined;
+  const options = (client as any)?.options;
+  const serializers = options?.serializers as Record<string, (x: any) => any> | undefined;
   if (!serializers) return;
   const hybrid = (x: any) => (x instanceof Date ? x.toISOString() : x);
-  for (const oid of DRIZZLE_MUTATED_DATE_OIDS) {
+  for (const oid of DRIZZLE_MUTATED_DATE_SCALAR_OIDS) {
     Object.defineProperty(serializers, oid, {
       configurable: true,
       enumerable: true,
       get: () => hybrid,
       // Swallow drizzle's transparent re-assignment (driver.js does
       // `serializers[oid] = transparentParser` on every drizzle() call).
+      set: () => {},
+    });
+  }
+  for (const [arrayOid, elementOid] of Object.entries(DRIZZLE_MUTATED_ARRAY_ELEMENT_OIDS)) {
+    const arraySerializer = (value: any) =>
+      serializePgArray(value, serializers[String(elementOid)], options?.transform?.undefined);
+    Object.defineProperty(serializers, arrayOid, {
+      configurable: true,
+      enumerable: true,
+      get: () => arraySerializer,
+      // Drizzle's transparent serializer is scalar-only; preserve the array
+      // encoder while its element serializer remains the sticky hybrid above.
       set: () => {},
     });
   }

@@ -58,13 +58,29 @@ describe('restoreRawDateSerializers (EI-13076)', () => {
     expect(serializerFor(client, TIMESTAMPTZ_OID)(DATE)).toBe(DATE.toISOString());
   });
 
-  it('covers every date/time OID drizzle mutates', () => {
+  it('keeps Date → ISO serialization on the scalar date/time OIDs', () => {
     const client = postgres(FAKE_URL, { max: 1, types: PG_BIGINT_AS_NUMBER_TYPES });
     restoreRawDateSerializers(client as any);
     drizzle(client as any);
-    for (const oid of ['1184', '1082', '1083', '1114', '1182', '1185', '1115', '1231']) {
+    for (const oid of ['1184', '1082', '1083', '1114']) {
       expect(serializerFor(client, oid)(DATE), `OID ${oid}`).toBe(DATE.toISOString());
     }
+  });
+
+  it('keeps postgres-js array-text serialization on the Drizzle-mutated array OIDs', () => {
+    const client = postgres(FAKE_URL, { max: 1, types: PG_BIGINT_AS_NUMBER_TYPES });
+    restoreRawDateSerializers(client as any);
+    drizzle(client as any);
+
+    const timestamptzArray = serializerFor(client, '1185')([DATE, null]);
+    expect(timestamptzArray).toBe('{"2026-07-16T22:00:00.000Z",null}');
+    // This is the postgres-js connection.js boundary that previously received
+    // the raw Array and threw Buffer.byteLength(Array).
+    expect(Buffer.byteLength(timestamptzArray)).toBeGreaterThan(0);
+
+    expect(serializerFor(client, '1182')(['2026-07-16', null])).toBe('{"2026-07-16",null}');
+    expect(serializerFor(client, '1115')(['2026-07-16 22:00:00', null])).toBe('{"2026-07-16 22:00:00",null}');
+    expect(serializerFor(client, '1231')([1, 2])).toBe('{"1","2"}');
   });
 
   it('tolerates a client without an options.serializers surface', () => {
