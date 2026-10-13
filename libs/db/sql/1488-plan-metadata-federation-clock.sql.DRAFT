@@ -1,0 +1,238 @@
+-- 1488-plan-metadata-federation-clock.sql
+--
+-- WI-6554700010009460 (residue of derived-status-not-hand-written-2026-10-12#P-004, see #D-008).
+--
+-- WHY
+--   Under per-part plan federation (FLAGS.PLAN_PART_FEDERATION, default ON) a peer
+--   never receives a later change to a plan's six non-content columns:
+--   template_data, properties, input_schema, output_schema, property_schema,
+--   promote_policy. Two gaps, both measured 2026-10-13:
+--   1. capture_substrate_outbox_upd_trg on harness_plans (last redefined in 1480)
+--      does not list these columns in its WHEN clause, so a metadata-only UPDATE
+--      emits no op at all.
+--   2. When an op does carry them (riding a content change), the flag-ON
+--      projection applies a whole-row op only as a bootstrap
+--      INSERT ... ON CONFLICT DO NOTHING, so an existing peer row keeps the
+--      values it was bootstrapped with.
+--   Acceptance-rubric BARs live in template_data, so a peer's rubric freezes at
+--   creation.
+--
+--   The row clock (fed_ts / fed_hlc) cannot order these columns: per-part
+--   recomposition (harness-plan-parts.ts) moves fed_ts to each PART op's clock, so
+--   an unrelated part write would outrank a metadata write.
+--
+-- WHAT
+--   * harness_plans gains meta_fed_ts / meta_fed_hlc: the clock of the last write to
+--     the six metadata columns. NULL = no metadata write recorded since this
+--     migration (lowest possible clock).
+--   * stamp_local_federated_write, harness_plans only:
+--       - a LOCAL INSERT, or a LOCAL UPDATE that changes any of the six, stamps the
+--         meta clock with the same fresh clock it stamps on the row;
+--       - an UPDATE that moves the meta clock is the projection applying a peer's
+--         metadata: the six columns and the meta clock are masked from the content
+--         comparison, so the apply keeps the row clock and origin (the treatment
+--         1481 gives now_note), and the meta HLC is fed to hlc_recv.
+--   * capture_substrate_outbox_upd_trg on harness_plans also fires when any of the
+--     six changes, so a metadata-only write emits an op.
+--   The projection (harness-plans.ts) applies the six under the meta clock, and only
+--   for an op that carries one. An op from a release without these columns has no
+--   meta clock and never overwrites an existing row: its metadata may be that
+--   peer's own frozen bootstrap copy.
+--
+--   Additive only: two nullable columns (no rewrite), harness_plans-gated branches
+--   in the trigger function, and a wider trigger WHEN list. The deployed release
+--   never reads meta_fed_*; its whole-row ops carry no meta clock and are treated as
+--   above.
+
+ALTER TABLE harness_shared.harness_plans
+  ADD COLUMN IF NOT EXISTS meta_fed_ts bigint,
+  ADD COLUMN IF NOT EXISTS meta_fed_hlc text;
+
+COMMENT ON COLUMN harness_shared.harness_plans.meta_fed_ts IS
+  'Wall-clock ms of the last write to template_data / properties / input_schema / '
+  'output_schema / property_schema / promote_policy (migration 1488, WI-6554700010009460). '
+  'Orders those columns on federation apply independently of the row clock, which '
+  'per-part recomposition moves. NULL = no metadata write recorded since 1488.';
+
+COMMENT ON COLUMN harness_shared.harness_plans.meta_fed_hlc IS
+  'HLC of the last write to the six plan metadata columns (see meta_fed_ts).';
+
+CREATE OR REPLACE FUNCTION harness_shared.stamp_local_federated_write()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  mask text[] := ARRAY[
+    'fed_ts', 'fed_hlc', 'origin', 'author_pubkey', 'updated_at',
+    '_search', 'version', 'local_disposition'
+  ];
+  gen_cols text[];
+  content_changed boolean;
+  wire_clock_keys text[] := ARRAY['fed_ts', 'fed_hlc', 'origin', 'author_pubkey'];
+  feature_non_content_keys text[] := ARRAY['fed_ts', 'fed_hlc', 'origin', 'author_pubkey', 'ts', 'updated_ts'];
+  -- 1488: harness_plans columns ordered by their own clock (meta_fed_ts / meta_fed_hlc).
+  plan_meta_keys text[] := ARRAY[
+    'template_data', 'properties', 'input_schema', 'output_schema',
+    'property_schema', 'promote_policy'
+  ];
+  plan_meta_applied boolean := false;
+BEGIN
+  -- A projection apply moves the row clock: keep the row verbatim and advance
+  -- this node's HLC past the op's.
+  IF TG_OP = 'UPDATE'
+     AND (NEW.fed_ts IS DISTINCT FROM OLD.fed_ts
+          OR NEW.fed_hlc IS DISTINCT FROM OLD.fed_hlc) THEN
+    IF NEW.fed_hlc IS NOT NULL THEN
+      PERFORM harness_shared.hlc_recv(NEW.fed_hlc);
+    END IF;
+    -- 1488: every reference to a harness_plans-only column sits in its own
+    -- statement under a TG_TABLE_NAME guard. PL/pgSQL resolves record fields
+    -- when it prepares an expression, so `TG_TABLE_NAME = ... AND NEW.meta_...`
+    -- in ONE expression would raise "record new has no field" on every other
+    -- table this shared function serves.
+    IF TG_TABLE_NAME = 'harness_plans' THEN
+      IF NEW.meta_fed_hlc IS NOT NULL
+         AND NEW.meta_fed_hlc IS DISTINCT FROM OLD.meta_fed_hlc THEN
+        PERFORM harness_shared.hlc_recv(NEW.meta_fed_hlc);
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    -- A projection INSERT carries the op's fed_ts AND origin='remote'; a local
+    -- INSERT carries neither. Gate the stamp on origin so a remote ts-less op
+    -- cannot receive a fresh local clock and pass the projection's LWW guard.
+    IF NEW.fed_ts IS NULL AND COALESCE(NEW.origin, 'local') = 'local' THEN
+      NEW.fed_ts := (extract(epoch FROM clock_timestamp()) * 1000)::bigint;
+      NEW.fed_hlc := harness_shared.hlc_now();
+      -- 1488: a locally created plan's metadata was written at creation.
+      IF TG_TABLE_NAME = 'harness_plans' THEN
+        IF NEW.meta_fed_ts IS NULL THEN
+          NEW.meta_fed_ts := NEW.fed_ts;
+          NEW.meta_fed_hlc := NEW.fed_hlc;
+        END IF;
+      END IF;
+    ELSIF NEW.fed_hlc IS NOT NULL THEN
+      PERFORM harness_shared.hlc_recv(NEW.fed_hlc);
+    END IF;
+    IF TG_TABLE_NAME = 'harness_plans' THEN
+      IF NEW.meta_fed_hlc IS NOT NULL
+         AND NEW.meta_fed_hlc IS DISTINCT FROM NEW.fed_hlc THEN
+        PERFORM harness_shared.hlc_recv(NEW.meta_fed_hlc);
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  content_changed := NULL;
+  IF TG_TABLE_NAME = 'work_items' THEN
+    IF OLD.item_kind IN ('bug', 'change', 'task')
+       AND NEW.item_kind IN ('bug', 'change', 'task') THEN
+      content_changed :=
+        (harness_shared.engineer_issue_wire_row(NEW, NEW.workspace_id, NULL, NULL) - wire_clock_keys)
+          IS DISTINCT FROM
+        (harness_shared.engineer_issue_wire_row(OLD, OLD.workspace_id, NULL, NULL) - wire_clock_keys);
+    ELSIF COALESCE(OLD.item_kind, '') NOT IN ('bug', 'change', 'task')
+          AND COALESCE(NEW.item_kind, '') NOT IN ('bug', 'change', 'task') THEN
+      content_changed :=
+        (harness_shared.feature_wire_row(NEW) - feature_non_content_keys)
+          IS DISTINCT FROM
+        (harness_shared.feature_wire_row(OLD) - feature_non_content_keys);
+    END IF;
+  END IF;
+
+  IF content_changed IS NULL THEN
+    IF TG_TABLE_NAME = 'work_items' THEN
+      mask := mask || ARRAY['updated_ts', 'ts'];
+    END IF;
+    -- derived-status-not-hand-written-2026-10-12 D-009 (1481): the Now note
+    -- carries its own clock (now_note.writtenAt), so a note-only UPDATE keeps the
+    -- row clock and origin.
+    -- 1488: the meta clock is bookkeeping, and an UPDATE that moves it is the
+    -- projection applying a peer's metadata under that clock, so the six
+    -- metadata columns are not local content for that UPDATE either.
+    IF TG_TABLE_NAME = 'harness_plans' THEN
+      mask := mask || ARRAY['now_note', 'now_state', 'now_next', 'meta_fed_ts', 'meta_fed_hlc'];
+      IF NEW.meta_fed_ts IS DISTINCT FROM OLD.meta_fed_ts
+         OR NEW.meta_fed_hlc IS DISTINCT FROM OLD.meta_fed_hlc THEN
+        plan_meta_applied := true;
+        mask := mask || plan_meta_keys;
+        IF NEW.meta_fed_hlc IS NOT NULL THEN
+          PERFORM harness_shared.hlc_recv(NEW.meta_fed_hlc);
+        END IF;
+      END IF;
+    END IF;
+
+    SELECT coalesce(array_agg(a.attname::text), ARRAY[]::text[])
+      INTO gen_cols
+      FROM pg_attribute a
+     WHERE a.attrelid = TG_RELID
+       AND a.attgenerated <> ''
+       AND a.attnum > 0
+       AND NOT a.attisdropped;
+    mask := mask || gen_cols;
+
+    content_changed := (to_jsonb(NEW) - mask) IS DISTINCT FROM (to_jsonb(OLD) - mask);
+  END IF;
+
+  IF content_changed
+     AND COALESCE(OLD.origin, 'local') = 'remote'
+     AND NULLIF(to_jsonb(OLD)->>'signer_device_pubkey', '') IS NOT NULL THEN
+    RAISE EXCEPTION USING
+      ERRCODE = 'check_violation',
+      MESSAGE = format(
+        'publisher-signed remote row on %I.%I cannot be changed by a local write',
+        TG_TABLE_SCHEMA,
+        TG_TABLE_NAME
+      ),
+      DETAIL = 'Move fed_ts or fed_hlc only when applying an authenticated projection op or an explicit repair.';
+  END IF;
+
+  IF content_changed THEN
+    NEW.fed_ts := (extract(epoch FROM clock_timestamp()) * 1000)::bigint;
+    NEW.fed_hlc := harness_shared.hlc_now();
+    NEW.origin := 'local';
+    -- 1488: a local write to any of the six metadata columns stamps their clock.
+    IF TG_TABLE_NAME = 'harness_plans' AND NOT plan_meta_applied THEN
+      IF NEW.template_data IS DISTINCT FROM OLD.template_data
+         OR NEW.properties IS DISTINCT FROM OLD.properties
+         OR NEW.input_schema IS DISTINCT FROM OLD.input_schema
+         OR NEW.output_schema IS DISTINCT FROM OLD.output_schema
+         OR NEW.property_schema IS DISTINCT FROM OLD.property_schema
+         OR NEW.promote_policy IS DISTINCT FROM OLD.promote_policy THEN
+        NEW.meta_fed_ts := NEW.fed_ts;
+        NEW.meta_fed_hlc := NEW.fed_hlc;
+      END IF;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+-- A metadata-only write now emits an op (gap 1 above). The remaining clauses are
+-- 1480's list unchanged.
+CREATE OR REPLACE TRIGGER capture_substrate_outbox_upd_trg
+  AFTER UPDATE ON harness_shared.harness_plans
+  FOR EACH ROW
+  WHEN (
+       (old.content IS DISTINCT FROM new.content)
+    OR (old.content_hash IS DISTINCT FROM new.content_hash)
+    OR (old.title IS DISTINCT FROM new.title)
+    OR (old.status IS DISTINCT FROM new.status)
+    OR (old.created IS DISTINCT FROM new.created)
+    OR (old.updated IS DISTINCT FROM new.updated)
+    OR (old.owner IS DISTINCT FROM new.owner)
+    OR (old.supersedes IS DISTINCT FROM new.supersedes)
+    OR (old.superseded_by IS DISTINCT FROM new.superseded_by)
+    OR (old.archived IS DISTINCT FROM new.archived)
+    OR (old.is_legacy IS DISTINCT FROM new.is_legacy)
+    OR (old.now_note IS DISTINCT FROM new.now_note)
+    OR (old.template_data IS DISTINCT FROM new.template_data)
+    OR (old.properties IS DISTINCT FROM new.properties)
+    OR (old.input_schema IS DISTINCT FROM new.input_schema)
+    OR (old.output_schema IS DISTINCT FROM new.output_schema)
+    OR (old.property_schema IS DISTINCT FROM new.property_schema)
+    OR (old.promote_policy IS DISTINCT FROM new.promote_policy)
+  )
+  EXECUTE FUNCTION harness_shared.capture_substrate_outbox('plan_slug');
