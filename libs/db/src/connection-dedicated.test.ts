@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // Construct real lazy postgres-js clients, but intercept the identity probe so
 // this routing test never opens a socket. Serializer repairs still run normally.
 vi.mock('postgres', async (importOriginal) => {
-  const { default: postgres } = await importOriginal<typeof import('postgres')>();
+  // `postgres` is an `export =` module: `typeof import('postgres')` is the client
+  // FUNCTION, not a namespace with `default`, so type the ESM-interop shape here.
+  const { default: postgres } = await importOriginal<{ default: typeof import('postgres') }>();
   return { default: vi.fn((...args: Parameters<typeof postgres>) => {
     const sql = postgres(...args);
     sql.unsafe = vi.fn().mockResolvedValue([]);
