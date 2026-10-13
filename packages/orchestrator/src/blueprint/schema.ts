@@ -27,6 +27,53 @@ import { dataConditionSchema } from '@papercusp/rules';
 import { BUNDLE_KINDS } from './slots.js';
 import { InjectionPointSchema, validateInjectionPoint } from './injection-points.js';
 import { FIRST_PARTY_INPUT_KIND, resolveFirstPartyContextClass } from './first-party-classes.js';
+import { AGENT_BACKENDS } from '../types.js';
+import { MODEL_EFFORT_LEVELS, isLaunchAccountValue } from '../../../../../../packages/operator-core/lib/agent-config-constants.js';
+import { listCodexInstalledModels, resolveLaunchModelAlias, resolveCodexModel } from '../../../../../../packages/operator-core/lib/model-context-budget.mjs';
+
+/** Null explicitly retains the host's account routing; omission inherits the parent. */
+export const LaunchAccountSchema = z.string().refine(isLaunchAccountValue, 'invalid account selector').nullable();
+const LaunchSelectionSchema = z.object({
+  backend: z.enum(AGENT_BACKENDS).optional(),
+  model: z.string().min(1).optional(),
+  effort: z.enum(MODEL_EFFORT_LEVELS).optional(),
+});
+
+function launchSelectionIssue(selection: z.infer<typeof LaunchSelectionSchema>): string | null {
+  if (!selection.model) return selection.effort ? 'effort requires a model' : null;
+  try {
+    const agent = selection.backend === 'claude-code' ? 'claude' : selection.backend;
+    const resolved = resolveLaunchModelAlias(selection.model, { agent, effort: selection.effort });
+    if (resolved.agent === 'codex') {
+      const model = resolveCodexModel(resolved.model).replace(/:(low|medium|high|xhigh|max)$/i, '');
+      const catalog = listCodexInstalledModels();
+      const row = catalog.find((entry) => entry.id === model);
+      if (catalog.length && !row) return `model '${model}' is unavailable for codex`;
+      if (row?.efforts.length && resolved.effort && !row.efforts.includes(resolved.effort)) {
+        return `effort '${resolved.effort}' is unavailable for codex model '${model}'`;
+      }
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+function launchSelectionKey(selection: z.infer<typeof LaunchSelectionSchema>): string {
+  const agent = selection.backend === 'claude-code' ? 'claude' : selection.backend;
+  const resolved = resolveLaunchModelAlias(selection.model ?? '', { agent, effort: selection.effort });
+  return JSON.stringify([resolved.agent, resolved.model]);
+}
+
+export const BlueprintLaunchBackupSchema = LaunchSelectionSchema.extend({
+  backend: z.enum(AGENT_BACKENDS),
+  model: z.string().min(1),
+  account: LaunchAccountSchema.optional(),
+}).superRefine((selection, ctx) => {
+  const issue = launchSelectionIssue(selection);
+  if (issue) ctx.addIssue({ code: 'custom', message: issue });
+});
+export type BlueprintLaunchBackup = z.infer<typeof BlueprintLaunchBackupSchema>;
 
 /**
  * The work unit the director schedules/executes. Maps onto the canonical
@@ -72,6 +119,10 @@ export const BlueprintRoleSchema = z.object({
   stack: z.array(z.string().min(3)).max(40).optional(),
   prompt: z.string().optional(),
   model: z.string().optional(),
+  backend: z.enum(AGENT_BACKENDS).optional(),
+  effort: z.enum(MODEL_EFFORT_LEVELS).optional(),
+  account: LaunchAccountSchema.optional(),
+  backups: z.array(BlueprintLaunchBackupSchema).optional(),
   /** @deprecated use top-level dependencies.tools (kept for a targeted validation error). */
   tools: z.array(z.string()).optional(),
   /** @deprecated use dependencies.tools; enforced ceilings use fleet.workerRoles[].capabilities. */
@@ -79,6 +130,17 @@ export const BlueprintRoleSchema = z.object({
   reactive: z.boolean().default(false),
   isolation: z.enum(['none', 'worktree']).optional(),
   description: z.string().optional(),
+}).superRefine((role, ctx) => {
+  const issue = launchSelectionIssue(role);
+  if (issue) ctx.addIssue({ code: 'custom', path: ['model'], message: issue });
+  const seen = new Set<string>();
+  if (role.model && !issue) seen.add(launchSelectionKey(role));
+  for (const [index, backup] of (role.backups ?? []).entries()) {
+    if (launchSelectionIssue(backup)) continue;
+    const key = launchSelectionKey(backup);
+    if (seen.has(key)) ctx.addIssue({ code: 'custom', path: ['backups', index], message: 'duplicate backup or backup equal to primary' });
+    seen.add(key);
+  }
 });
 
 /**
