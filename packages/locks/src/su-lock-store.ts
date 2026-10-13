@@ -821,7 +821,7 @@ export async function tryAcquire(
   // partial-rollback machinery that became dead code when Step 2b
   // landed. (xmax is PG-internal and not part of the documented
   // stable API; the new shape avoids depending on it.)
-  const upserted = await tx<Array<{ path: string; lock_id: string }>>`
+  const upserted = await tx<Array<{ path: string; lock_id: string; expires_ts: Date }>>`
     WITH wanted AS (SELECT unnest(${acquirePaths}::text[]) AS path)
     INSERT INTO agent_file_locks
       (coordination_domain, path, owner, owner_label, intent, goal_ref, lock_id, acquired_ts, expires_ts)
@@ -842,7 +842,7 @@ export async function tryAcquire(
       --      file must not lock the agent out of itself).
       WHERE agent_file_locks.expires_ts <= clock_timestamp()
          OR agent_file_locks.owner = EXCLUDED.owner
-    RETURNING path, lock_id
+    RETURNING path, lock_id, expires_ts
   `;
 
   // Defense in depth: if the upsert returned fewer rows than requested
@@ -858,10 +858,23 @@ export async function tryAcquire(
   }
 
   const effectiveLockId = upserted[0].lock_id;
+  // Report the lease the rows actually STORE, never a JS-clock estimate taken
+  // after the round-trip: `Date.now() + ttl` ran late by the round-trip plus
+  // event-loop lag, so it disagreed with every other reader of the same lease
+  // (busy snapshot, queue, renew) — WI-6554700010010480. clock_timestamp()
+  // advances per row, and an automatic acquire that only upserted its NEW
+  // paths still holds its earlier owned rows, so the lease for the whole
+  // acquire is the earliest stored expiry (the same rule as the all-owned
+  // path above).
+  const leaseRows = acquirePaths === paths ? upserted : [...upserted, ...ownedRows];
+  const expiresTs = leaseRows.reduce<Date>(
+    (earliest, row) => (row.expires_ts < earliest ? row.expires_ts : earliest),
+    upserted[0].expires_ts,
+  );
   return {
     ok: true,
     lock_id: effectiveLockId,
-    expires_ts: new Date(Date.now() + ttlSec * 1000),
+    expires_ts: expiresTs,
     held: paths,
     newly_held: newPaths,
   };
