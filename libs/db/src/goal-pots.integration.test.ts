@@ -330,3 +330,99 @@ describe('workspace scoping', () => {
     expect((await goalSpend(sql, { workspaceId: WS, goalId: 'goal-a' })).costUsd).toBeCloseTo(4, 6);
   });
 });
+
+/**
+ * Performance contract (papercusp-performance-audit-2026-10-12 P-007, migration 1486).
+ *
+ * `goals.list` re-resolves on every agent_usage_samples sweep tick and every work-item
+ * write, and each resolve totals ALL of a linked pot's samples. Measured live before
+ * 1486: Index Scan, 1.87 M rows, 1.85 M shared buffers, 1,250 ms per call — every index
+ * tuple paid a heap fetch just to read cost_usd. The fix is a covering index, so the
+ * property worth pinning is that BOTH spend reads stay index-only: a new column read
+ * from `s` (or an index that stops covering cost_usd) silently reintroduces the heap
+ * fetch, and nothing else would notice until the next audit.
+ *
+ * The SQL under test is captured from the real functions through postgres.js `debug`,
+ * never re-typed here. Seq/bitmap scans are disabled so the planner must choose between
+ * the two index paths; after VACUUM the only reason to pick a heap-fetching Index Scan
+ * is that the index does not cover the query.
+ */
+describe('spend reads stay index-only (migration 1486)', () => {
+  type PlanNode = { 'Node Type': string; 'Relation Name'?: string; 'Index Name'?: string; Plans?: PlanNode[] };
+
+  function usageScans(node: PlanNode, out: PlanNode[] = []): PlanNode[] {
+    if (node['Relation Name'] === 'agent_usage_samples') out.push(node);
+    for (const child of node.Plans ?? []) usageScans(child, out);
+    return out;
+  }
+
+  /** Run `read` against a capturing client and return the agent_usage_samples statement it sent. */
+  async function captureUsageQuery(read: (client: Sql) => Promise<unknown>): Promise<{ query: string; params: unknown[] }> {
+    const captured: Array<{ query: string; params: unknown[] }> = [];
+    const client = postgres(db.url, {
+      max: 1,
+      onnotice: () => {},
+      debug: (_conn: number, query: string, params: unknown[]) => {
+        if (query.includes('agent_usage_samples')) captured.push({ query, params: [...params] });
+      },
+    });
+    try {
+      await read(client);
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+    expect(captured).toHaveLength(1);
+    return captured[0]!;
+  }
+
+  async function usageScanNodes(captured: { query: string; params: unknown[] }): Promise<PlanNode[]> {
+    await sql.unsafe('VACUUM (ANALYZE) harness_shared.agent_usage_samples');
+    const rows = await sql.begin(async (tx) => {
+      await tx.unsafe('SET LOCAL enable_seqscan = off');
+      await tx.unsafe('SET LOCAL enable_bitmapscan = off');
+      return tx.unsafe(`EXPLAIN (FORMAT JSON) ${captured.query}`, captured.params as never[]);
+    });
+    const plan = (rows[0] as { 'QUERY PLAN': Array<{ Plan: PlanNode }> })['QUERY PLAN'][0]!.Plan;
+    return usageScans(plan);
+  }
+
+  async function seed(): Promise<void> {
+    await makeGoal('goal-a');
+    await makeGoal('goal-b');
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug: 'pot-a' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'pot-b' });
+    const now = Date.now();
+    for (let i = 0; i < 200; i++) {
+      await spend(i % 2 === 0 ? 'pot-a' : 'pot-b', 0.01, now + i);
+      await spend('unlinked-pot', 0.01, now + i);
+    }
+  }
+
+  it('portfolioSpend reads agent_usage_samples with an Index Only Scan on the covering index', async () => {
+    await seed();
+    const captured = await captureUsageQuery((client) =>
+      portfolioSpend(client, { workspaceId: WS, goalIds: ['goal-a', 'goal-b'] }),
+    );
+    const scans = await usageScanNodes(captured);
+    expect(scans.length).toBeGreaterThan(0);
+    for (const scan of scans) {
+      expect({ node: scan['Node Type'], index: scan['Index Name'] }).toEqual({
+        node: 'Index Only Scan',
+        index: 'agent_usage_samples_harness_idx',
+      });
+    }
+  });
+
+  it('goalSpend reads agent_usage_samples with an Index Only Scan on the covering index', async () => {
+    await seed();
+    const captured = await captureUsageQuery((client) => goalSpend(client, { workspaceId: WS, goalId: 'goal-a' }));
+    const scans = await usageScanNodes(captured);
+    expect(scans.length).toBeGreaterThan(0);
+    for (const scan of scans) {
+      expect({ node: scan['Node Type'], index: scan['Index Name'] }).toEqual({
+        node: 'Index Only Scan',
+        index: 'agent_usage_samples_harness_idx',
+      });
+    }
+  });
+});
