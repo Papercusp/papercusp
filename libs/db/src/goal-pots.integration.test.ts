@@ -382,7 +382,7 @@ describe('spend reads stay index-only (migration 1486)', () => {
       await tx.unsafe('SET LOCAL enable_bitmapscan = off');
       return tx.unsafe(`EXPLAIN (FORMAT JSON) ${captured.query}`, captured.params as never[]);
     });
-    const plan = (rows[0] as { 'QUERY PLAN': Array<{ Plan: PlanNode }> })['QUERY PLAN'][0]!.Plan;
+    const plan = (rows[0] as unknown as { 'QUERY PLAN': Array<{ Plan: PlanNode }> })['QUERY PLAN'][0]!.Plan;
     return usageScans(plan);
   }
 
