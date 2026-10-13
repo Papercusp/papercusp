@@ -362,8 +362,8 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     evidence: {
       path: 'packages/operator-core/lib/agent-tools/capability/fetch.ts',
-      anchors: ["name: 'capability:fetch'", 'browserSessionArg.optional()', 'runBrowserSession'],
-      note: 'The registered fetch door has separate browser session operations; focused local proof does not establish actual-ledger/API/confinement parity.',
+      anchors: ["name: 'capability:fetch'", 'browserSessionArg.optional()', 'runManagedBrowserSession'],
+      note: 'The registered fetch door has separate browser session operations, routed through the process-owner seam (browser-owner.ts) to runBrowserSession; focused local proof does not establish actual-ledger/API/confinement parity.',
     },
     reuseSites: [
       {
