@@ -4116,6 +4116,12 @@ export async function invoke(
         }
       } catch (err) {
         ctx.log(`  spawn-mcp write failed: ${err instanceof Error ? err.message : String(err)}`);
+        // An explicit gateway choice must never become local egress after a
+        // config/signing failure. Legacy callers retain the existing MCP warning.
+        if (agentBackend === 'codex' &&
+            (spawnEnv.PAPERCUSP_ACCOUNT_ROUTING_MODE === 'auto' || spawnEnv.PAPERCUSP_ACCOUNT_ROUTING_MODE === 'pin')) {
+          throw err;
+        }
       }
     }
 

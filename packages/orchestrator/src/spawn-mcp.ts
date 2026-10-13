@@ -600,6 +600,16 @@ export async function writeSignedSpawnCodexHome(
     pg?: SpawnMcpSigningPg;
   } & SpawnMcpRouteProbeOptions = {},
 ): Promise<SpawnCodexHomeHandle> {
+  const gatewayEnv = opts.gatewayEnv ?? process.env;
+  const routeMode = gatewayEnv.PAPERCUSP_ACCOUNT_ROUTING_MODE;
+  if ((routeMode === 'auto' || routeMode === 'pin') && !gatewayEnv.PAPERCUSP_CODEX_GATEWAY) {
+    throw new Error('explicit Codex gateway route is unresolved; refusing local-credential fallback');
+  }
+  if (routeMode === 'pin' && !gatewayEnv.PAPERCUSP_ACCOUNT_ID?.trim()) {
+    throw new Error('explicit Codex account pin is unresolved; refusing unpinned fallback');
+  }
+  const accountId = routeMode === 'default' || routeMode === 'auto'
+    ? undefined : gatewayEnv.PAPERCUSP_ACCOUNT_ID;
   const base = await resolveSpawnOperatorBaseAsync(input.operatorUrl, opts);
   const params = buildSpawnUrlParams(input);
   await signSpawnParams(params, opts.ttlSec ?? 0, opts.pg);
@@ -617,13 +627,6 @@ export async function writeSignedSpawnCodexHome(
   // codex does NOT env-expand inside config.toml; the URL is fully baked
   // (incl. the sig), so no bearer_token_env_var is needed (unlike the
   // superuser codex-su home, which uses ?superuser=1 + a bearer).
-  const gatewayEnv = opts.gatewayEnv ?? process.env;
-  const routeMode = gatewayEnv.PAPERCUSP_ACCOUNT_ROUTING_MODE;
-  if ((routeMode === 'auto' || routeMode === 'pin') && !gatewayEnv.PAPERCUSP_CODEX_GATEWAY) {
-    throw new Error('explicit Codex gateway route is unresolved; refusing local-credential fallback');
-  }
-  const accountId = routeMode === 'default' || routeMode === 'auto'
-    ? undefined : gatewayEnv.PAPERCUSP_ACCOUNT_ID;
   const toml = buildSpawnCodexConfigToml(mcpUrl, accountId, {
     model: opts.model,
     ownerId: input.clientId || input.spawnId,
