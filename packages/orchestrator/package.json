@@ -82,6 +82,11 @@
       "import": "./src/spawn-signing-core.ts",
       "default": "./src/spawn-signing-core.ts"
     },
+    "./agent-session-context-tier": {
+      "types": "./src/agent-session-context-tier.ts",
+      "import": "./src/agent-session-context-tier.ts",
+      "default": "./src/agent-session-context-tier.ts"
+    },
     "./codex-gateway-config": {
       "types": "./src/codex-gateway-config.ts",
       "import": "./src/codex-gateway-config.ts",

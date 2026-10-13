@@ -19,6 +19,7 @@
  */
 
 import { canonicalizeSpawnParams, hmacSpawnBytes, decodeOperatorSecretKey } from './spawn-signing-core';
+import { AGENT_SESSION_CONTEXT_TIER } from './agent-session-context-tier';
 // The gateway config builder + tomlEscape live in the SHARED module (WI-3645): operator-core's
 // role-codex-home.ts (the interactive psu path) renders the SAME blocks via the package's
 // `./codex-gateway-config` subpath export — one builder, one behavior, no drift. Model-specific
@@ -304,6 +305,8 @@ export function buildSpawnMcpConfig(input: SpawnMcpConfigInput): {
   // Stable coord owner id (operator's `s-…` spawnId). See buildSpawnUrlParams.
   if (input.clientId) params.set('client', input.clientId);
   if (input.detectorSessionKey) params.set('detector', input.detectorSessionKey);
+  // WI-6554700010010138: the session payload tier (see agent-session-context-tier.ts).
+  params.set('ctx_tier', AGENT_SESSION_CONTEXT_TIER);
   return {
     mcpServers: {
       papercusp: {
@@ -461,6 +464,8 @@ export async function writeSignedSpawnMcp(
     // surface to every fleet spawn). Dispatch capability is unchanged —
     // isSuperuser still bypasses role gates; only the advertised list narrows.
     if (input.role) su.set('role', input.role);
+    // WI-6554700010010138: the session payload tier (see agent-session-context-tier.ts).
+    su.set('ctx_tier', AGENT_SESSION_CONTEXT_TIER);
     const config = {
       mcpServers: {
         papercusp: {
@@ -1016,6 +1021,9 @@ function buildSpawnUrlParams(input: SpawnMcpConfigInput): URLSearchParams {
   // reads it into ctx.uiClientId, which resolveAgentIdentity attributes coord writes to.
   if (input.clientId) params.set('client', input.clientId);
   if (input.detectorSessionKey) params.set('detector', input.detectorSessionKey);
+  // WI-6554700010010138: the session payload tier (see agent-session-context-tier.ts).
+  // Unsigned like `tools` (not in SIGNED_PARAM_ALLOWLIST), so it never changes the HMAC.
+  params.set('ctx_tier', AGENT_SESSION_CONTEXT_TIER);
   return params;
 }
 

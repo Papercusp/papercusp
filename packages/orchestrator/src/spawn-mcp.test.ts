@@ -26,6 +26,7 @@ import {
   type McpConfigPlacement,
   type SpawnMcpSigningPg,
 } from './spawn-mcp';
+import { canonicalizeSpawnParams } from './spawn-signing-core';
 
 describe('resolveMcpConfigPlacement — placement and restore-skip cannot drift', () => {
   const TRACKED = 'spawn-abc123';
@@ -136,6 +137,9 @@ describe('buildSpawnMcpConfig', () => {
     expect(url.searchParams.get('spawn')).toBe('spw_01HXVA1');
     expect(url.searchParams.get('feature')).toBe('F-AUTH-003');
     expect(url.searchParams.get('chunk')).toBe('ck_01HXV9Z');
+    // WI-6554700010010138: every agent session asks for the trimmed payload tier
+    // [owner 2026-08-10]; without it the host serves the unshaped 'full' tier.
+    expect(url.searchParams.get('ctx_tier')).toBe('trimmed');
   });
 
   it('omits feature/chunk/parent_spawn when not provided', () => {
@@ -540,6 +544,8 @@ describe('writeSignedSpawnMcp — superuser-spawn door (EI-1547 regression guard
     // The Authorization header carries the bearer — the URL itself needs no `sig`.
     expect(content.mcpServers.papercusp.headers?.Authorization).toBe('Bearer test-su-bearer-token');
     expect(url.searchParams.get('sig')).toBeNull();
+    // WI-6554700010010138: the superuser spawn door asks for the trimmed tier too.
+    expect(url.searchParams.get('ctx_tier')).toBe('trimmed');
   });
 
   it('narrows tools= to the role catalog on the superuser door too', async () => {
@@ -606,6 +612,18 @@ describe('writeSignedSpawnMcp — existing PG signing path', () => {
         expect(url.searchParams.get('tools')).toBe('capability:git');
         expect(url.searchParams.get('sig')).toBeTruthy();
         expect(url.searchParams.get('superuser')).toBeNull();
+        // WI-6554700010010138: the signed spawn URL carries the trimmed tier, and the
+        // tier sits OUTSIDE the HMAC — the canonical signed bytes are identical with and
+        // without it, so adding it can never break signature verification.
+        expect(url.searchParams.get('ctx_tier')).toBe('trimmed');
+        const withTier = canonicalizeSpawnParams(url.searchParams);
+        const withoutTierParams = new URLSearchParams(url.searchParams);
+        withoutTierParams.delete('ctx_tier');
+        const withoutTier = canonicalizeSpawnParams(withoutTierParams);
+        expect(withTier.ok && withoutTier.ok).toBe(true);
+        if (withTier.ok && withoutTier.ok) {
+          expect(withTier.canonical).toEqual(withoutTier.canonical);
+        }
         expect(handle.prior).toBe(prior);
         expect(keyReads).toBe(1);
       } finally {
