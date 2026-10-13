@@ -1,0 +1,112 @@
+-- 1485 — host contention history on the kernel-memory sample table
+-- (papercusp-performance-audit-2026-10-12 P-002, D-005).
+--
+-- WHY. Wake-path latency (coord:orient p50 4.3 s -> 8.0-10.4 s around 10-06/10-07)
+-- could not be tied to, or ruled out by, host contention after the fact: nothing
+-- recorded CPU / IO / memory pressure or per-service CPU over time. D-001 measured
+-- CPU pressure once by hand; IO pressure was never measured. This adds that history
+-- to the existing per-boot sample table instead of a new table (reuse first).
+--
+-- WHAT.
+--   * Cumulative PSI stall totals in microseconds (the `total=` field of
+--     /proc/pressure/{cpu,io,memory}). Totals, not avg10/avg60, so a two-sample
+--     delta gives the exact stalled fraction of any interval.
+--   * cgroup_cpu_usage_us: cumulative cpu.stat usage_usec per cgroup, keyed by leaf
+--     name ('/' = the root, i.e. the whole host). The writer samples the root, the
+--     top-level slices, system-postgresql.slice and the papercu* units of its own
+--     app.slice.
+--   * host_contention_hourly: per host per hour, stall fractions and per-cgroup
+--     cores from consecutive same-boot samples. Intervals over 10 minutes (sampler
+--     down) and negative deltas (a restarted unit resets its counter) are skipped.
+--
+-- All columns are nullable: rows written before this migration, and hosts without
+-- PSI (CONFIG_PSI=n) or cgroup v2, carry NULL rather than a fake zero. The writer
+-- now samples every 60 s (bucket width 60 s); the kernel-leak evaluation still runs
+-- every 10 minutes off the same rows.
+
+-- lint-migrations: allow-view-lock-order host_contention_hourly is CREATED by this migration, so no reader can hold it (view -> table) before this transaction commits, and LOCK TABLE on a not-yet-existing view would error. The base table has one writer (the 60 s sampler) and no other view over it.
+ALTER TABLE harness_shared.host_kernel_memory_samples
+  ADD COLUMN IF NOT EXISTS cpu_some_stall_us    bigint,
+  ADD COLUMN IF NOT EXISTS io_some_stall_us     bigint,
+  ADD COLUMN IF NOT EXISTS io_full_stall_us     bigint,
+  ADD COLUMN IF NOT EXISTS memory_some_stall_us bigint,
+  ADD COLUMN IF NOT EXISTS memory_full_stall_us bigint,
+  ADD COLUMN IF NOT EXISTS cgroup_cpu_usage_us  jsonb;
+
+COMMENT ON TABLE harness_shared.host_kernel_memory_samples IS
+  'Per-boot samples, one per 60 s bucket: SUnreclaim / Slab (/proc/meminfo) and nr_dying_descendants (root cgroup.stat) feeding the kernel-leak alarm (host-memory-reduction-2026-09-27 P-010, D-007), plus PSI stall totals and per-cgroup CPU usage for contention history (papercusp-performance-audit-2026-10-12 P-002, D-005). 14-day retention, pruned by the writer. Rows before migration 1485 are 10-minute samples without contention columns.';
+COMMENT ON COLUMN harness_shared.host_kernel_memory_samples.cpu_some_stall_us IS
+  'Cumulative /proc/pressure/cpu "some" total (microseconds at least one task stalled on CPU). NULL when PSI is unavailable.';
+COMMENT ON COLUMN harness_shared.host_kernel_memory_samples.io_some_stall_us IS
+  'Cumulative /proc/pressure/io "some" total (microseconds at least one task stalled on IO).';
+COMMENT ON COLUMN harness_shared.host_kernel_memory_samples.io_full_stall_us IS
+  'Cumulative /proc/pressure/io "full" total (microseconds all non-idle tasks stalled on IO).';
+COMMENT ON COLUMN harness_shared.host_kernel_memory_samples.memory_some_stall_us IS
+  'Cumulative /proc/pressure/memory "some" total (microseconds).';
+COMMENT ON COLUMN harness_shared.host_kernel_memory_samples.memory_full_stall_us IS
+  'Cumulative /proc/pressure/memory "full" total (microseconds).';
+COMMENT ON COLUMN harness_shared.host_kernel_memory_samples.cgroup_cpu_usage_us IS
+  'Cumulative cpu.stat usage_usec per cgroup, keyed by leaf name ("/" = root = whole host). Deltas between consecutive same-boot rows give cores used; a counter that went down means the unit restarted.';
+
+CREATE OR REPLACE VIEW harness_shared.host_contention_hourly AS
+WITH paired AS (
+  SELECT s.host,
+         s.boot_id,
+         s.sampled_at,
+         extract(epoch FROM s.sampled_at - lag(s.sampled_at) OVER w) AS dt_s,
+         s.cpu_some_stall_us    - lag(s.cpu_some_stall_us)    OVER w AS cpu_some_d,
+         s.io_some_stall_us     - lag(s.io_some_stall_us)     OVER w AS io_some_d,
+         s.io_full_stall_us     - lag(s.io_full_stall_us)     OVER w AS io_full_d,
+         s.memory_some_stall_us - lag(s.memory_some_stall_us) OVER w AS memory_some_d,
+         s.memory_full_stall_us - lag(s.memory_full_stall_us) OVER w AS memory_full_d,
+         s.cgroup_cpu_usage_us AS usage_cur,
+         lag(s.cgroup_cpu_usage_us) OVER w AS usage_prev
+    FROM harness_shared.host_kernel_memory_samples s
+  WINDOW w AS (PARTITION BY s.boot_id ORDER BY s.sampled_at)
+), intervals AS (
+  SELECT *, date_trunc('hour', sampled_at) AS hour
+    FROM paired
+   WHERE dt_s > 0 AND dt_s <= 600
+     AND (cpu_some_d IS NOT NULL OR io_some_d IS NOT NULL OR memory_some_d IS NOT NULL
+          OR (usage_cur IS NOT NULL AND usage_prev IS NOT NULL))
+), stall AS (
+  SELECT host,
+         hour,
+         count(*)  AS intervals,
+         sum(dt_s) AS covered_s,
+         sum(cpu_some_d)    FILTER (WHERE cpu_some_d    >= 0) / nullif(sum(dt_s) FILTER (WHERE cpu_some_d    >= 0), 0) / 1e6 AS cpu_some_frac,
+         sum(io_some_d)     FILTER (WHERE io_some_d     >= 0) / nullif(sum(dt_s) FILTER (WHERE io_some_d     >= 0), 0) / 1e6 AS io_some_frac,
+         sum(io_full_d)     FILTER (WHERE io_full_d     >= 0) / nullif(sum(dt_s) FILTER (WHERE io_full_d     >= 0), 0) / 1e6 AS io_full_frac,
+         sum(memory_some_d) FILTER (WHERE memory_some_d >= 0) / nullif(sum(dt_s) FILTER (WHERE memory_some_d >= 0), 0) / 1e6 AS memory_some_frac,
+         sum(memory_full_d) FILTER (WHERE memory_full_d >= 0) / nullif(sum(dt_s) FILTER (WHERE memory_full_d >= 0), 0) / 1e6 AS memory_full_frac
+    FROM intervals
+   GROUP BY host, hour
+), cores AS (
+  SELECT i.host,
+         i.hour,
+         c.key AS cgroup,
+         sum(c.value::numeric - (i.usage_prev ->> c.key)::numeric) / sum(i.dt_s) / 1e6 AS cores
+    FROM intervals i
+   CROSS JOIN LATERAL jsonb_each_text(i.usage_cur) AS c(key, value)
+   WHERE i.usage_prev ? c.key
+     AND c.value::numeric >= (i.usage_prev ->> c.key)::numeric
+   GROUP BY i.host, i.hour, c.key
+)
+SELECT s.host,
+       s.hour,
+       s.intervals,
+       s.covered_s,
+       s.cpu_some_frac,
+       s.io_some_frac,
+       s.io_full_frac,
+       s.memory_some_frac,
+       s.memory_full_frac,
+       (SELECT jsonb_object_agg(c.cgroup, round(c.cores, 3))
+          FROM cores c
+         WHERE c.host = s.host AND c.hour = s.hour) AS cgroup_cores
+  FROM stall s;
+
+COMMENT ON VIEW harness_shared.host_contention_hourly IS
+  'Per host per hour: PSI stalled fractions (0..1) and cores used per cgroup, from consecutive same-boot host_kernel_memory_samples rows (two-sample deltas; gaps over 10 min and counter resets skipped). Join with hourly tool_invocations percentiles to correlate latency with contention (papercusp-performance-audit-2026-10-12 P-002, D-005).';
+
+GRANT SELECT ON harness_shared.host_contention_hourly TO harness_app;
