@@ -583,7 +583,26 @@ export interface AcquireParams {
   /** Automatic guards must not refresh or release paths held by a
    * deliberate same-owner claim. */
   automatic?: boolean;
+  /** Persisted by the native hook before HTTP; unchanged across retries. */
+  operation?: HookLockOperation;
 }
+
+export interface HookLockOperation {
+  id: string;
+  deadline: string;
+}
+
+type HookOperationState = 'pending' | 'granted' | 'cancelled' | 'completed';
+interface HookOperationData {
+  deadline: string;
+  state: HookOperationState;
+  newlyHeld: string[];
+  held?: string[];
+  lockId?: string;
+  expiresTs?: string;
+}
+
+export type HookOperationRefusal = 'operation_conflict' | 'operation_expired' | 'operation_finished';
 
 export interface AcquireBusy {
   path: string;
@@ -626,6 +645,11 @@ export type AcquireResult =
       busy: AcquireBusy[];
       reason: AcquireRetryReason;
       retryable: true;
+    }
+  | {
+      ok: false;
+      busy: AcquireBusy[];
+      reason: HookOperationRefusal;
     };
 
 /**
@@ -646,6 +670,7 @@ export async function tryAcquire(
   tx: Sql,
   params: AcquireParams,
 ): Promise<AcquireResult> {
+  if (params.operation) return tryAcquireHookOperation(tx, params);
   const { coordinationDomain, owner, ownerLabel, paths, intent, ttlSec } = params;
   const goalRef = params.goalRef ?? null;
   const automatic = params.automatic ?? intent.startsWith('PreToolUse:');
@@ -872,6 +897,155 @@ async function readBusySnapshot(
        ${ownerFilter}
   `;
   return rows;
+}
+
+// ───────── Native hook operation fence ─────────
+
+// Existing maximum lease horizon. Check the fixed request deadline BEFORE
+// creating a ticket, so terminal-ticket GC cannot resurrect an old acquire.
+// This is admission policy, not a timestamp guess for identifying a holder.
+export const HOOK_OPERATION_MAX_ADMISSION_SEC = 3600;
+
+interface HookOperationRow {
+  coordination_domain: string;
+  owner: string;
+  paths: string[];
+  intent: string;
+  ttl_sec: number;
+  goal_ref: string | null;
+  hook_operation: HookOperationData | null;
+}
+
+function sameOperationPaths(a: readonly string[], b: readonly string[]): boolean {
+  const left = [...a].sort();
+  const right = [...b].sort();
+  return left.length === right.length && left.every((path, index) => path === right[index]);
+}
+
+async function lockHookOperation(
+  tx: Sql,
+  params: AcquireParams & { operation: HookLockOperation },
+): Promise<HookOperationRow | null> {
+  const deadline = new Date(params.operation.deadline);
+  if (!Number.isFinite(deadline.getTime()) || params.paths.length === 0) return null;
+  const initial: HookOperationData = { deadline: deadline.toISOString(), state: 'pending', newlyHeld: [] };
+  await tx`
+    INSERT INTO agent_lock_waiters
+      (ticket_id, coordination_domain, owner, owner_label, paths, intent,
+       goal_ref, ttl_sec, wait_until, status, hook_operation)
+    SELECT ${params.operation.id}::uuid, ${params.coordinationDomain}, ${params.owner},
+           ${params.ownerLabel}, ${params.paths}, ${params.intent}, ${params.goalRef ?? null},
+           ${params.ttlSec}, ${deadline}, 'expired', ${JSON.stringify(initial)}::text::jsonb
+     WHERE ${deadline} <= clock_timestamp() + make_interval(secs => ${HOOK_OPERATION_MAX_ADMISSION_SEC})
+    ON CONFLICT (ticket_id) DO NOTHING
+  `;
+  // Pending immediate operations are 'expired' in the FIFO plane: only their
+  // correlated acquire may grant them, never grant_cascade.
+  const rows = await tx<HookOperationRow[]>`
+    SELECT coordination_domain, owner, paths, intent, ttl_sec, goal_ref, hook_operation
+      FROM agent_lock_waiters
+     WHERE ticket_id = ${params.operation.id}::uuid
+     FOR UPDATE
+  `;
+  const row = rows[0];
+  if (!row?.hook_operation || row.owner !== params.owner ||
+      row.coordination_domain !== params.coordinationDomain || row.intent !== params.intent ||
+      row.ttl_sec !== params.ttlSec || !sameOperationPaths(row.paths, params.paths) ||
+      row.hook_operation.deadline !== deadline.toISOString()) return null;
+  return row;
+}
+
+async function saveHookOperation(
+  tx: Sql,
+  params: AcquireParams & { operation: HookLockOperation },
+  data: HookOperationData,
+): Promise<void> {
+  await tx`
+    UPDATE agent_lock_waiters
+       SET hook_operation = ${JSON.stringify(data)}::text::jsonb,
+           status = ${data.state === 'granted' ? 'granted' : data.state === 'pending' ? 'expired' : 'cancelled'}::waiter_status,
+           granted_lock_id = ${data.lockId ?? null}::uuid,
+           granted_expires_ts = ${data.expiresTs ? new Date(data.expiresTs) : null}
+     WHERE ticket_id = ${params.operation.id}::uuid
+       AND owner = ${params.owner} AND coordination_domain = ${params.coordinationDomain}
+  `;
+}
+
+async function hookAdmissionExpired(tx: Sql, deadline: string): Promise<boolean> {
+  const rows = await tx<Array<{ expired: boolean }>>`
+    SELECT ${new Date(deadline)} <= clock_timestamp() AS expired
+  `;
+  return rows[0].expired;
+}
+
+async function tryAcquireHookOperation(tx: Sql, params: AcquireParams): Promise<AcquireResult> {
+  const p = params as AcquireParams & { operation: HookLockOperation };
+  const refuse = (reason: HookOperationRefusal): AcquireResult => ({ ok: false, busy: [], reason });
+  if (!(p.automatic ?? p.intent.startsWith('PreToolUse:')) ||
+      !Number.isFinite(new Date(p.operation.deadline).getTime())) return refuse('operation_conflict');
+  // Precedes INSERT, including after GC removed a terminal ticket.
+  if (await hookAdmissionExpired(tx, p.operation.deadline)) return refuse('operation_expired');
+  const row = await lockHookOperation(tx, p);
+  if (!row) return refuse('operation_conflict');
+  if (await hookAdmissionExpired(tx, p.operation.deadline)) return refuse('operation_expired');
+  const data = row.hook_operation!;
+  if (data.state === 'cancelled' || data.state === 'completed') return refuse('operation_finished');
+  if (data.state === 'granted') {
+    if (!data.lockId || !data.expiresTs || !data.held) return refuse('operation_conflict');
+    const live = await tx<Array<{ path: string }>>`
+      SELECT path FROM agent_file_locks
+       WHERE coordination_domain = ${p.coordinationDomain} AND owner = ${p.owner}
+         AND path = ANY(${data.held}::text[]) AND expires_ts > clock_timestamp()
+         AND (NOT (path = ANY(${data.newlyHeld}::text[])) OR lock_id = ${data.lockId}::uuid)
+    `;
+    if (live.length !== data.held.length) return refuse('operation_expired');
+    return { ok: true, lock_id: data.lockId, expires_ts: new Date(data.expiresTs),
+      held: data.held, newly_held: data.newlyHeld };
+  }
+  const result = await tryAcquire(tx, { ...p, operation: undefined, automatic: true });
+  if (!result.ok) return result;
+  if (await hookAdmissionExpired(tx, p.operation.deadline)) {
+    if (result.newly_held.length) {
+      await tryRelease(tx, { coordinationDomain: p.coordinationDomain, owner: p.owner,
+        lockId: result.lock_id, paths: result.newly_held });
+    }
+    await saveHookOperation(tx, p, { ...data, state: 'cancelled' });
+    return refuse('operation_expired');
+  }
+  await saveHookOperation(tx, p, { ...data, state: 'granted', newlyHeld: result.newly_held,
+    held: result.held, lockId: result.lock_id, expiresTs: result.expires_ts.toISOString() });
+  return result;
+}
+
+export type FinishHookOperationResult =
+  | { ok: false; reason: 'operation_conflict' }
+  | { ok: true; released: string[]; requestedPaths: string[]; goalRef: string | null;
+      heldBefore: number; state: 'cancelled' | 'completed' };
+
+/** Same authority/domain/path transaction as acquire. A terminal ticket is
+ * intentional: cancellation/completion may arrive BEFORE the acquire. */
+export async function tryFinishHookOperation(
+  tx: Sql,
+  params: AcquireParams & { operation: HookLockOperation; outcome: 'cancelled' | 'completed' },
+): Promise<FinishHookOperationResult> {
+  if (!(params.automatic ?? params.intent.startsWith('PreToolUse:'))) {
+    return { ok: false, reason: 'operation_conflict' };
+  }
+  const row = await lockHookOperation(tx, params);
+  if (!row) return { ok: false, reason: 'operation_conflict' };
+  const data = row.hook_operation!;
+  let released: string[] = [];
+  let heldBefore = 0;
+  if (data.lockId && data.newlyHeld.length > 0) {
+    const result = await tryRelease(tx, { coordinationDomain: params.coordinationDomain,
+      owner: params.owner, lockId: data.lockId, paths: data.newlyHeld });
+    released = result.released;
+    heldBefore = result.heldBefore;
+  }
+  // Positive completion may enrich cancellation but can never reopen it.
+  const state = data.state === 'completed' ? 'completed' : params.outcome;
+  await saveHookOperation(tx, params, { ...data, state });
+  return { ok: true, released, requestedPaths: row.paths, goalRef: row.goal_ref, heldBefore, state };
 }
 
 // ───────── Release ─────────
