@@ -2293,6 +2293,7 @@ export const consultPostMetaInHarnessShared = harnessShared.table("consult_post_
 	kind: text().notNull(),
 	evidence: jsonb(),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	stance: jsonb(),
 }, (table) => [
 	index("consult_post_meta_conversation_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.conversationId.asc().nullsLast().op("text_ops"), table.postId.asc().nullsLast().op("int8_ops")),
 	primaryKey({ columns: [table.postId, table.workspaceId], name: "consult_post_meta_pkey"}),
@@ -2515,6 +2516,8 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	index("coord_event_log_msg_tsv_idx").using("gin", sql`to_tsvector('english'::regconfig, "left"(((COALESCE((body ->> 'summary'::text), ''::text) || ' '::text) || COALESCE((body ->> 'body'::text), ''::text)), 20000))`).where(sql`(surface = 'messages'::text)`),
 	index("coord_event_log_msgs_expect_effect_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((surface = 'messages'::text) AND (body ? 'expectEffect'::text))`),
 	index("coord_event_log_msgs_from_idx").using("btree", sql`workspace_id`, sql`((body ->> 'from'::text))`).where(sql`(surface = 'messages'::text)`),
+	index("coord_event_log_msgs_from_system_session_idx").using("btree", sql`workspace_id`, sql`substr((body ->> 'from'::text), (strpos((body ->> 'from'::text), '/'::text) + 1))`).where(sql`((surface = 'messages'::text) AND ((body ->> 'from'::text) ~~ 'system:%'::text) AND (strpos((body ->> 'from'::text), '/'::text) > 0))`),
+	index("coord_event_log_msgs_to_expects_reply_gin").using("gin", sql`((body -> 'to'::text))`).where(sql`((surface = 'messages'::text) AND ((body ->> 'expectsReply'::text) = 'true'::text))`),
 	index("coord_event_log_msgs_to_gin").using("gin", sql`((body -> 'to'::text))`).where(sql`(surface = 'messages'::text)`),
 	index("coord_event_log_related_msg_id_idx").using("btree", sql`((body ->> 'related_msg_id'::text))`).where(sql`(body ? 'related_msg_id'::text)`),
 	index("coord_event_log_reply_deadline").using("btree", sql`(((body ->> 'replyDeadlineAt'::text))::bigint)`).where(sql`((surface = 'messages'::text) AND (body ? 'replyDeadlineAt'::text))`),
@@ -5584,6 +5587,7 @@ origin: scout
 	embeddingProfile: text("embedding_profile"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	acceptanceBarVerifiedRevision: bigint("acceptance_bar_verified_revision", { mode: "number" }),
+	nowNote: jsonb("now_note"),
 }, (table) => [
 	index("harness_plans_acceptance_bar_unseeded").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`((acceptance_bar_epoch IS NOT NULL) AND (acceptance_bar_set_hash IS NULL))`),
 	index("harness_plans_bm25").using("bm25", sql`(((COALESCE(title, ''::text) || ' '::text) || COALESCE(content, ''::text)))`).with({text_config: "english",compaction: "manual"}),
@@ -11647,6 +11651,30 @@ export const telemetryReportsArchiveInHarnessShared = harnessShared.table("telem
 	pgPolicy("telemetry_reports_archive_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const testCaseRunsInHarnessShared = harnessShared.table("test_case_runs", {
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	testRunId: bigint("test_run_id", { mode: "number" }).notNull(),
+	caseIndex: integer("case_index").notNull(),
+	caseKey: text("case_key").notNull(),
+	occurrence: integer().default(1).notNull(),
+	status: text().notNull(),
+	durationMs: integer("duration_ms"),
+	errorTail: text("error_tail"),
+}, (table) => [
+	foreignKey({
+			columns: [table.testRunId],
+			foreignColumns: [testRunsInHarnessShared.id],
+			name: "test_case_runs_test_run_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.caseIndex, table.testRunId], name: "test_case_runs_pkey"}),
+	check("test_case_runs_case_index_check", sql`case_index >= 0`),
+	check("test_case_runs_case_key_check", sql`(length(case_key) >= 1) AND (length(case_key) <= 2000)`),
+	check("test_case_runs_duration_ms_check", sql`(duration_ms IS NULL) OR (duration_ms >= 0)`),
+	check("test_case_runs_error_tail_check", sql`(error_tail IS NULL) OR (length(error_tail) <= 1000)`),
+	check("test_case_runs_occurrence_check", sql`occurrence >= 1`),
+	check("test_case_runs_status_check", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text])`),
+]);
+
 export const testExecutedSourcesInHarnessShared = harnessShared.table("test_executed_sources", {
 	workspaceName: text("workspace_name").notNull(),
 	testFile: text("test_file").notNull(),
@@ -12827,9 +12855,11 @@ END`),
 	index("work_items_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("work_items_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
 	index("work_items_escalated_open_idx").using("btree", sql`workspace_id`, sql`COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'minor'::text)`).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
+	index("work_items_external_blockers_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(payload ? 'externalBlockers'::text)`),
 	index("work_items_frontier_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_goal_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	uniqueIndex("work_items_intake_promotion_key_uniq").using("btree", sql`(((payload -> 'intakePromotion'::text) ->> 'key'::text))`).where(sql`(payload ? 'intakePromotion'::text)`),
+	index("work_items_issue_created_at_idx").using("btree", sql`workspace_id`, sql`to_timestamp((((created_ts)::numeric / 1000.0))::double precision)`).where(sql`(item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text]))`),
 	uniqueIndex("work_items_keyless_title_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload #>> '{admissionIdentity,titleKey}'::text[]))`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND (NULLIF(btrim((payload ->> 'watchdogKey'::text)), ''::text) IS NULL) AND (COALESCE((payload ->> 'lane'::text), 'improvement'::text) <> 'observation'::text) AND ((payload #>> '{admissionIdentity,schemaVersion}'::text[]) = 'admission-identity-v1'::text) AND (NULLIF(btrim((payload #>> '{admissionIdentity,titleKey}'::text[])), ''::text) IS NOT NULL))`),
 	index("work_items_obs_rubric_ref_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL)`),
 	index("work_items_obs_supersedes_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
