@@ -2,11 +2,11 @@
 -- Plan bm25-lexical-search-evoke-adoption-2026-10-10 P-009 (R-14, with R-10 kept working);
 -- decisions D-011 §2-§5, D-012 and D-016.
 --
--- KEPT (D-016). work_items._search and session_turns.text_tsv are NOT retired: the work_item
--- and session_turn sources of search:semantic fuse an exact list (legacy AND + ts_rank_cd)
--- with their BM25 list, and that list reads the stored column and its GIN index. Their
--- bm25_legacy_tsv_columns() rows carry kept_for = 'exact-list', and the function reports them
--- as 'kept:exact-list' without touching them.
+-- KEPT (D-016 plus the measured WI-6554700010008535 follow-up). work_items._search,
+-- session_turns.text_tsv and harness_plans._search are NOT retired: their search sources fuse
+-- a bounded legacy AND + ts_rank_cd exact list with BM25, and each exact list reads the stored
+-- column and its GIN index. Their bm25_legacy_tsv_columns() rows carry kept_for = 'exact-list',
+-- and the function reports them as 'kept:exact-list' without touching them.
 --
 -- WHAT. On each corpus whose BM25 index is valid on this host, the stored legacy tsvector
 -- column, and with it its GIN index, is replaced by a column of the same name and type defined
@@ -59,7 +59,7 @@ LANGUAGE sql IMMUTABLE PARALLEL SAFE
 AS $fn$
   VALUES
     ('work_items', '_search', NULL::text, 'exact-list'::text),
-    ('harness_plans', '_search', NULL, NULL),
+    ('harness_plans', '_search', NULL, 'exact-list'),
     ('goals', '_search', NULL, NULL),
     ('report_library', 'search_tsv', NULL, NULL),
     ('session_turns', 'text_tsv', NULL, 'exact-list'),
