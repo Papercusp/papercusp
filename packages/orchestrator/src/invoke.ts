@@ -4095,9 +4095,10 @@ export async function invoke(
                 cleanup: false,
                 model: resolveCodexModel(resolvedModel),
                 contextConfig,
+                gatewayEnv: spawnEnv,
                 ...signingPg,
               }
-            : { model: resolveCodexModel(resolvedModel), contextConfig, ...signingPg });
+            : { model: resolveCodexModel(resolvedModel), contextConfig, gatewayEnv: spawnEnv, ...signingPg });
           spawnEnv.CODEX_HOME = codexHomeHandle.codexHome;
         } else {
           // writeSignedSpawnMcp signs the URL params. In strict mode

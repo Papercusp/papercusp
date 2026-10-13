@@ -2,7 +2,7 @@
  * Tests for per-spawn `.mcp.json` writing.
  * Run with: npx vitest run libs/papercusp/packages/orchestrator/src/spawn-mcp.test.ts
  */
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -694,6 +694,70 @@ describe('async spawn config writers use stale-port recovery', () => {
     } finally {
       codexHandle.cleanup();
     }
+  });
+});
+
+describe('per-spawn Codex account route', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  async function writtenConfig(gatewayEnv?: Record<string, string | undefined>) {
+    const handle = await writeSignedSpawnCodexHome({
+      harnessSlug: 'demo', workspaceId: 'ws', role: 'release-fixer',
+      runId: 'route-run', spawnId: 'route-spawn', clientId: 'route-owner',
+      operatorUrl: 'http://127.0.0.1:3070',
+    }, {
+      model: TEST_CODEX_MODEL, gatewayEnv, probe: async () => true,
+      pg: (async () => [{ value_b64: Buffer.alloc(32, 7).toString('base64'),
+        rotated_at: new Date('2026-08-25T00:00:00Z') }]) as SpawnMcpSigningPg,
+    });
+    try { return readFileSync(join(handle.codexHome, 'config.toml'), 'utf8'); }
+    finally { handle.cleanup(); }
+  }
+
+  it('auto route writes gateway config without pin when orchestrator env is unset', async () => {
+    vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', undefined);
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ID', undefined);
+    const toml = await writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'auto', PAPERCUSP_CODEX_GATEWAY: '1' });
+    expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
+    expect(toml).toContain('base_url = "http://127.0.0.1:');
+    expect(toml).toContain('"x-papercusp-owner" = "route-owner"');
+    expect(toml).not.toContain('"x-papercusp-account"');
+  });
+
+  it('absent route preserves gateway env fallback', async () => {
+    vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', '1');
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ID', 'legacy-account');
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ROUTING_MODE', undefined);
+    const toml = await writtenConfig();
+    expect(toml).toContain('model_provider = "papercusp-codex-gateway"');
+    expect(toml).toContain('"x-papercusp-account" = "legacy-account"');
+  });
+
+  it('pinned route writes requested account header', async () => {
+    const toml = await writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'pin', PAPERCUSP_CODEX_GATEWAY: '1', PAPERCUSP_ACCOUNT_ID: 'requested-account' });
+    expect(toml).toContain('"x-papercusp-account" = "requested-account"');
+  });
+
+  it('default route writes local config without env', async () => {
+    vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', undefined);
+    expect(await writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'default' })).not.toContain('papercusp-codex-gateway');
+  });
+
+  it('unresolvable auto gateway refuses spawn', async () => {
+    await expect(writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'auto' })).rejects.toThrow('explicit Codex gateway route is unresolved');
+  });
+
+  it('explicit default overrides gateway environment', async () => {
+    vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', '1');
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ID', 'parent-account');
+    expect(await writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'default' })).not.toContain('papercusp-codex-gateway');
+  });
+
+  it('explicit pin overrides parent account environment', async () => {
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ID', 'parent-account');
+    const toml = await writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'pin', PAPERCUSP_CODEX_GATEWAY: '1', PAPERCUSP_ACCOUNT_ID: 'requested-account' });
+    expect(toml).toContain('"x-papercusp-account" = "requested-account"');
+    expect(toml).not.toContain('parent-account');
   });
 });
 

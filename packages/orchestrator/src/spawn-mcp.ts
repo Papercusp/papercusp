@@ -594,6 +594,8 @@ export async function writeSignedSpawnCodexHome(
     cleanup?: boolean;
     model?: string | null;
     contextConfig?: SpawnCodexContextConfig | null;
+    /** Resolved child route. Omission alone preserves the legacy process-env fallback. */
+    gatewayEnv?: Record<string, string | undefined>;
     /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
     pg?: SpawnMcpSigningPg;
   } & SpawnMcpRouteProbeOptions = {},
@@ -615,7 +617,14 @@ export async function writeSignedSpawnCodexHome(
   // codex does NOT env-expand inside config.toml; the URL is fully baked
   // (incl. the sig), so no bearer_token_env_var is needed (unlike the
   // superuser codex-su home, which uses ?superuser=1 + a bearer).
-  const toml = buildSpawnCodexConfigToml(mcpUrl, process.env.PAPERCUSP_ACCOUNT_ID, {
+  const gatewayEnv = opts.gatewayEnv ?? process.env;
+  const routeMode = gatewayEnv.PAPERCUSP_ACCOUNT_ROUTING_MODE;
+  if ((routeMode === 'auto' || routeMode === 'pin') && !gatewayEnv.PAPERCUSP_CODEX_GATEWAY) {
+    throw new Error('explicit Codex gateway route is unresolved; refusing local-credential fallback');
+  }
+  const accountId = routeMode === 'default' || routeMode === 'auto'
+    ? undefined : gatewayEnv.PAPERCUSP_ACCOUNT_ID;
+  const toml = buildSpawnCodexConfigToml(mcpUrl, accountId, {
     model: opts.model,
     ownerId: input.clientId || input.spawnId,
     priority: input.role,
@@ -623,7 +632,7 @@ export async function writeSignedSpawnCodexHome(
     // an explicit-auto (or an unpinned-after-validation-failure) spawn had no account id and so got
     // NO gateway config at all, silently falling back to direct ChatGPT egress on the local CLI
     // credential. PAPERCUSP_CODEX_GATEWAY carries "gateway on" independent of whether a pin resolved.
-    gatewayOn: !!process.env.PAPERCUSP_CODEX_GATEWAY,
+    gatewayOn: routeMode !== 'default' && !!gatewayEnv.PAPERCUSP_CODEX_GATEWAY,
     contextConfig: opts.contextConfig,
   });
   writeFileSync(join(codexHome, 'config.toml'), toml, 'utf8');
