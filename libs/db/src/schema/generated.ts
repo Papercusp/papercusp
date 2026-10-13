@@ -4388,6 +4388,7 @@ export const fallbackObservationsInHarnessShared = harnessShared.table("fallback
 	processTag: text("process_tag"),
 	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	correlationId: uuid("correlation_id"),
+	samples: integer().default(1).notNull(),
 }, (table) => [
 	index("fallback_observations_correlation_id_idx").using("btree", table.correlationId.asc().nullsLast().op("uuid_ops")).where(sql`(correlation_id IS NOT NULL)`),
 	index("fallback_observations_mechanism_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.mechanism.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -4395,6 +4396,7 @@ export const fallbackObservationsInHarnessShared = harnessShared.table("fallback
 	check("fallback_observations_counts_valid", sql`(eligible >= 0) AND (applied >= 0) AND (applied <= eligible)`),
 	check("fallback_observations_mechanism_nonempty", sql`length(btrim(mechanism)) > 0`),
 	check("fallback_observations_reason_nonempty", sql`length(btrim(reason)) > 0`),
+	check("fallback_observations_samples_positive", sql`samples >= 1`),
 ]);
 
 export const featureAuditConsolidatedInHarnessShared = harnessShared.table("feature_audit_consolidated", {
