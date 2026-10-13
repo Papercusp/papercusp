@@ -94,6 +94,13 @@ export function codexManagedFeaturesToml(
     // CLI versions are managed outside startup. An update dialog can block a
     // carry-respawn before it creates its native session or accepts wakes.
     'check_for_update_on_startup = false',
+    // WI-6554700010009529: the Codex PreToolUse hook rewrites shell commands to
+    // RTK, and RTK otherwise nags the tool output to install its own competing
+    // hook. Must equal operator-core's RTK_SESSION_ENV (pinned by
+    // role-codex-home.rtk-session-env.test.ts). Placed before [features] so
+    // [features] stays the block's last table for callers that append to it.
+    '[shell_environment_policy.set]',
+    'RTK_SUPPRESS_HOOK_WARNING = "1"',
     '# Papercusp owns context carry/restart; Codex native compaction must not cut first.',
     '[features]',
     ...(opts.disableMemories === false ? [] : ['memories = false']),

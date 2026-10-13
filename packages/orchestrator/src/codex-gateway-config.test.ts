@@ -17,6 +17,16 @@ describe('codexGatewayConfigToml model discovery', () => {
     }
   });
 
+  it('WI-6554700010009529: suppresses the RTK hook nag in every managed Codex home, before [features]', () => {
+    for (const opts of [{}, { disableMemories: false }, { headless: true }]) {
+      const config = codexManagedFeaturesToml(opts);
+      const table = config.indexOf('[shell_environment_policy.set]');
+      expect(table).toBeGreaterThan(-1);
+      expect(config[table + 1]).toBe('RTK_SUPPRESS_HOOK_WARNING = "1"');
+      expect(table).toBeLessThan(config.indexOf('[features]'));
+    }
+  });
+
   it('enables custom-provider model discovery in every managed Codex home', () => {
     expect(codexManagedFeaturesToml()).toContain('api_key_model_discovery = true');
     expect(codexManagedFeaturesToml({ disableMemories: false })).toContain('api_key_model_discovery = true');
