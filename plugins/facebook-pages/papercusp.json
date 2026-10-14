@@ -1,0 +1,61 @@
+{
+  "kind": "plugin",
+  "name": "facebook-pages",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Facebook Page posts, comments and replies, with host-held Page credentials and bounded rescans. Recorded-fake verified; live acceptance pending.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "facebook-pages",
+    "contractVersion": 1,
+    "displayName": "Facebook Pages",
+    "datatypes": ["social-post"],
+    "capabilities": ["social.post", "social.reply", "social.delete"],
+    "egressHosts": ["graph.facebook.com", "www.facebook.com"],
+    "oauth": {
+      "authorizeUrl": "https://www.facebook.com/v23.0/dialog/oauth",
+      "tokenUrl": "https://graph.facebook.com/v23.0/oauth/access_token",
+      "clientRegistrationRef": "facebook",
+      "scopeSeparator": ",",
+      "scopes": ["pages_show_list", "pages_read_engagement", "pages_read_user_content", "pages_manage_posts", "pages_manage_engagement"],
+      "identity": {
+        "url": "https://graph.facebook.com/v23.0/me?fields=id,name",
+        "idField": "id",
+        "displayNameField": "name"
+      },
+      "resourceToken": {
+        "url": "https://graph.facebook.com/v23.0/me/accounts?fields=id,access_token,tasks&limit=100",
+        "hosts": ["graph.facebook.com"],
+        "collectionField": "data",
+        "idField": "id",
+        "tokenField": "access_token",
+        "configKey": "pageId",
+        "permissions": { "field": "tasks", "required": ["MODERATE", "CREATE_CONTENT"] },
+        "nextUrlField": "paging.next"
+      }
+    },
+    "setup": {
+      "appRegistration": {
+        "createUrl": "https://developers.facebook.com/apps/",
+        "docsUrl": "https://developers.facebook.com/docs/facebook-login/facebook-login-for-business/",
+        "copyHint": "Create a Meta app with Facebook Login for Business, configure the OAuth callback, and request the declared Page scopes. Development mode is limited to app roles; other accounts require review."
+      }
+    },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "configSchema": {
+      "type": "object",
+      "required": ["pageId"],
+      "properties": {
+        "pageId": { "type": "string", "title": "Facebook Page id", "pattern": "^[0-9]+$" },
+        "watchWindow": { "type": "integer", "title": "Posts to watch for comments", "minimum": 1, "maximum": 25, "default": 25 },
+        "maxPostPages": { "type": "integer", "minimum": 1, "maximum": 20, "default": 20 },
+        "maxCommentPages": { "type": "integer", "minimum": 1, "maximum": 10, "default": 10 }
+      },
+      "additionalProperties": true
+    }
+  }
+}
