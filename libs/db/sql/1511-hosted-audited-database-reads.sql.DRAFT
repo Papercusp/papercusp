@@ -1,5 +1,8 @@
 -- P-013: extend 1509's scoped reader with live consent and a committed audit
 -- receipt bound to this exact backend transaction. No parallel audit table.
+-- Runtime prerequisite: 1513's immutable deletion-freeze predicate. Until
+-- that migration is installed, both application admission and guarded reads
+-- fail closed; do not arm either migration independently for production use.
 DO $role$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'harness_ops') THEN
@@ -8,6 +11,13 @@ BEGIN
 END
 $role$;
 GRANT USAGE ON SCHEMA papercusp_auth TO harness_ops;
+
+DROP POLICY IF EXISTS hosted_audited_database_org_owner ON papercusp_auth.organizations;
+CREATE POLICY hosted_audited_database_org_owner ON papercusp_auth.organizations
+  FOR SELECT TO hosted_owner USING (
+    current_setting('app.workspace_id', true) = 'hosted-control-plane-service'
+    AND id::text = NULLIF(current_setting('app.organization_id', true), '')
+  );
 
 CREATE OR REPLACE FUNCTION papercusp_auth.read_hosted_customer_export_rows_audited(
   p_store text, p_organization_id text, p_session_id uuid,
@@ -28,6 +38,15 @@ BEGIN
      OR p_organization_id IS NULL OR btrim(p_organization_id) = ''
      OR p_staff_principal_id IS NULL OR btrim(p_staff_principal_id) = '' THEN
     RAISE EXCEPTION 'audited database read session scope is invalid' USING ERRCODE = '42501';
+  END IF;
+  -- Re-evaluate at EVERY data read, including sessions opened before the
+  -- freeze. The immutable tombstone survives a stale provider upsert that
+  -- would otherwise restore organizations.status to active.
+  IF NOT EXISTS (
+    SELECT 1 FROM papercusp_auth.organizations
+     WHERE id::text = p_organization_id AND status = 'active'
+  ) OR papercusp_auth.hosted_customer_deletion_frozen(p_organization_id, NULL) IS DISTINCT FROM false THEN
+    RAISE EXCEPTION 'audited database read organization is inactive' USING ERRCODE = '42501';
   END IF;
   -- pg_stat_activity hides the ops backend's xact_start from hosted_owner;
   -- transaction_timestamp is exact, stable and independent of that ACL.
