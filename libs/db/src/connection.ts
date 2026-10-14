@@ -52,6 +52,8 @@ import {
   type AcquireTicketSnapshot,
 } from './acquire-registry';
 import { stampedTag } from './build-stamp';
+// cloud-portal-public-release-2026-10-13 P-005 / D-009: production resolves only explicit env.
+import { isProductionDeployment, resolveProductionDatabaseUrls } from './production-database-policy';
 
 /** Host-installed telemetry; identity validation must remain independent and fail-soft. */
 const discoveryIdentityTelemetry = pinModuleState<{
@@ -751,6 +753,14 @@ function resolveAppUrl(opts?: { operatorEnvironmentFile?: string }): string {
   if (_resolvedAppUrl && (_resolvedAppUrlSource === 'env' || _resolvedAppUrlSource === 'operator-env-file')) {
     return _resolvedAppUrl;
   }
+  // P-005 / R-3: in production only HARNESS_DATABASE_URL is accepted for the app role. None of
+  // the rungs below run: no admin-pin re-key with default credentials, no operator .env.local,
+  // no discovery file, no localhost fallback. A missing or unsafe URL throws.
+  if (isProductionDeployment()) {
+    _resolvedAppUrl = resolveProductionDatabaseUrls().appUrl;
+    _resolvedAppUrlSource = 'env';
+    return _resolvedAppUrl;
+  }
   if (process.env.HARNESS_DATABASE_URL) {
     _resolvedAppUrl = process.env.HARNESS_DATABASE_URL;
     _resolvedAppUrlSource = 'env';
@@ -838,6 +848,12 @@ function resolveAdminUrl(opts?: {
 }): string {
   // Env is stable for process lifetime → safe to cache.
   if (_resolvedAdminUrl && (_resolvedAdminUrlSource === 'env' || _resolvedAdminUrlSource === 'operator-env-file')) {
+    return _resolvedAdminUrl;
+  }
+  // P-005 / R-3: production accepts only explicit process env, validated (see resolveAppUrl).
+  if (isProductionDeployment()) {
+    _resolvedAdminUrl = resolveProductionDatabaseUrls().adminUrl;
+    _resolvedAdminUrlSource = 'env';
     return _resolvedAdminUrl;
   }
   if (process.env.HARNESS_ADMIN_DATABASE_URL) {

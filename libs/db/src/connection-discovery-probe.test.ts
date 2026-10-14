@@ -62,7 +62,8 @@ describe('discovery port-probe cost on the getOrgPg resolver path', () => {
       operatorEnvFile,
       "DATABASE_URL='postgresql://harness_admin:operator-secret@127.0.0.1:5432/papercusp'\n",
     );
-    const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+    // The redacted target report goes to stderr (31e9ad22: keeps JSON-protocol CLI stdout clean).
+    const info = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     const operatorUrl = 'postgresql://harness_admin:operator-secret@127.0.0.1:5432/papercusp';
     const urls = _resolveUrlsForTests(operatorEnvFile);

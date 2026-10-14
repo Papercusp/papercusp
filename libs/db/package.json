@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./connection": "./src/connection.ts",
     "./acquire-registry": "./src/acquire-registry.ts",
-    "./tenant-context": "./src/tenant-context.ts"
+    "./tenant-context": "./src/tenant-context.ts",
+    "./production-database-policy": "./src/production-database-policy.ts"
   },
   "dependencies": {
     "@papercusp/embedded-pg-discovery": "*",
