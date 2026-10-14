@@ -211,6 +211,20 @@ async function invoke(request, host) {
   if (request.capability === 'social.reply') {
     if (args.target?.platform && args.target.platform !== 'instagram') throw fault('transient', 'wrong_platform_target');
     if (args.target?.hidden === true) throw fault('transient', 'hidden_comment');
+    // The host passes the stored canonical payload; callers cannot supply these
+    // vendor selectors. Mentions have a different write edge from owned comments.
+    const payload = args.payload;
+    if (payload?.kind === 'mention') {
+      if (payload.platform !== 'instagram' || !['comment', 'caption'].includes(payload.mentionKind)
+        || !/^\d+$/.test(str(payload.mediaId))
+        || (payload.mentionKind === 'comment' && !/^\d+$/.test(str(payload.commentId)))) throw fault('transient', 'invalid_mention_reply');
+      if (!str(args.text).trim()) throw fault('transient', 'invalid_reply');
+      const body = await graph(host, request.source, urlFor(`${config.igUserId}/mentions`), 'POST', {
+        media_id: payload.mediaId, ...(payload.mentionKind === 'comment' ? { comment_id: payload.commentId } : {}), message: args.text,
+      });
+      if (!str(body.id)) throw fault('transient', 'write_unconfirmed_no_server_id');
+      return { externalId: body.id };
+    }
     const target = targetId(str(args.target?.topLevelCommentId) || str(args.target?.objectId) || str(args.target?.externalId) || str(args.ref?.externalId));
     if (!target || !str(args.text).trim()) throw fault('transient', 'invalid_reply');
     const body = await graph(host, request.source, urlFor(`${target}/replies`), 'POST', { message: args.text });

@@ -101,7 +101,7 @@
               "properties": {
                 "key": {
                   "type": "string",
-                  "pattern": "^ext:instagram:(comment|reply)$"
+                  "pattern": "^ext:instagram:(comment|reply|mention)$"
                 },
                 "source": {
                   "type": "string",
@@ -111,7 +111,8 @@
                   "type": "string",
                   "enum": [
                     "comment",
-                    "reply"
+                    "reply",
+                    "mention"
                   ]
                 },
                 "sourceId": {
@@ -168,6 +169,23 @@
       }
     ],
     "bindings": [
+      {
+        "id": "instagram-mention",
+        "source": {
+          "kind": "external",
+          "sourceKind": "instagram",
+          "oauthField": "facebookInstagram"
+        },
+        "target": "record-instagram-event",
+        "eventPattern": "ext:instagram:mention",
+        "filter": {
+          "all": [
+            { "id": { "exists": true } },
+            { "text": { "exists": true } }
+          ]
+        },
+        "mapping": { "mode": "payload-context" }
+      },
       {
         "id": "instagram-comment",
         "source": {
