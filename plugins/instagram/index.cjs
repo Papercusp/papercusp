@@ -158,12 +158,55 @@ function mediaFrom(args) {
   return media;
 }
 function targetId(raw) { if (!/^[A-Za-z0-9_-]+$/.test(str(raw))) throw fault('transient', 'invalid_object_id'); return raw; }
+async function normalizeMentions(request, host) {
+  const config = configOf(request.args?.sourceConfig);
+  const envelope = request.args?.envelope;
+  if (!object(envelope) || envelope.object !== 'instagram') return { records: [] };
+  if (!Array.isArray(envelope.entry) || envelope.entry.length > 1000) throw fault('transient', 'malformed_mention_envelope');
+  const records = new Map();
+  let changes = 0;
+  for (const entry of envelope.entry) {
+    // A Meta app may serve several accounts; admit only this connected account.
+    if (str(entry?.id) !== config.igUserId) continue;
+    if (!Array.isArray(entry.changes)) throw fault('transient', 'malformed_mention_envelope');
+    for (const change of entry.changes) {
+      if (++changes > 1000) throw fault('transient', 'mention_batch_too_large');
+      if (change?.field !== 'mentions') continue;
+      const value = change.value;
+      const mediaId = str(value?.media_id);
+      const commentId = str(value?.comment_id);
+      if (!/^\d+$/.test(mediaId) || (value?.comment_id !== undefined && !/^\d+$/.test(commentId))) throw fault('transient', 'malformed_mention_ids');
+      const id = commentId || mediaId;
+      if (records.has(id)) continue;
+      const field = commentId ? 'mentioned_comment' : 'mentioned_media';
+      const selection = commentId
+        ? `mentioned_comment.comment_id(${commentId}){id,text,timestamp,like_count,media{id}}`
+        : `mentioned_media.media_id(${mediaId}){id,caption,timestamp,like_count,username,media_type}`;
+      const body = await graph(host, request.source, urlFor(config.igUserId, { fields: selection }));
+      const item = body?.[field];
+      if (str(body?.id) !== config.igUserId || str(item?.id) !== id || !instant(item?.timestamp)
+        || (commentId && str(item?.media?.id) !== mediaId)) throw fault('transient', 'malformed_mention_lookup');
+      const payload = {
+        id, platform: 'instagram', kind: 'mention', subjectId: mediaId, mediaId,
+        text: str(commentId ? item.text : item.caption), occurredAt: item.timestamp,
+        replyToId: commentId || mediaId, mentionKind: commentId ? 'comment' : 'caption',
+      };
+      if (commentId) payload.commentId = commentId;
+      if (str(item.username)) payload.author = item.username;
+      if (typeof item.like_count === 'number' && Number.isFinite(item.like_count)) payload.likeCount = item.like_count;
+      if (!payload.text) payload.textAbsent = true;
+      records.set(id, { datatype: 'social-post', nativeId: id, event: 'mention', payload, occurredAt: item.timestamp, version: `mention:${id}@${item.timestamp}` });
+    }
+  }
+  return { records: [...records.values()] };
+}
 async function statusOf(host, source, containerId) {
   const probe = await graph(host, source, urlFor(containerId, { fields: 'status_code' }));
   if (!['FINISHED', 'IN_PROGRESS', 'ERROR', 'EXPIRED', 'PUBLISHED'].includes(probe?.status_code)) throw fault('transient', 'unrecognised_container_status');
   return probe.status_code;
 }
 async function invoke(request, host) {
+  if (request.capability === 'ingress.normalize') return normalizeMentions(request, host);
   const config = configOf(request.config); const args = request.args || {};
   if (request.capability === 'social.reply') {
     if (args.target?.platform && args.target.platform !== 'instagram') throw fault('transient', 'wrong_platform_target');

@@ -15,17 +15,23 @@
     "contractVersion": 1,
     "displayName": "Instagram",
     "datatypes": ["social-post"],
-    "capabilities": ["social.post", "social.reply", "social.delete"],
+    "capabilities": ["social.post", "social.reply", "social.delete", "ingress.normalize"],
     "egressHosts": ["graph.facebook.com", "www.instagram.com", "www.facebook.com"],
     "oauth": {
       "authorizeUrl": "https://www.facebook.com/v26.0/dialog/oauth",
       "tokenUrl": "https://graph.facebook.com/v26.0/oauth/access_token",
       "clientRegistrationRef": "facebook",
       "scopeSeparator": ",",
-      "scopes": ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement"],
+      "scopes": ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement", "pages_manage_metadata"],
       "identity": { "url": "https://graph.facebook.com/v26.0/me?fields=id,name", "idField": "id", "displayNameField": "name" }
     },
+    "push": {
+      "signature": { "header": "x-hub-signature-256", "algorithm": "hmac-sha256", "encoding": "hex", "prefix": "sha256=", "oauthClientSecret": true },
+      "verification": { "modeParam": "hub.mode", "modeValue": "subscribe", "tokenParam": "hub.verify_token", "challengeParam": "hub.challenge", "credentialRef": "webhook_verify_token" },
+      "delivery": "normalize"
+    },
     "setup": {
+      "credentials": [{ "key": "webhook_verify_token", "label": "Webhook verify token", "help": "Use the same verify token in the Meta app's Webhooks settings." }],
       "appRegistration": {
         "createUrl": "https://developers.facebook.com/apps/",
         "docsUrl": "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/",
