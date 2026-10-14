@@ -655,9 +655,13 @@ describe('async spawn config writers use stale-port recovery', () => {
     else process.env.PAPERCUSP_HONO_PORT = stalePort;
     if (suBearer === undefined) delete process.env.PAPERCUSP_SPAWN_SU_BEARER;
     else process.env.PAPERCUSP_SPAWN_SU_BEARER = suBearer;
+    vi.unstubAllEnvs();
   });
 
-  it('writes the recovered URL to signed .mcp.json and Codex config.toml', async () => {
+  it.each(['auto', 'pin'])('writes the recovered URL to signed .mcp.json and Codex config.toml with ambient %s routing', async ambientRoute => {
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ROUTING_MODE', ambientRoute);
+    vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', undefined);
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ID', undefined);
     const probe = async (candidate: string) => candidate === 'http://127.0.0.1:3070/api/mcp';
     const pg = (async () => [{
       value_b64: Buffer.alloc(32, 7).toString('base64'),
@@ -684,6 +688,8 @@ describe('async spawn config writers use stale-port recovery', () => {
       codexHome,
       cleanup: false,
       model: TEST_CODEX_MODEL,
+      // This fixture exercises endpoint recovery with a resolved child route.
+      gatewayEnv: { PAPERCUSP_ACCOUNT_ROUTING_MODE: 'default' },
       probe,
       onRecovery: () => {},
       pg,
@@ -691,6 +697,8 @@ describe('async spawn config writers use stale-port recovery', () => {
     try {
       expect(readFileSync(join(codexHome, 'config.toml'), 'utf8'))
         .toContain('url = "http://127.0.0.1:3070/api/mcp?');
+      expect(readFileSync(join(codexHome, 'config.toml'), 'utf8'))
+        .not.toContain('papercusp-codex-gateway');
     } finally {
       codexHandle.cleanup();
     }
