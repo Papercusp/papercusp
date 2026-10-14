@@ -4,7 +4,7 @@
   "name": "instagram",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "Instagram professional-account comments, replies and media posts through host-held Facebook Login credentials. Recorded-fake verified; live acceptance pending.",
+  "description": "Instagram professional-account comments, mentions, replies and media posts through host-held Facebook Login credentials. Recorded-fake verified; live acceptance pending.",
   "author": "Papercusp",
   "license": "MIT",
   "main": "./index.cjs",
@@ -39,7 +39,8 @@
       "properties": {
         "igUserId": { "type": "string", "title": "Instagram professional account id", "pattern": "^[0-9]+$" },
         "watchWindow": { "type": "integer", "title": "Media to watch for comments", "minimum": 1, "maximum": 25, "default": 25 },
-        "maxMediaPages": { "type": "integer", "minimum": 1, "maximum": 20, "default": 20 }
+        "maxMediaPages": { "type": "integer", "minimum": 1, "maximum": 20, "default": 20 },
+        "maxMentionPages": { "type": "integer", "title": "Mention pages to scan", "minimum": 1, "maximum": 20, "default": 20 }
       },
       "additionalProperties": true
     }
