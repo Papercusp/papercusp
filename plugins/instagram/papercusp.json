@@ -1,0 +1,47 @@
+{
+  "$schema": "https://papercuspai.com/schema/papercusp-plugin.schema.json",
+  "kind": "plugin",
+  "name": "instagram",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Instagram professional-account comments, replies and media posts through host-held Facebook Login credentials. Recorded-fake verified; live acceptance pending.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "instagram",
+    "contractVersion": 1,
+    "displayName": "Instagram",
+    "datatypes": ["social-post"],
+    "capabilities": ["social.post", "social.reply", "social.delete"],
+    "egressHosts": ["graph.facebook.com", "www.instagram.com", "www.facebook.com"],
+    "oauth": {
+      "authorizeUrl": "https://www.facebook.com/v23.0/dialog/oauth",
+      "tokenUrl": "https://graph.facebook.com/v23.0/oauth/access_token",
+      "clientRegistrationRef": "facebook",
+      "scopeSeparator": ",",
+      "scopes": ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement"],
+      "identity": { "url": "https://graph.facebook.com/v23.0/me?fields=id,name", "idField": "id", "displayNameField": "name" }
+    },
+    "setup": {
+      "appRegistration": {
+        "createUrl": "https://developers.facebook.com/apps/",
+        "docsUrl": "https://developers.facebook.com/docs/instagram-platform/instagram-api-with-facebook-login/",
+        "copyHint": "Create a Meta app with Instagram API through Facebook Login for Business, configure the OAuth callback, and request the declared professional-account scopes. Development mode is limited to app roles; other accounts require review."
+      }
+    },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "configSchema": {
+      "type": "object",
+      "required": ["igUserId"],
+      "properties": {
+        "igUserId": { "type": "string", "title": "Instagram professional account id", "pattern": "^[0-9]+$" },
+        "watchWindow": { "type": "integer", "title": "Media to watch for comments", "minimum": 1, "maximum": 25, "default": 25 },
+        "maxMediaPages": { "type": "integer", "minimum": 1, "maximum": 20, "default": 20 }
+      },
+      "additionalProperties": true
+    }
+  }
+}
