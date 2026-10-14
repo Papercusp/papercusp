@@ -212,6 +212,9 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	suClientDetachedAt: timestamp("su_client_detached_at", { withTimezone: true, mode: 'string' }),
 	suHostOwner: jsonb("su_host_owner"),
 	launchHarnessProjection: jsonb("launch_harness_projection"),
+	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
+	retiredBy: text("retired_by"),
+	retiredReason: text("retired_reason"),
 }, (table) => [
 	index("adv_sessions_app_operation_caller_idx").using("btree", sql`workspace_id`, sql`split_part((((launch_spec -> 'acceptedOperation'::text) -> 'pin'::text) ->> 'callerId'::text), '/'::text, 1)`).where(sql`(launch_spec ? 'acceptedOperation'::text)`),
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
@@ -4908,6 +4911,91 @@ export const goalsInHarnessShared = harnessShared.table("goals", {
 	check("goals_properties_object", sql`jsonb_typeof(properties) = 'object'::text`),
 	check("goals_property_schema_object", sql`jsonb_typeof(property_schema) = 'object'::text`),
 	check("goals_workspace_nonempty", sql`workspace_id <> ''::text`),
+]);
+
+export const governanceDelegationsInHarnessShared = harnessShared.table("governance_delegations", {
+	delegationId: text("delegation_id").default(sql`(gen_random_uuid())`).primaryKey().notNull(),
+	principal: text().notNull(),
+	principalKind: text("principal_kind").notNull(),
+	layerId: text("layer_id").notNull(),
+	capabilities: text().array().notNull(),
+	grantedBy: text("granted_by").notNull(),
+	reason: text().notNull(),
+	grantedAt: timestamp("granted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	revokedBy: text("revoked_by"),
+	revocationReason: text("revocation_reason"),
+}, (table) => [
+	index("governance_delegations_layer_idx").using("btree", table.layerId.asc().nullsLast().op("text_ops")),
+	index("governance_delegations_principal_idx").using("btree", table.principal.asc().nullsLast().op("text_ops"), table.layerId.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
+	foreignKey({
+			columns: [table.layerId],
+			foreignColumns: [governancePolicyLayersInHarnessShared.layerId],
+			name: "governance_delegations_layer_id_fkey"
+		}),
+	check("governance_delegations_capabilities_ck", sql`(cardinality(capabilities) > 0) AND (capabilities <@ ARRAY['prepare'::text, 'approve'::text, 'delegate'::text])`),
+	check("governance_delegations_expiry_ck", sql`expires_at > granted_at`),
+	check("governance_delegations_granted_by_check", sql`length(btrim(granted_by)) > 0`),
+	check("governance_delegations_kind_matches_principal_ck", sql`(principal_kind = 'human'::text) = (principal ~ '^(admin|user):'::text)`),
+	check("governance_delegations_no_self_grant_ck", sql`(granted_by <> principal) OR (granted_by = 'bootstrap'::text)`),
+	check("governance_delegations_principal_check", sql`length(btrim(principal)) > 0`),
+	check("governance_delegations_principal_kind_check", sql`principal_kind = ANY (ARRAY['human'::text, 'service'::text])`),
+	check("governance_delegations_reason_check", sql`length(btrim(reason)) > 0`),
+	check("governance_delegations_revocation_triplet_ck", sql`((revoked_at IS NULL) AND (revoked_by IS NULL) AND (revocation_reason IS NULL)) OR ((revoked_at IS NOT NULL) AND (length(btrim(revoked_by)) > 0) AND (length(btrim(revocation_reason)) > 0))`),
+	check("governance_delegations_service_prepare_only_ck", sql`(principal_kind = 'human'::text) OR (NOT (capabilities && ARRAY['approve'::text, 'delegate'::text]))`),
+	primaryKey({ columns: [table.delegationId], name: "governance_delegations_pkey"}),
+
+]);
+
+export const governancePolicyLayerVersionsInHarnessShared = harnessShared.table("governance_policy_layer_versions", {
+	layerId: text("layer_id").notNull(),
+	version: integer().notNull(),
+	level: text().notNull(),
+	scopeRef: text("scope_ref").notNull(),
+	parentLayerId: text("parent_layer_id"),
+	rules: jsonb().notNull(),
+	exceptions: jsonb().notNull(),
+	contentHash: text("content_hash").notNull(),
+	actor: text().notNull(),
+	reason: text().notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.layerId],
+			foreignColumns: [governancePolicyLayersInHarnessShared.layerId],
+			name: "governance_policy_layer_versions_layer_id_fkey"
+		}),
+	primaryKey({ columns: [table.layerId, table.version], name: "governance_policy_layer_versions_pkey"}),
+	check("governance_policy_layer_versions_reason_check", sql`length(btrim(reason)) > 0`),
+	check("governance_policy_layer_versions_version_check", sql`version >= 1`),
+]);
+
+export const governancePolicyLayersInHarnessShared = harnessShared.table("governance_policy_layers", {
+	layerId: text("layer_id").primaryKey().notNull(),
+	level: text().notNull(),
+	scopeRef: text("scope_ref").notNull(),
+	parentLayerId: text("parent_layer_id"),
+	version: integer().notNull(),
+	rules: jsonb().default({}).notNull(),
+	exceptions: jsonb().default([]).notNull(),
+	contentHash: text("content_hash").notNull(),
+	updatedBy: text("updated_by").notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	uniqueIndex("governance_policy_layers_level_scope_uq").using("btree", table.level.asc().nullsLast().op("text_ops"), table.scopeRef.asc().nullsLast().op("text_ops")),
+	index("governance_policy_layers_parent_idx").using("btree", table.parentLayerId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.parentLayerId],
+			foreignColumns: [table.layerId],
+			name: "governance_policy_layers_parent_layer_id_fkey"
+		}),
+	check("governance_policy_layers_level_check", sql`level = ANY (ARRAY['organization'::text, 'department'::text, 'workspace'::text])`),
+	check("governance_policy_layers_no_self_parent", sql`parent_layer_id IS DISTINCT FROM layer_id`),
+	check("governance_policy_layers_root_is_org", sql`(parent_layer_id IS NULL) = (level = 'organization'::text)`),
+	check("governance_policy_layers_version_check", sql`version >= 1`),
+	primaryKey({ columns: [table.layerId], name: "governance_policy_layers_pkey"}),
+
 ]);
 
 export const gymAutoloopConfigInHarnessShared = harnessShared.table("gym_autoloop_config", {
@@ -10590,6 +10678,69 @@ export const secretsGuardPathExemptionsInHarnessShared = harnessShared.table("se
 	pgPolicy("secrets_guard_path_exemptions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const sensitiveActionApprovalsInHarnessShared = harnessShared.table("sensitive_action_approvals", {
+	requestId: text("request_id").notNull(),
+	approver: text().notNull(),
+	decision: text().notNull(),
+	reason: text().notNull(),
+	decidedAt: timestamp("decided_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.requestId],
+			foreignColumns: [sensitiveActionRequestsInHarnessShared.requestId],
+			name: "sensitive_action_approvals_request_id_fkey"
+		}),
+	primaryKey({ columns: [table.approver, table.requestId], name: "sensitive_action_approvals_pkey"}),
+	check("sensitive_action_approvals_approver_check", sql`approver ~ '^(admin|user):'::text`),
+	check("sensitive_action_approvals_decision_check", sql`decision = ANY (ARRAY['approve'::text, 'deny'::text])`),
+	check("sensitive_action_approvals_reason_check", sql`length(btrim(reason)) > 0`),
+]);
+
+export const sensitiveActionRequestsInHarnessShared = harnessShared.table("sensitive_action_requests", {
+	requestId: text("request_id").default(sql`(gen_random_uuid())`).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	actionKind: text("action_kind").notNull(),
+	targetLayerId: text("target_layer_id").notNull(),
+	authorityLayerId: text("authority_layer_id").notNull(),
+	payload: jsonb().notNull(),
+	payloadHash: text("payload_hash").notNull(),
+	chainRevision: text("chain_revision"),
+	baseVersion: integer("base_version").notNull(),
+	simulation: jsonb().notNull(),
+	preparedBy: text("prepared_by").notNull(),
+	reason: text().notNull(),
+	requiredApprovals: integer("required_approvals").default(1).notNull(),
+	status: text().default('pending').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	approvedAt: timestamp("approved_at", { withTimezone: true, mode: 'string' }),
+	executeBy: timestamp("execute_by", { withTimezone: true, mode: 'string' }),
+	executedAt: timestamp("executed_at", { withTimezone: true, mode: 'string' }),
+	executedBy: text("executed_by"),
+	result: jsonb(),
+}, (table) => [
+	index("sensitive_action_requests_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['pending'::text, 'approved'::text]))`),
+	index("sensitive_action_requests_target_idx").using("btree", table.targetLayerId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.authorityLayerId],
+			foreignColumns: [governancePolicyLayersInHarnessShared.layerId],
+			name: "sensitive_action_requests_authority_layer_id_fkey"
+		}),
+	check("sensitive_action_requests_action_kind_check", sql`length(btrim(action_kind)) > 0`),
+	check("sensitive_action_requests_approved_ck", sql`(status <> ALL (ARRAY['approved'::text, 'executed'::text])) OR ((approved_at IS NOT NULL) AND (execute_by IS NOT NULL))`),
+	check("sensitive_action_requests_base_version_check", sql`base_version >= 0`),
+	check("sensitive_action_requests_executed_ck", sql`(status = 'executed'::text) = ((executed_at IS NOT NULL) AND (executed_by IS NOT NULL))`),
+	check("sensitive_action_requests_expiry_ck", sql`expires_at > created_at`),
+	check("sensitive_action_requests_payload_hash_check", sql`payload_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("sensitive_action_requests_prepared_by_check", sql`length(btrim(prepared_by)) > 0`),
+	check("sensitive_action_requests_reason_check", sql`length(btrim(reason)) > 0`),
+	check("sensitive_action_requests_required_approvals_check", sql`(required_approvals >= 1) AND (required_approvals <= 5)`),
+	check("sensitive_action_requests_status_check", sql`status = ANY (ARRAY['pending'::text, 'approved'::text, 'executed'::text, 'denied'::text, 'expired'::text, 'cancelled'::text])`),
+	check("sensitive_action_requests_workspace_id_check", sql`length(btrim(workspace_id)) > 0`),
+	primaryKey({ columns: [table.requestId], name: "sensitive_action_requests_pkey"}),
+
+]);
+
 export const sentinelSaysInHarnessShared = harnessShared.table("sentinel_says", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	line: text().notNull(),
@@ -10664,6 +10815,7 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	lastOrientDisclosuresAt: timestamp("last_orient_disclosures_at", { withTimezone: true, mode: 'string' }),
 	ambientExcludedRefs: jsonb("ambient_excluded_refs"),
 	pendingCarryRespawn: jsonb("pending_carry_respawn"),
+	recoveryDelivery: jsonb("recovery_delivery"),
 }, (table) => [
 	index("session_briefs_goal_id_idx").using("btree", table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
@@ -11286,6 +11438,8 @@ export const spawnedAgentsInHarnessShared = harnessShared.table("spawned_agents"
 	fleetSlug: text("fleet_slug"),
 	resultPath: text("result_path"),
 	governorObservation: jsonb("governor_observation"),
+	accountRoute: jsonb("account_route"),
+	firstGatewayRequest: jsonb("first_gateway_request"),
 }, (table) => [
 	index("spawned_agents_active_heartbeat_idx").using("btree", table.heartbeatAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(status = ANY (ARRAY['running'::text, 'restarting'::text]))`),
 	index("spawned_agents_fleet_slug_running_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops")).where(sql`((fleet_slug IS NOT NULL) AND (status = ANY (ARRAY['running'::text, 'restarting'::text])))`),

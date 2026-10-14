@@ -18,3 +18,73 @@ export function repairEmptyArrayDefaults(schema) {
     fixed,
   };
 }
+
+// A default whose content opens with a bare identifier call, optionally inside
+// parentheses: `gen_random_uuid()`, `(gen_random_uuid())`, `now()`. A JS member
+// call such as `Date.now()` does not match, because of the dot.
+const RAW_SQL_CALL = /^\(*[A-Za-z_][A-Za-z0-9_]*\(/;
+
+/**
+ * Wrap SQL function-call defaults that drizzle-kit emitted as raw JS.
+ *
+ * For a text column with `DEFAULT gen_random_uuid()::text`, drizzle-kit drops
+ * the cast and emits `.default((gen_random_uuid()))`. That is a call to an
+ * undefined JS function, so importing generated.ts throws
+ * `ReferenceError: gen_random_uuid is not defined` and every consumer of the
+ * schema fails to load (WI-6554700010011854, migration 1498). The older
+ * quoted-default repair in pull-schema.mjs only wraps content containing `\'`,
+ * so a call with no string literal slipped through.
+ *
+ * Walks each `.default(` to its balanced close, skipping backtick regions so
+ * an existing sql`...` is never rewrapped.
+ *
+ * @param {string} schema drizzle-kit's generated schema source
+ * @returns {{ schema: string, fixed: number }} the repaired source and the
+ *   number of defaults wrapped in sql``
+ */
+export function repairRawSqlCallDefaults(schema) {
+  const marker = '.default(';
+  const out = [];
+  let fixed = 0;
+  let i = 0;
+  while (i < schema.length) {
+    const idx = schema.indexOf(marker, i);
+    if (idx === -1) {
+      out.push(schema.slice(i));
+      break;
+    }
+    out.push(schema.slice(i, idx));
+    const start = idx + marker.length;
+    let depth = 1;
+    let j = start;
+    while (j < schema.length && depth > 0) {
+      const ch = schema[j];
+      if (ch === '`') {
+        const close = schema.indexOf('`', j + 1);
+        if (close === -1) {
+          j = schema.length;
+          break;
+        }
+        j = close + 1;
+        continue;
+      }
+      if (ch === '(') depth++;
+      else if (ch === ')') depth--;
+      j++;
+    }
+    if (depth !== 0) {
+      // Unbalanced tail: leave it untouched rather than guess.
+      out.push(schema.slice(idx));
+      break;
+    }
+    const inner = schema.slice(start, j - 1);
+    if (!inner.includes('`') && RAW_SQL_CALL.test(inner.trim())) {
+      out.push(`${marker}sql\`${inner.replace(/\\'/g, "'")}\`)`);
+      fixed++;
+    } else {
+      out.push(schema.slice(idx, j));
+    }
+    i = j;
+  }
+  return { schema: out.join(''), fixed };
+}

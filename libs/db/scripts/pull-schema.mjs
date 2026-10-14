@@ -57,7 +57,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, realpathSync, rmSync, readdirSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
-import { repairEmptyArrayDefaults } from '../src/schema/schema-defaults.mjs';
+import { repairEmptyArrayDefaults, repairRawSqlCallDefaults } from '../src/schema/schema-defaults.mjs';
 import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
@@ -448,6 +448,13 @@ let fixedFnDefaults = 0;
   }
   schema = out.join('');
 }
+
+// Fix 3b: a function-call default with no string literal, e.g.
+// `.default((gen_random_uuid()))` for `DEFAULT gen_random_uuid()::text`, is
+// raw JS that throws on import. Fix 3 above only wraps content containing `\'`.
+const repairedRawSqlCalls = repairRawSqlCallDefaults(schema);
+schema = repairedRawSqlCalls.schema;
+const fixedRawSqlCallDefaults = repairedRawSqlCalls.fixed;
 
 // Fix 4: drizzle-kit emits `unknown(...)` + a `// TODO: failed to parse
 // database type 'X'` comment for PG types it can't introspect. Map bytea →
@@ -956,6 +963,7 @@ console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedEmptyArrayDefaults} empty-array defaults`);
 console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
+console.log(`    fixed ${fixedRawSqlCallDefaults} bare SQL function-call defaults (wrapped in sql\`\`)`);
 console.log(`    typed ${fixedUnknownCols} unparsed columns via customType (bytea→Buffer, tsvector→string)`);
 console.log(`    rewrote ${fixedUnknownFallback} still-unmapped unknown-type columns to text()`);
 console.log(`    injected ${fixedMissingPks} missing primary keys`);
