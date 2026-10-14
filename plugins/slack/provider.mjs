@@ -75,9 +75,10 @@ function mentionsOf(message) {
 /**
  * Which chat event a Slack Events API event is, or null when it is not one this provider records.
  * `app_mention` is a mention; a direct message is a dm; any other channel post is a message. Bot and
- * app posts, and edits/joins/deletions (any `subtype`), are never recorded, so the app never reacts
- * to its own replies. The one exception is the source's declared drill identity
- * ({@link drillBotAllowed}), recorded as a plain channel message.
+ * app posts, and joins and other system posts (any `subtype`), are never recorded, so the app never
+ * reacts to its own replies. The one exception is the source's declared drill identity
+ * ({@link drillBotAllowed}), recorded as a plain channel message. Edits and deletions of a recorded
+ * message are not new posts: {@link changeRecords} turns them into new versions of that message.
  */
 export function chatEventKind(event, sourceConfig = {}) {
   if (!event || event.subtype) return null;
@@ -195,8 +196,82 @@ export async function openReportForm(fetchSlack, { triggerId, channelId, ts }) {
   );
 }
 
+/**
+ * The record that removes a message: same native id, `deleted`, no text. A redelivery, or the
+ * tombstone Slack leaves for a deleted message that has replies, dedupes onto it.
+ */
+function deletedRecord({ channelId, ts, threadTs, sender, occurredAt, id, slack = {} }) {
+  return {
+    ...messageRecord({ event: 'deleted', version: `deleted:${channelId}:${ts}`, channelId, ts, threadTs, sender, message: '', occurredAt, id, slack }),
+    deleted: true,
+  };
+}
+
+/**
+ * An edit or a deletion of a message (`message_changed` / `message_deleted`) as records of that
+ * message, or null when the event is neither. Only messages this provider records change: a bot or
+ * app post (other than the declared drill identity) and a group DM stay unrecorded. An edit keeps
+ * the message's own post time, so the host files it where the original went, and says when it was
+ * edited; a change that alters neither text nor thread (a link unfurl, a reply count) records nothing.
+ */
+function changeRecords(event, payload, sourceConfig) {
+  const subtype = text(event?.subtype);
+  if (event?.type !== 'message' || (subtype !== 'message_changed' && subtype !== 'message_deleted')) return null;
+  const channelId = text(event.channel);
+  const channelType = text(event.channel_type);
+  const team = teamOf(event, payload);
+  const slack = {
+    eventType: 'message',
+    subtype,
+    ...(channelType ? { channelType } : {}),
+    ...(team ? { teamId: team } : {}),
+  };
+  const previous = record(event.previous_message);
+  // Whether a message as Slack describes it is one this provider records.
+  const recorded = (message) => !message
+    || chatEventKind({ ...message, type: 'message', subtype: undefined, channel: channelId, channel_type: channelType }, sourceConfig) !== null;
+  const id = text(payload.event_id);
+
+  if (subtype === 'message_deleted') {
+    const ts = slackTs(event.deleted_ts);
+    if (!channelId || !ts || !recorded(previous)) return [];
+    return [deletedRecord({
+      channelId, ts, threadTs: slackTs(previous?.thread_ts), sender: text(previous?.user),
+      occurredAt: slackTime(event.event_ts) ?? slackTime(event.ts), id, slack,
+    })];
+  }
+
+  const message = record(event.message);
+  const ts = slackTs(message?.ts);
+  if (!channelId || !message || !ts) return [];
+  const threadTs = slackTs(message.thread_ts);
+  // A deleted message that has replies stays in its thread as a tombstone.
+  if (text(message.subtype) === 'tombstone') {
+    return [deletedRecord({
+      channelId, ts, threadTs, sender: text(previous?.user),
+      occurredAt: slackTime(event.event_ts) ?? slackTime(event.ts), id, slack,
+    })];
+  }
+  const body = text(message.text);
+  const sender = text(message.user);
+  if (!body || !sender || !recorded(message)) return [];
+  const editedTs = slackTs(record(message.edited)?.ts);
+  if (!editedTs && previous && text(previous.text) === body && slackTs(previous.thread_ts) === threadTs) return [];
+  const editedAt = editedTs ? slackTime(editedTs) : undefined;
+  return [messageRecord({
+    event: 'edited',
+    // One version per edit, and per thread change (a root that gains replies joins its thread).
+    version: `edited:${channelId}:${ts}:${editedTs || ts}:${threadTs}`,
+    channelId, ts, threadTs, sender, message: body, occurredAt: slackTime(ts), id,
+    extra: editedAt ? { editedAt } : {},
+    slack: { ...slack, ...(editedTs ? { editedTs } : {}) },
+  })];
+}
+
 async function normalizeEvent(payload, sourceConfig, fetchSlack) {
   const event = record(payload.event);
+  const changed = changeRecords(event, payload, sourceConfig);
+  if (changed) return { records: changed };
   if (event?.type === 'reaction_added') {
     const item = record(event.item);
     const channelId = text(item?.channel);
@@ -488,10 +563,21 @@ async function threadReplies(fetchSlack, channelId, threadTs) {
 export function historyRecord(channelId, message) {
   const ts = slackTs(message?.ts);
   const body = text(message?.text);
+  const subtype = text(message?.subtype);
+  // A deleted message that still has replies reads back as a tombstone: the message is gone.
+  if (channelId && ts && subtype === 'tombstone') {
+    return {
+      ...messageRecord({
+        event: 'deleted', version: `deleted:${channelId}:${ts}`, channelId, ts, threadTs: slackTs(message.thread_ts),
+        sender: '', message: '', slack: { eventType: 'conversations.history', subtype },
+      }),
+      deleted: true,
+    };
+  }
   if (!channelId || !ts || !body.trim()) return null;
-  const subtype = text(message.subtype);
   if (subtype && !HISTORY_SUBTYPES.has(subtype)) return null;
   const edited = slackTs(record(message.edited)?.ts);
+  const editedAt = edited ? slackTime(edited) : undefined;
   return messageRecord({
     event: 'history',
     // An edit is a new version of the message, so the document follows it.
@@ -502,6 +588,7 @@ export function historyRecord(channelId, message) {
     sender: text(message.user) || text(message.bot_id),
     message: body,
     occurredAt: slackTime(ts),
+    extra: editedAt ? { editedAt } : {},
     slack: {
       eventType: 'conversations.history',
       ...(subtype ? { subtype } : {}),

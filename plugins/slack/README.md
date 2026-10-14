@@ -41,7 +41,10 @@ reads them: the host attaches them to the requests the package makes.
 - **`ingress.normalize`**: turns an envelope into `chat-message` records: channel posts
   (`message`), mentions, direct messages (`dm`), slash commands, a reaction on a message
   (`reaction`), and a message reported through the "Report a bug" shortcut's form (`report`).
-  Bot, app and edited-message events are skipped. Every record names its channel as `aclRef`.
+  An edit of a recorded message is an `edited` record of the same message (it keeps its post
+  time and carries `editedAt`); a deletion, or the tombstone Slack leaves for a deleted thread
+  root, is a `deleted` record with no text, and the host erases the stored message. Bot, app
+  and system posts are skipped. Every record names its channel as `aclRef`.
 - **Membership** (`membership`, with containers): on an organization source each channel is a
   container whose readers are exactly its current Slack members, so a message is readable only
   by people in its channel. Member ids are Slack user ids (identity provider `slack`).
