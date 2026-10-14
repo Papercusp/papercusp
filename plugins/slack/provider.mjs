@@ -507,6 +507,18 @@ const GONE_CHANNEL = /^slack_conversations_history_(not_in_channel|channel_not_f
  */
 export const SLACK_RESCAN_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
+/**
+ * How often each already-backfilled channel's WHOLE history is re-read (WI-6554700010012486). The
+ * week-long rescan cannot see a message older than its window, or a reply in a thread whose root is
+ * older, that was deleted while the daemon was offline. A due round re-reads the next known channel
+ * from its start instead of its last week, so every known channel is re-walked about once a period:
+ * re-walks start period / channels apart, counted from the end of the previous one, so the week-long
+ * rescans still run between them. A re-walk reads like a backfill (one history page a sync page,
+ * every thread's replies), so it reports windows down to the channel's start. The lag is bounded by
+ * the period plus the re-walk itself; the week-long rescan's own lag is one round per known channel.
+ */
+export const SLACK_DEEP_RESCAN_PERIOD_SECONDS = 30 * 24 * 60 * 60;
+
 /** The millisecond the host stores as a Slack ts's post time: slackTime's own arithmetic. */
 function msOfTs(ts) {
   return new Date(Number(ts) * 1_000).getTime();
@@ -617,7 +629,8 @@ export function historyRecord(channelId, message) {
 /**
  * The sync cursor: channels still to backfill (the first one in progress at `page`), every member
  * channel already queued, and the already-backfilled channel to rescan from `oldest` after them
- * (`rotate` is the last one picked). A channel read in progress keeps its fixed `latest` bound and
+ * (`rotate` is the last one picked). A rescan with no `oldest` re-reads the whole channel: `deep` is
+ * the last channel re-read so, `deepAt` the millisecond that re-walk ended. A channel read in progress keeps its fixed `latest` bound and
  * the oldest message of its previous page (`upper`).
  */
 function syncState(raw) {
@@ -637,10 +650,12 @@ function syncState(raw) {
     latest: slackTs(state.latest),
     upper: slackTs(state.upper),
     rotate: text(state.rotate),
+    deep: text(state.deep),
+    deepAt: /^\d+$/.test(text(state.deepAt)) ? text(state.deepAt) : '',
   };
 }
 
-const CURSOR_FIELDS = ['page', 'rescan', 'oldest', 'latest', 'upper', 'rotate'];
+const CURSOR_FIELDS = ['page', 'rescan', 'oldest', 'latest', 'upper', 'rotate', 'deep', 'deepAt'];
 
 function cursorOf(state) {
   const out = { queue: state.queue, seen: state.seen };
@@ -673,15 +688,24 @@ async function membershipPage(fetchSlack, state) {
   const current = channels.map((channel) => channel.id);
   const queue = current.filter((id) => !seen.has(id));
   // One already-backfilled channel per round re-reads its recent window, in turn, so a delete made
-  // while the daemon was offline is found (WI-6554700010012278).
+  // while the daemon was offline is found (WI-6554700010012278). When a whole-history re-walk is due,
+  // the next channel of that separate rotation is re-read from its start instead (WI-6554700010012486);
+  // the re-walk clock starts on the first membership page.
   const known = current.filter((id) => seen.has(id));
-  const rescan = known.length ? known[(known.indexOf(state.rotate) + 1) % known.length] : '';
+  const now = Date.now();
+  const after = (id) => known[(known.indexOf(id) + 1) % known.length];
+  const due = known.length > 0 && Boolean(state.deepAt)
+    && now - Number(state.deepAt) >= (SLACK_DEEP_RESCAN_PERIOD_SECONDS * 1_000) / known.length;
+  const deep = due ? after(state.deep) : '';
+  const rescan = deep || (known.length ? after(state.rotate) : '');
   return pageOf([], {
     queue,
     seen: current,
     rescan,
-    oldest: rescan ? tsOfMs(Date.now() - SLACK_RESCAN_WINDOW_SECONDS * 1_000) : '',
-    rotate: rescan || state.rotate,
+    oldest: rescan && !deep ? tsOfMs(now - SLACK_RESCAN_WINDOW_SECONDS * 1_000) : '',
+    rotate: deep ? state.rotate : rescan || state.rotate,
+    deep: deep || state.deep,
+    deepAt: state.deepAt || String(now),
   }, { membership: { members: [], containers } });
 }
 
@@ -701,7 +725,9 @@ async function historyPage(fetchSlack, state) {
   const oldest = backfill ? '' : state.oldest;
   const latest = state.latest || tsOfMs(Date.now());
   const read = { page: '', latest: '', upper: '' };
-  const finished = backfill ? { ...state, ...read, queue: state.queue.slice(1) } : { ...state, ...read, rescan: '', oldest: '' };
+  // A rescan with no lower bound is a whole-history re-walk: its end restarts the re-walk clock.
+  const rewalked = !backfill && !oldest ? { deepAt: String(Date.now()) } : {};
+  const finished = backfill ? { ...state, ...read, queue: state.queue.slice(1) } : { ...state, ...read, rescan: '', oldest: '', ...rewalked };
   let body;
   try {
     body = await slackGet(fetchSlack, 'conversations.history', {
@@ -761,7 +787,8 @@ async function historyPage(fetchSlack, state) {
  * `provider.syncPage`. A personal source is one Socket Mode connection: its messages arrive through
  * ingress.normalize, so there is nothing to crawl. An organization source starts each round with a
  * membership page, then backfills every newly seen channel one history page at a time and rescans
- * the last week of one channel backfilled before, in turn; the socket delivers new messages. Each
+ * the last week of one channel backfilled before, in turn, or when due re-reads one such channel's
+ * whole history (SLACK_DEEP_RESCAN_PERIOD_SECONDS); the socket delivers new messages. Each
  * history page reports the windows it read completely, so the host tombstones what Slack no longer
  * returns (WI-6554700010012278). A rate limit throws the
  * SDK's rate-limited error (slackBody), so the host waits out Slack's Retry-After.
