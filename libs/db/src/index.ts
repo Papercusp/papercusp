@@ -14,6 +14,10 @@ export {
   getOrgPgApp,
   getOrgPgLosslessBigint,
   getHarnessPg,
+  // WI-6554700010012344: which resolution step chose the admin DB, so a shipping
+  // caller can refuse a discovery- or fallback-sourced cluster.
+  resolvedAdminDatabaseTarget,
+  type DatabaseUrlSource,
   typedSql,
   processConnectionCeiling,
   logConnectionBudget,

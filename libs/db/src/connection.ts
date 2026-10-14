@@ -258,13 +258,19 @@ function appUrlFromAdminPin(pinned: string): string | null {
   } catch { return null; }
 }
 
-/** Log a redacted target once per source/host/port; never expose DSN credentials. */
-function reportResolvedDatabaseTarget(url: string, source: string): string {
-  let endpoint = '<unparseable>';
+/** Redacted `host:port` of a DSN; never exposes credentials. */
+function redactedDatabaseEndpoint(url: string): string {
   try {
     const parsed = new URL(url);
-    endpoint = `${parsed.hostname}:${parsed.port || '5432'}`;
-  } catch { /* keep the redacted placeholder */ }
+    return `${parsed.hostname}:${parsed.port || '5432'}`;
+  } catch {
+    return '<unparseable>';
+  }
+}
+
+/** Log a redacted target once per source/host/port; never expose DSN credentials. */
+function reportResolvedDatabaseTarget(url: string, source: string): string {
+  const endpoint = redactedDatabaseEndpoint(url);
   const key = `${source}:${endpoint}`;
   if (!_reportedDbTargets.has(key)) {
     _reportedDbTargets.add(key);
@@ -920,6 +926,27 @@ function adminUrl(opts?: {
 }): string {
   const url = resolveAdminUrl(opts);
   return reportResolvedDatabaseTarget(url, _resolvedAdminUrlSource ?? 'fallback');
+}
+
+/** The resolution step that produced a database URL, in resolver order. */
+export type DatabaseUrlSource = 'env' | 'operator-env-file' | 'discovery' | 'fallback';
+
+/**
+ * WI-6554700010012344: the ADMIN URL's resolution step and redacted endpoint. It
+ * resolves the URL the same way getOrgPg does (same cache rules) if nothing has yet.
+ *
+ * `discovery` and `fallback` are dev conveniences. A process with no DATABASE_URL and
+ * no operator env file gets whichever cluster this box advertises. A materialized
+ * release checkout has no .env.local, so a release seed cut there read a foreign
+ * embedded-PG cluster's hive epoch. A caller that seals or ships hive state asks here
+ * and refuses those sources. It must not re-derive the resolution order itself.
+ */
+export function resolvedAdminDatabaseTarget(opts?: {
+  isPortServed?: DiscoveryPortProbe;
+  operatorEnvironmentFile?: string;
+}): { source: DatabaseUrlSource; endpoint: string } {
+  const url = adminUrl(opts);
+  return { source: _resolvedAdminUrlSource ?? 'fallback', endpoint: redactedDatabaseEndpoint(url) };
 }
 /** Test-only — clears cached URLs so a test that mutates env between cases sees the change. */
 export function _resetUrlCacheForTests(): void {
