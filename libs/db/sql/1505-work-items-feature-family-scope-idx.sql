@@ -1,0 +1,42 @@
+-- Migration 1505 — index the feature family by scope (EI-25902840495107632).
+--
+-- WHY. Every read of harness_shared.harness_features_consolidated is a read of
+-- work_items filtered by `item_kind NOT IN ('bug','change','task')`, which the
+-- planner rewrites to `item_kind <> ALL ('{bug,change,task}')`. A btree cannot
+-- serve a `<> ALL`, so a feature read scoped by (workspace_id, harness_slug)
+-- walked EVERY row of the harness and discarded the issue family in a Filter.
+-- The issue family is ~98% of the table, so that is almost the whole table.
+--
+-- MEASURED on the live box, 2026-10-14 ~13:10Z. The feature-tier claim in
+-- scheduler:get_next (`UPDATE harness_features_consolidated ... WHERE (harness_slug,
+-- feature_id) = (SELECT ... LIMIT 1 FOR UPDATE SKIP LOCKED)`, pool
+-- pcusp:scheduler-claim) was being cancelled with SQLSTATE 57014 every 1-5 minutes.
+-- Read-only EXPLAIN (ANALYZE, BUFFERS) of its candidate subquery with the logged
+-- parameters, uncontended:
+--
+--   Index Scan using work_items_scoped_identity   Index Cond: (workspace_id, harness_slug)
+--   Rows Removed by Filter: 348,557   rows returned: 1
+--   Execution Time: 8,559 ms           Buffers: shared hit=1,057,548 read=4,986
+--
+-- For scale: 363,735 work_items rows in total, of which 5,671 are feature-family
+-- (item_kind outside bug/change/task) across the whole workspace.
+--
+-- WHY THIS INDEX AND NOT AN EXISTING ONE. work_items_frontier_open_idx carries the
+-- same kind predicate but ALSO `status = 'open'`. The claim floors spell status as
+-- `(CASE WHEN status = 'todo' THEN 'open' ELSE status END) = ANY(...)`, which cannot
+-- imply `status = 'open'`, so that index is never eligible for the claim. A partial
+-- index whose predicate is exactly the view's kind filter is provable from the view
+-- alone, whatever status/kind floors a caller adds: the live plan already proves the
+-- same predicate for work_items_author_pubkey_local_idx (pot trust subquery).
+-- It serves every scope-filtered feature read, not just the claim.
+--
+-- NOT CONCURRENTLY: the migration runner is transactional, and CONCURRENTLY cannot
+-- run inside a transaction. A plain build blocks writes to work_items for the
+-- duration of one heap scan (631 MB measured). That is the house pattern for this
+-- table; see migration 794 for the same trade-off stated and measured.
+--
+-- Additive only: no existing index, column or view changes, so the currently
+-- deployed release is unaffected and simply gets a cheaper plan.
+CREATE INDEX IF NOT EXISTS work_items_feature_family_scope_idx
+  ON harness_shared.work_items (workspace_id, harness_slug)
+  WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text]);
