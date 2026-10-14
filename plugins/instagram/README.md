@@ -11,3 +11,11 @@ The package uses Graph API v26.0, matching Meta's [official Business SDK API ver
 The newest-50 bound cannot recover older comments that fell out of the window. On a full cold page, or a full warm page that no longer reaches its watermark, the package raises a source fault before advancing the cursor and reports incomplete history. Comment edits and remote deletions are not discovered. Media outside the configured watch window is not covered; mentions outside these comments are not read yet.
 
 Verification: recorded HTTP fakes and the shared provider conformance kit. **Live verification pending** on Avi's account (plan P-029).
+# Mentions
+
+Mentions arrive through Meta's signed `mentions` webhook. In the Meta app's Webhooks settings, use the connected source's public `/api/hooks/<source id>` URL and the verify token saved on Settings → Integrations. Subscribe the app to `mentions` and enable the linked Page's subscription using the required Page grant. The host verifies `X-Hub-Signature-256` with the existing Facebook OAuth app secret before handing the envelope to this package.
+
+The package scopes each entry to the connected Instagram account, then retrieves the mentioned comment or caption with the IG User's `mentioned_comment.comment_id(...)` or `mentioned_media.media_id(...)` field. It does not poll a mentions collection. Private-account and Story mentions are unavailable under the vendor contract. Failed lookups leave the webhook unacknowledged so Meta can redeliver; normalized records use the regular connector admission and deduplication path.
+
+Primary contract: [Meta mention overview](https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-facebook-login/mentions), [mentioned comment](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/mentioned_comment), [mentioned media](https://developers.facebook.com/documentation/instagram-platform/instagram-graph-api/reference/ig-user/mentioned_media), [webhook examples](https://developers.facebook.com/documentation/instagram-platform/webhooks/examples), and [signature and verification setup](https://developers.facebook.com/documentation/instagram-platform/webhooks). Recorded-fake verified; live setup remains pending.
+

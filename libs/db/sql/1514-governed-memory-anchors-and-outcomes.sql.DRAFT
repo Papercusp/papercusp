@@ -1,0 +1,19 @@
+-- carry-recheck-and-governed-memory-2026-10-14 P-006/P-008.
+-- Extend the existing audit anchors and session-epoch ledger; no parallel store.
+\set ON_ERROR_STOP on
+BEGIN;
+ALTER TABLE harness_shared.memory_anchors DROP CONSTRAINT IF EXISTS memory_anchors_kind_check;
+ALTER TABLE harness_shared.memory_anchors ADD CONSTRAINT memory_anchors_kind_check
+  CHECK (kind IN ('file','feature','plan','migration','symbol',
+    'work-item','decision','fact','session-turn','report'));
+ALTER TABLE harness_shared.memory_session_surfaced
+  ADD COLUMN IF NOT EXISTS outcome text NOT NULL DEFAULT 'ignored',
+  ADD COLUMN IF NOT EXISTS outcome_at timestamptz;
+ALTER TABLE harness_shared.memory_session_surfaced DROP CONSTRAINT IF EXISTS memory_session_surfaced_outcome_check;
+ALTER TABLE harness_shared.memory_session_surfaced ADD CONSTRAINT memory_session_surfaced_outcome_check
+  CHECK (outcome IN ('ignored','used','contradicted'));
+-- Cumulative counters survive the surfaced ledger's existing fourteen-day GC.
+ALTER TABLE harness_shared.memory_canonical
+  ADD COLUMN IF NOT EXISTS used_count integer NOT NULL DEFAULT 0 CHECK (used_count >= 0),
+  ADD COLUMN IF NOT EXISTS contradicted_count integer NOT NULL DEFAULT 0 CHECK (contradicted_count >= 0);
+COMMIT;
