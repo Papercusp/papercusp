@@ -3968,8 +3968,11 @@ export const documentsInHarnessShared = harnessShared.table("documents", {
 	potSlug: text("pot_slug"),
 	permissionListId: uuid("permission_list_id"),
 	datatypeId: text("datatype_id"),
+	sealedContent: byteaCustom("sealed_content"),
+	blindTerms: text("blind_terms").array(),
 }, (table) => [
 	index("documents_account_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.source.asc().nullsLast().op("text_ops"), table.providerAccountId.asc().nullsLast().op("text_ops"), table.occurredAt.desc().nullsLast().op("timestamptz_ops")),
+	index("documents_blind_terms_gin").using("gin", table.blindTerms.asc().nullsLast().op("array_ops")).where(sql`(sealed_content IS NOT NULL)`),
 	index("documents_bm25").using("bm25", sql`(((COALESCE(title, ''::text) || ' '::text) || COALESCE(text, ''::text)))`).with({text_config: "english",compaction: "manual"}),
 	index("documents_embedding_mode_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops"), table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
 	uniqueIndex("documents_organization_dedupe").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.source.asc().nullsLast().op("text_ops"), table.dedupeKey.asc().nullsLast().op("text_ops")).where(sql`(scope = 'organization'::text)`),
@@ -4001,6 +4004,7 @@ export const documentsInHarnessShared = harnessShared.table("documents", {
 	check("documents_pot_slug_chk", sql`(pot_slug IS NULL) OR (pot_slug ~ '^[a-z0-9][a-z0-9._-]{0,127}$'::text)`),
 	check("documents_provider_account_nonempty", sql`(provider_account_id IS NULL) OR (length(btrim(provider_account_id)) > 0)`),
 	check("documents_scope_chk", sql`((scope = 'personal'::text) AND (user_id IS NOT NULL) AND (permission_list_id IS NULL) AND (pot_slug IS NULL)) OR ((scope = 'organization'::text) AND (user_id IS NULL) AND (permission_list_id IS NOT NULL) AND (pot_slug IS NULL)) OR ((scope = 'pot'::text) AND (user_id IS NULL) AND (pot_slug IS NOT NULL))`),
+	check("documents_sealed_content_shape", sql`((sealed_content IS NULL) AND (blind_terms IS NULL)) OR ((sealed_content IS NOT NULL) AND (blind_terms IS NOT NULL) AND (title = ''::text) AND (text = ''::text) AND (scope = ANY (ARRAY['organization'::text, 'pot'::text])))`),
 	check("documents_source_check", sql`source ~ '^[a-z0-9][a-z0-9._-]{0,63}$'::text`),
 ]);
 
