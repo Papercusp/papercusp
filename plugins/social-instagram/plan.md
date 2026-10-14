@@ -10,8 +10,8 @@ status: draft
 
 **State:** Starter template. Installing this pack makes it available; it does NOT arm it.
 
-**Next:** Connect a Instagram source, instantiate this template, review the 2 disarmed
-bindings (`comment`, `reply`), and arm the ones you want explicitly.
+**Next:** Connect an Instagram source, instantiate this template, review the 3 disarmed
+bindings (`mention`, `comment`, `reply`), and arm the ones you want explicitly.
 
 ## Goal
 
@@ -28,7 +28,7 @@ when you want drafting or digesting.
 
 `trigger` is delivered by the binding that fired:
 
-- `trigger.event` — which event fired: `comment`, `reply`.
+- `trigger.event` — which event fired: `mention`, `comment`, `reply`.
 - the event payload — not embedded in the plan inputs; fetch it with `triggers:read-payload { planRunId: payload.plan_run.runId }` and read its `payload` field, the canonical `social-post` document the Instagram adapter
   normalized. `id` and `text` are always present; `author`, `url`,
   `replyToId` and `occurredAt` are present when Instagram supplies them.
