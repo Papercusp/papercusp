@@ -7826,6 +7826,51 @@ export const orchestratorSettingsInHarnessShared = harnessShared.table("orchestr
 
 ]);
 
+export const organizationDataKeysInHarnessShared = harnessShared.table("organization_data_keys", {
+	organizationId: uuid("organization_id").notNull(),
+	dekVersion: integer("dek_version").notNull(),
+	kekProvider: text("kek_provider").notNull(),
+	kekRef: text("kek_ref").notNull(),
+	kekGeneration: integer("kek_generation").notNull(),
+	wrappedDek: byteaCustom("wrapped_dek"),
+	state: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	rewrappedAt: timestamp("rewrapped_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	uniqueIndex("organization_data_keys_one_active_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops")).where(sql`(state = 'active'::text)`),
+	foreignKey({
+			columns: [table.organizationId],
+			foreignColumns: [organizationKeyCustodyInHarnessShared.organizationId],
+			name: "organization_data_keys_organization_id_fkey"
+		}),
+	primaryKey({ columns: [table.dekVersion, table.organizationId], name: "organization_data_keys_pkey"}),
+	check("organization_data_keys_dek_version_check", sql`dek_version >= 1`),
+	check("organization_data_keys_kek_generation_check", sql`kek_generation >= 1`),
+	check("organization_data_keys_kek_provider_check", sql`kek_provider = ANY (ARRAY['aws-kms'::text, 'gcp-kms'::text, 'test-kms'::text])`),
+	check("organization_data_keys_kek_ref_check", sql`length(btrim(kek_ref)) > 0`),
+	check("organization_data_keys_material_ck", sql`((state = 'shredded'::text) AND (wrapped_dek IS NULL)) OR ((state <> 'shredded'::text) AND (wrapped_dek IS NOT NULL) AND (length(wrapped_dek) > 0))`),
+	check("organization_data_keys_state_check", sql`state = ANY (ARRAY['active'::text, 'decrypt-only'::text, 'shredded'::text])`),
+]);
+
+export const organizationKeyCustodyInHarnessShared = harnessShared.table("organization_key_custody", {
+	organizationId: uuid("organization_id").primaryKey().notNull(),
+	kekProvider: text("kek_provider").notNull(),
+	kekRef: text("kek_ref").notNull(),
+	kekGeneration: integer("kek_generation").default(1).notNull(),
+	state: text().default('enabled').notNull(),
+	activeDekVersion: integer("active_dek_version").default(1).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	check("organization_key_custody_active_dek_version_check", sql`active_dek_version >= 1`),
+	check("organization_key_custody_kek_generation_check", sql`kek_generation >= 1`),
+	check("organization_key_custody_kek_provider_check", sql`kek_provider = ANY (ARRAY['aws-kms'::text, 'gcp-kms'::text, 'test-kms'::text])`),
+	check("organization_key_custody_kek_ref_check", sql`length(btrim(kek_ref)) > 0`),
+	check("organization_key_custody_state_check", sql`state = ANY (ARRAY['enabled'::text, 'revoked'::text, 'shredded'::text])`),
+	primaryKey({ columns: [table.organizationId], name: "organization_key_custody_pkey"}),
+
+]);
+
 export const orientationClassReachInHarnessShared = harnessShared.table("orientation_class_reach", {
 	workspaceId: text("workspace_id").notNull(),
 	ownerId: text("owner_id").notNull(),
