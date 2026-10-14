@@ -145,6 +145,9 @@ function messageRecord({ event, version, channelId, ts, threadTs, sender, messag
       id: id || `${channelId}:${ts}`,
       channelId,
       threadId: threadTs || ts,
+      // Provider-neutral thread of the message (the host's chat units group by it): the thread's
+      // root ts for a reply, and for a root once Slack reports it has replies; null otherwise.
+      threadKey: threadTs || null,
       sender,
       text: message,
       mentions: mentionsOf(message),
