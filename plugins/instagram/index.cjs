@@ -119,7 +119,9 @@ async function syncPage(request, host) {
   const body = await graph(host, request.source, commentUrl);
   if (!Array.isArray(body.data) || body.data.length > 50) throw fault('transient', 'malformed_comment_window');
   const previous = state.since[mediaId];
-  if (previous && body.data.length === 50 && body.data.every((row) => instant(row.timestamp) && Date.parse(row.timestamp) > Date.parse(previous.at))) {
+  // A full cold page has the same missing-history risk as a warm page that
+  // no longer reaches its watermark. Do not commit either as complete history.
+  if (body.data.length === 50 && (!previous || body.data.every((row) => instant(row.timestamp) && Date.parse(row.timestamp) > Date.parse(previous.at)))) {
     throw fault('transient', 'capped_window_overflow', { lossRisk: { kind: 'capped-window-overflow', mediaId } });
   }
   const records = [];
