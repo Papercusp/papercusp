@@ -500,6 +500,23 @@ const HISTORY_SUBTYPES = new Set(['thread_broadcast', 'bot_message', 'file_share
 /** A channel the membership page queued that has no readable history any more. */
 const GONE_CHANNEL = /^slack_conversations_history_(not_in_channel|channel_not_found|is_archived)$/;
 
+/**
+ * How far back the rescan of an already-backfilled channel reads (WI-6554700010012278): a week of
+ * posts. Each sync round rescans one such channel in turn, so a message posted in the last week and
+ * deleted while the daemon was offline is tombstoned within one sweep of the channels.
+ */
+export const SLACK_RESCAN_WINDOW_SECONDS = 7 * 24 * 60 * 60;
+
+/** The millisecond the host stores as a Slack ts's post time: slackTime's own arithmetic. */
+function msOfTs(ts) {
+  return new Date(Number(ts) * 1_000).getTime();
+}
+
+/** A Slack ts for a millisecond instant. */
+function tsOfMs(ms) {
+  return `${Math.floor(ms / 1_000)}.${String(ms % 1_000).padStart(3, '0')}000`;
+}
+
 /** One Slack Web API GET through host.fetch; empty params are left out. */
 async function slackGet(fetchSlack, method, params = {}) {
   const query = new URLSearchParams();
@@ -539,13 +556,13 @@ async function listChannelMembers(fetchSlack, channelId) {
   return out;
 }
 
-/** The replies of one thread, every page, without its opening message. */
-async function threadReplies(fetchSlack, channelId, threadTs) {
+/** The replies of one thread posted before `latest` (no bound when empty), every page, without its opening message. */
+async function threadReplies(fetchSlack, channelId, threadTs, latest = '') {
   const out = [];
   let cursor = '';
   do {
     const body = await slackGet(fetchSlack, 'conversations.replies', {
-      channel: channelId, ts: threadTs, limit: String(SLACK_HISTORY_PAGE), cursor,
+      channel: channelId, ts: threadTs, limit: String(SLACK_HISTORY_PAGE), cursor, latest,
     });
     for (const message of Array.isArray(body.messages) ? body.messages : []) {
       if (slackTs(message?.ts) !== threadTs) out.push(message);
@@ -597,7 +614,12 @@ export function historyRecord(channelId, message) {
   });
 }
 
-/** The sync cursor: channels still to backfill (the first one in progress at `page`), and every member channel already queued. */
+/**
+ * The sync cursor: channels still to backfill (the first one in progress at `page`), every member
+ * channel already queued, and the already-backfilled channel to rescan from `oldest` after them
+ * (`rotate` is the last one picked). A channel read in progress keeps its fixed `latest` bound and
+ * the oldest message of its previous page (`upper`).
+ */
 function syncState(raw) {
   let parsed = null;
   try {
@@ -606,11 +628,29 @@ function syncState(raw) {
     parsed = null;
   }
   const state = record(parsed) ?? {};
-  return { queue: strings(state.queue), seen: strings(state.seen), page: text(state.page) };
+  return {
+    queue: strings(state.queue),
+    seen: strings(state.seen),
+    page: text(state.page),
+    rescan: text(state.rescan),
+    oldest: slackTs(state.oldest),
+    latest: slackTs(state.latest),
+    upper: slackTs(state.upper),
+    rotate: text(state.rotate),
+  };
 }
 
-function cursorOf({ queue, seen, page }) {
-  return JSON.stringify({ queue, seen, ...(page ? { page } : {}) });
+const CURSOR_FIELDS = ['page', 'rescan', 'oldest', 'latest', 'upper', 'rotate'];
+
+function cursorOf(state) {
+  const out = { queue: state.queue, seen: state.seen };
+  for (const field of CURSOR_FIELDS) if (state[field]) out[field] = state[field];
+  return JSON.stringify(out);
+}
+
+/** A sync page ending in `state`: more pages follow while a backfill or a rescan is left. */
+function pageOf(records, state, extra = {}) {
+  return { records, ...extra, nextCursor: cursorOf(state), hasMore: state.queue.length > 0 || Boolean(state.rescan) };
 }
 
 /**
@@ -632,59 +672,105 @@ async function membershipPage(fetchSlack, state) {
   const seen = new Set(state.seen);
   const current = channels.map((channel) => channel.id);
   const queue = current.filter((id) => !seen.has(id));
-  return {
-    records: [],
-    membership: { members: [], containers },
-    nextCursor: cursorOf({ queue, seen: current }),
-    hasMore: queue.length > 0,
-  };
+  // One already-backfilled channel per round re-reads its recent window, in turn, so a delete made
+  // while the daemon was offline is found (WI-6554700010012278).
+  const known = current.filter((id) => seen.has(id));
+  const rescan = known.length ? known[(known.indexOf(state.rotate) + 1) % known.length] : '';
+  return pageOf([], {
+    queue,
+    seen: current,
+    rescan,
+    oldest: rescan ? tsOfMs(Date.now() - SLACK_RESCAN_WINDOW_SECONDS * 1_000) : '',
+    rotate: rescan || state.rotate,
+  }, { membership: { members: [], containers } });
 }
 
-/** History page: one conversations.history page of the first queued channel, thread replies included. */
+/**
+ * History page: one conversations.history page of the channel being read (the first queued
+ * channel's whole history, else the rescan channel's window from `oldest`), every thread's replies
+ * included. Each page also reports what it read completely (WI-6554700010012278): the channel's
+ * messages outside threads between its oldest message and the previous page's (down to `oldest`, or
+ * the channel's start, on the last page), and each thread whose replies it re-read. Every page of
+ * one read stops at the same `latest`, so a message posted meanwhile is neither read nor counted as
+ * missing. The bounds leave out the millisecond at each edge: the host stores post times to the
+ * millisecond, and Slack's ts is finer.
+ */
 async function historyPage(fetchSlack, state) {
-  const [channelId, ...rest] = state.queue;
+  const backfill = state.queue.length > 0;
+  const channelId = backfill ? state.queue[0] : state.rescan;
+  const oldest = backfill ? '' : state.oldest;
+  const latest = state.latest || tsOfMs(Date.now());
+  const read = { page: '', latest: '', upper: '' };
+  const finished = backfill ? { ...state, ...read, queue: state.queue.slice(1) } : { ...state, ...read, rescan: '', oldest: '' };
   let body;
   try {
     body = await slackGet(fetchSlack, 'conversations.history', {
-      channel: channelId, limit: String(SLACK_HISTORY_PAGE), cursor: state.page,
+      channel: channelId, limit: String(SLACK_HISTORY_PAGE), cursor: state.page, oldest, latest,
     });
   } catch (error) {
     // The bot left the channel, or it was deleted or archived, after the membership page queued
     // it: there is no history to read, so move on instead of failing every later pass.
-    if (GONE_CHANNEL.test(String(error?.message))) {
-      return { records: [], nextCursor: cursorOf({ queue: rest, seen: state.seen }), hasMore: rest.length > 0 };
-    }
+    if (GONE_CHANNEL.test(String(error?.message))) return pageOf([], finished);
     throw error;
   }
   const records = [];
+  const live = [];
+  const threads = [];
+  let pageOldest = '';
+  const to = new Date(msOfTs(latest) - 1).toISOString();
   for (const message of Array.isArray(body.messages) ? body.messages : []) {
     const own = historyRecord(channelId, message);
     if (own) records.push(own);
     const ts = slackTs(message?.ts);
-    if (ts && slackTs(message.thread_ts) === ts && Number(message.reply_count) > 0) {
-      for (const reply of await threadReplies(fetchSlack, channelId, ts)) {
-        const row = historyRecord(channelId, reply);
-        if (row) records.push(row);
-      }
+    if (!ts) continue;
+    if (!pageOldest || Number(ts) < Number(pageOldest)) pageOldest = ts;
+    // Every message Slack still returns is live, records or not; a tombstone is a deleted root.
+    const ids = text(message.subtype) === 'tombstone' ? [] : [`${channelId}:${ts}`];
+    live.push(...ids);
+    if (slackTs(message.thread_ts) !== ts) continue;
+    // A thread's root: re-read every reply, even when reply_count says none is left.
+    for (const reply of await threadReplies(fetchSlack, channelId, ts, latest)) {
+      const row = historyRecord(channelId, reply);
+      if (row) records.push(row);
+      const replyTs = slackTs(reply?.ts);
+      if (replyTs && text(reply.subtype) !== 'tombstone') ids.push(`${channelId}:${replyTs}`);
     }
+    threads.push({ datatype: 'chat-message', containerRef: channelId, threadRef: ts, to, nativeIds: ids });
   }
   const page = text(body.response_metadata?.next_cursor);
-  const queue = page ? state.queue : rest;
-  return { records, nextCursor: cursorOf({ queue, seen: state.seen, page }), hasMore: queue.length > 0 };
+  // The channel's window: below the previous page's oldest message (the first page: `latest`),
+  // down to this page's oldest message while more pages follow. A page with more to come and no
+  // message to bound it by reports no channel window.
+  const upperMs = msOfTs(state.upper || latest) - 1;
+  const lowerMs = page ? (pageOldest ? msOfTs(pageOldest) + 1 : undefined) : oldest ? msOfTs(oldest) + 1 : null;
+  const coverage = [...threads];
+  if (lowerMs !== undefined && (lowerMs === null || lowerMs <= upperMs)) {
+    coverage.unshift({
+      datatype: 'chat-message',
+      containerRef: channelId,
+      ...(lowerMs === null ? {} : { from: new Date(lowerMs).toISOString() }),
+      to: new Date(upperMs).toISOString(),
+      nativeIds: live,
+    });
+  }
+  const next = page ? { ...state, page, latest, upper: pageOldest || state.upper } : finished;
+  return pageOf(records, next, coverage.length ? { coverage } : {});
 }
 
 /**
  * `provider.syncPage`. A personal source is one Socket Mode connection: its messages arrive through
  * ingress.normalize, so there is nothing to crawl. An organization source starts each round with a
- * membership page, then backfills every newly seen channel one history page at a time; after that,
- * each pass refreshes membership and the socket delivers new messages. A rate limit throws the
+ * membership page, then backfills every newly seen channel one history page at a time and rescans
+ * the last week of one channel backfilled before, in turn; the socket delivers new messages. Each
+ * history page reports the windows it read completely, so the host tombstones what Slack no longer
+ * returns (WI-6554700010012278). A rate limit throws the
  * SDK's rate-limited error (slackBody), so the host waits out Slack's Retry-After.
  */
 export async function syncPage(request, fetchSlack) {
   if (request?.scope !== 'organization') return { records: [], nextCursor: null, hasMore: false };
   if (typeof fetchSlack !== 'function') throw new Error('slack_sync_fetch_unavailable');
   const state = syncState(request.cursor);
-  return state.queue.length ? historyPage(fetchSlack, state) : membershipPage(fetchSlack, state);
+  return state.queue.length || state.rescan ? historyPage(fetchSlack, state) : membershipPage(fetchSlack, state);
 }
 
 /** Most hits assistant.search.context returns: Slack's own maximum. */
