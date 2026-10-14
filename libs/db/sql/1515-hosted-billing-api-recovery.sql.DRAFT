@@ -10,7 +10,7 @@ ALTER TABLE papercusp_auth.hosted_billing_webhook_events
 ALTER TABLE papercusp_auth.hosted_billing_customers
   DROP CONSTRAINT IF EXISTS hosted_billing_reconciliation_checkpoint_ck;
 ALTER TABLE papercusp_auth.hosted_billing_customers
-  ADD CONSTRAINT hosted_billing_reconciliation_checkpoint_ck CHECK (
+  ADD CONSTRAINT hosted_billing_reconciliation_checkpoint_ck CHECK ((
     reconciliation_checkpoint IS NULL OR (
       jsonb_typeof(reconciliation_checkpoint) = 'object'
       AND reconciliation_checkpoint ?& ARRAY['accountId', 'organizationId', 'customerId', 'livemode',
@@ -25,13 +25,13 @@ ALTER TABLE papercusp_auth.hosted_billing_customers
       AND (reconciliation_checkpoint->>'createdBefore')::bigint > (reconciliation_checkpoint->>'createdFrom')::bigint
       AND jsonb_typeof(reconciliation_checkpoint->'complete') = 'boolean'
     )
-  );
+  ) IS TRUE);
 ALTER TABLE papercusp_auth.hosted_billing_webhook_events
   DROP CONSTRAINT IF EXISTS hosted_billing_fact_digest_ck,
   DROP CONSTRAINT IF EXISTS hosted_billing_api_observation_ck;
 ALTER TABLE papercusp_auth.hosted_billing_webhook_events
   ADD CONSTRAINT hosted_billing_fact_digest_ck CHECK (fact_digest IS NULL OR fact_digest ~ '^[0-9a-f]{64}$'),
-  ADD CONSTRAINT hosted_billing_api_observation_ck CHECK (
+  ADD CONSTRAINT hosted_billing_api_observation_ck CHECK ((
     (body_digest IS NOT NULL OR api_observation IS NOT NULL)
     AND (body_digest IS NOT NULL OR (outcome = 'ignored' AND rejection_code IS NULL))
     AND (api_observation IS NULL OR (
@@ -41,12 +41,13 @@ ALTER TABLE papercusp_auth.hosted_billing_webhook_events
       AND api_observation->>'accountId' ~ '^acct_[A-Za-z0-9]+$'
       AND api_observation->>'apiObjectDigest' ~ '^[0-9a-f]{64}$'
       AND api_observation->>'factDigest' ~ '^[0-9a-f]{64}$'
+      AND (fact_digest IS NULL OR fact_digest = api_observation->>'factDigest')
       AND api_observation->>'evidenceRef' ~ '^stripe-billing-page:[0-9a-f]{64}$'
       AND jsonb_typeof(api_observation->'requestIds') = 'array'
       AND jsonb_array_length(api_observation->'requestIds') = 3
       AND (api_observation->>'observedAtMs')::bigint > 0
     ))
-  );
+  ) IS TRUE);
 COMMENT ON COLUMN papercusp_auth.hosted_billing_webhook_events.body_digest IS
   'SHA256 of original signed webhook bytes only. NULL means no signed delivery has been received; API recovery cannot populate or replace this value.';
 COMMENT ON COLUMN papercusp_auth.hosted_billing_webhook_events.api_observation IS
