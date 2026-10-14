@@ -1,0 +1,97 @@
+-- P-010 / EI-25993779357987209. Reuse immutable organization receipts as the
+-- deletion tombstone; provider upserts and later admissions cannot reopen access.
+-- No new table or customer grants. DRAFT: test on scratch DB only.
+-- FORWARD-COMPAT: existing active accounts behave identically; only a committed
+-- P-010 access-frozen receipt closes future activation of its exact target.
+
+DROP POLICY IF EXISTS hosted_deletion_freeze_owner ON papercusp_auth.organization_audit_events;
+CREATE POLICY hosted_deletion_freeze_owner ON papercusp_auth.organization_audit_events
+  FOR SELECT TO hosted_owner USING (action = 'organization.data.deletion.access-frozen');
+
+CREATE OR REPLACE FUNCTION papercusp_auth.hosted_customer_deletion_frozen(p_organization_id text, p_user_id text)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM papercusp_auth.organization_audit_events e
+     WHERE e.action = 'organization.data.deletion.access-frozen'
+       AND (
+         (p_organization_id IS NOT NULL AND e.organization_id::text = p_organization_id
+           AND e.metadata->'snapshot'->'request'->'target'->>'kind' = 'organization')
+         OR (p_user_id IS NOT NULL AND EXISTS (
+           SELECT 1 FROM jsonb_array_elements(e.metadata->'snapshot'->'users') u
+            WHERE u->>'userId' = p_user_id AND u->>'deleteUser' = 'true'))
+       )
+  )
+$function$;
+ALTER FUNCTION papercusp_auth.hosted_customer_deletion_frozen(text, text) OWNER TO hosted_owner;
+REVOKE ALL ON FUNCTION papercusp_auth.hosted_customer_deletion_frozen(text, text)
+  FROM PUBLIC, harness_app, harness_zero, hosted_app, hosted_service;
+GRANT EXECUTE ON FUNCTION papercusp_auth.hosted_customer_deletion_frozen(text, text) TO hosted_service;
+
+CREATE OR REPLACE FUNCTION papercusp_auth.enforce_hosted_customer_deletion_freeze()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog
+AS $function$
+DECLARE v_org text; v_user text; v_active boolean := false;
+BEGIN
+  CASE TG_TABLE_NAME
+    WHEN 'organizations' THEN
+      v_org := NEW.id::text; v_active := NEW.status = 'active';
+    WHEN 'hosted_users' THEN
+      v_user := NEW.id::text; v_active := NEW.status = 'active';
+    WHEN 'external_identities' THEN
+      v_user := NEW.hosted_user_id::text; v_active := NEW.status = 'active';
+    WHEN 'organization_memberships' THEN
+      v_org := NEW.organization_id::text; v_user := NEW.user_id::text; v_active := NEW.status = 'active';
+    WHEN 'organization_invitation_refs' THEN
+      v_org := NEW.organization_id::text; v_active := NEW.status IN ('pending', 'accepted');
+    WHEN 'customer_workspaces' THEN
+      v_org := NEW.organization_id; v_active := NEW.state IN ('provisioning', 'active', 'suspended');
+    ELSE RAISE EXCEPTION 'unsupported hosted deletion freeze table' USING ERRCODE = '22023';
+  END CASE;
+  IF v_active THEN
+    -- AFTER the row/FK admission: waiters recheck the committed tombstone.
+    IF v_org IS NOT NULL THEN
+      PERFORM pg_advisory_xact_lock(hashtextextended('hosted-deletion:' || v_org, 0));
+    END IF;
+    IF v_user IS NOT NULL THEN
+      PERFORM pg_advisory_xact_lock(hashtextextended('hosted-deletion-user:' || v_user, 0));
+    END IF;
+    IF papercusp_auth.hosted_customer_deletion_frozen(v_org, v_user) THEN
+      RAISE EXCEPTION 'hosted customer deletion access is frozen' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
+$function$;
+ALTER FUNCTION papercusp_auth.enforce_hosted_customer_deletion_freeze() OWNER TO hosted_owner;
+
+DO $triggers$
+DECLARE v_table text;
+BEGIN
+  FOREACH v_table IN ARRAY ARRAY[
+    'papercusp_auth.organizations', 'papercusp_auth.hosted_users',
+    'papercusp_auth.external_identities', 'papercusp_auth.organization_memberships',
+    'papercusp_auth.organization_invitation_refs', 'harness_shared.customer_workspaces'
+  ] LOOP
+    EXECUTE format('DROP TRIGGER IF EXISTS hosted_customer_deletion_freeze ON %s', v_table);
+    EXECUTE format('CREATE TRIGGER hosted_customer_deletion_freeze AFTER INSERT OR UPDATE ON %s
+      FOR EACH ROW EXECUTE FUNCTION papercusp_auth.enforce_hosted_customer_deletion_freeze()', v_table);
+  END LOOP;
+END
+$triggers$;
+REVOKE ALL ON FUNCTION papercusp_auth.enforce_hosted_customer_deletion_freeze()
+  FROM PUBLIC, harness_app, harness_zero, hosted_app, hosted_service;
+
+DO $postconditions$
+BEGIN
+  IF has_function_privilege('hosted_app', 'papercusp_auth.hosted_customer_deletion_frozen(text,text)', 'EXECUTE')
+     OR NOT has_function_privilege('hosted_service', 'papercusp_auth.hosted_customer_deletion_frozen(text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION '1513: deletion freeze permission boundary failed';
+  END IF;
+  IF (SELECT count(*) FROM pg_trigger
+       WHERE tgname = 'hosted_customer_deletion_freeze' AND NOT tgisinternal) <> 6 THEN
+    RAISE EXCEPTION '1513: deletion freeze activation guards are incomplete';
+  END IF;
+END
+$postconditions$;
