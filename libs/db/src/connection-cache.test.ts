@@ -50,10 +50,11 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   it('appUrl() invalidates _appOrgClient when discovery URL changes', () => {
     // appUrl funnels resolution through resolveAppUrl; the discovery-specific
     // invalidation remains there, alongside the admin-side equivalent.
-    const entry = SRC.match(/function appUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    // Signatures take an optional `opts` (test seams), so match any parameter list.
+    const entry = SRC.match(/function appUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
     expect(entry, 'appUrl() must remain connected to discovery resolution').toBeTruthy();
-    expect(entry![1]).toMatch(/\bresolveAppUrl\(\)/);
-    const fn = SRC.match(/function resolveAppUrl\(\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(entry![1]).toMatch(/\bresolveAppUrl\(/);
+    const fn = SRC.match(/function resolveAppUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
     expect(fn).toBeTruthy();
     const body = fn![1];
     expect(body, 'appUrl() must clear _appOrgClient when discovery URL changes (bug #33 — sibling of adminUrl invalidation)').toMatch(/_appOrgClient\s*=\s*null/);
@@ -61,7 +62,11 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   });
 
   it('adminUrl() invalidates _adminClient when discovery URL changes (pre-existing, locked here)', () => {
-    const fn = SRC.match(/function adminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
+    // adminUrl() funnels through resolveAdminUrl(), which owns the discovery branch.
+    const entry = SRC.match(/function adminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
+    expect(entry, 'adminUrl() must remain connected to discovery resolution').toBeTruthy();
+    expect(entry![1]).toMatch(/\bresolveAdminUrl\(/);
+    const fn = SRC.match(/function resolveAdminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
     expect(fn).toBeTruthy();
     const body = fn![1];
     expect(body).toMatch(/_adminClient\s*=\s*null/);
@@ -163,7 +168,7 @@ describe('connection cache invalidation source contract (bug #33)', () => {
   // (desktop restart / port shuffle) leaves it silently pointed at the stale
   // target forever (the exact bug #33 class, for the new pool).
   it("adminUrl()'s discovery-URL-change invalidation ALSO clears _adminLosslessBigintClient", () => {
-    const fn = SRC.match(/function adminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
+    const fn = SRC.match(/function resolveAdminUrl\([^)]*\)[^{]*\{([\s\S]+?)^\}/m);
     expect(fn).toBeTruthy();
     const body = fn![1];
     expect(
