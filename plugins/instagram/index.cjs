@@ -57,8 +57,13 @@ async function graph(host, source, url, method = 'GET', params) {
 function commentRecord(comment, mediaId) {
   if (!object(comment) || !str(comment.id) || !instant(comment.timestamp)) throw fault('transient', 'malformed_comment');
   const reply = str(comment.parent_id);
-  const payload = { id: comment.id, text: str(comment.text), occurredAt: comment.timestamp, mediaId, replyToId: reply || mediaId };
+  const payload = {
+    id: comment.id, text: str(comment.text), occurredAt: comment.timestamp,
+    platform: 'instagram', kind: reply ? 'reply' : 'comment', subjectId: mediaId,
+    mediaId, replyToId: reply || mediaId,
+  };
   if (str(comment.username)) payload.author = comment.username;
+  if (typeof comment.like_count === 'number' && Number.isFinite(comment.like_count)) payload.likeCount = comment.like_count;
   if (typeof comment.hidden === 'boolean') payload.hidden = comment.hidden;
   if (!payload.text) payload.textAbsent = true;
   return { datatype: 'social-post', nativeId: comment.id, event: reply ? 'reply' : 'comment', payload, occurredAt: comment.timestamp, version: `${comment.id}@${comment.timestamp}` };
