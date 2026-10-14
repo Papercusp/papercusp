@@ -29,8 +29,9 @@ BEGIN
      OR p_staff_principal_id IS NULL OR btrim(p_staff_principal_id) = '' THEN
     RAISE EXCEPTION 'audited database read session scope is invalid' USING ERRCODE = '42501';
   END IF;
-  SELECT xact_start::text INTO v_transaction_started
-    FROM pg_stat_activity WHERE pid = pg_backend_pid();
+  -- pg_stat_activity hides the ops backend's xact_start from hosted_owner;
+  -- transaction_timestamp is exact, stable and independent of that ACL.
+  v_transaction_started := extract(epoch FROM transaction_timestamp())::text;
   IF NOT EXISTS (
     SELECT 1 FROM papercusp_auth.support_access_grants
      WHERE id = p_grant_id AND organization_id::text = p_organization_id
@@ -51,7 +52,7 @@ BEGIN
        AND metadata->>'role' = 'harness_ops'
        AND metadata->>'backendPid' = pg_backend_pid()::text
        AND metadata->>'transactionStartedAt' = v_transaction_started
-       AND metadata->>'serverStartedAt' = pg_postmaster_start_time()::text
+       AND metadata->>'serverStartedAt' = extract(epoch FROM pg_postmaster_start_time())::text
   ) OR EXISTS (
     SELECT 1 FROM papercusp_auth.organization_audit_events
      WHERE organization_id::text = p_organization_id AND target_id = p_session_id::text
