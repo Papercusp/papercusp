@@ -47,6 +47,21 @@ test('legacy blueprint bytes gain no implicit operations manifest', () => {
   assert.deepEqual(BlueprintSchema.parse(parsed), parsed);
 });
 
+test('business review is an explicit revision-pinned acceptance policy', () => {
+  const op = directOperation();
+  const businessReview = { accountableOwner: 'engineering-owner', reviewerPrincipals: ['engineering-reviewer'] };
+  const parsed = BlueprintSchema.parse(raw([{ ...op, acceptance: { ...op.acceptance, businessReview } }]));
+  assert.deepEqual(parsed.operations?.[0]?.acceptance.businessReview, businessReview);
+  for (const invalid of [
+    { ...businessReview, reviewerPrincipals: [] },
+    { ...businessReview, reviewerPrincipals: ['reviewer', 'reviewer'] },
+    { ...businessReview, accountableOwner: ' ' },
+    { ...businessReview, allowSelfReview: true },
+  ]) {
+    assert.equal(BlueprintSchema.safeParse(raw([{ ...op, acceptance: { ...op.acceptance, businessReview: invalid } }])).success, false);
+  }
+});
+
 test('direct and explicit-plan operations carry typed interfaces and exact pins', () => {
   const plan = {
     id: 'batch',

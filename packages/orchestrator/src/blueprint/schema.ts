@@ -1061,6 +1061,13 @@ export const BlueprintOperationSchema = z.object({
   acceptance: z.object({
     resultSchema: OperationJsonSchema,
     rubric: RubricOperationRefSchema.optional(),
+    // Business acceptance is distinct from worker settlement and tool approval.
+    // Kept in the immutable operation revision; it never grants a live capability.
+    businessReview: z.object({
+      accountableOwner: z.string().trim().min(1).max(200),
+      reviewerPrincipals: z.array(z.string().trim().min(1).max(200)).min(1)
+        .refine((ids) => new Set(ids).size === ids.length, 'reviewer principals must be unique'),
+    }).strict().optional(),
   }).strict(),
   // These are requirements to intersect with the live principal/role ceiling;
   // a blueprint declaration never grants a tool or revives a revoked grant.
