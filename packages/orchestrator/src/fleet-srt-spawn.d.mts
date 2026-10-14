@@ -1,5 +1,11 @@
 export const FLEET_SANDBOX_DENY_READ: readonly string[];
 export const FLEET_SANDBOX_CACHE_ROOT: string;
+export const NATIVE_CONTAINER_EXEC_ENV: 'PAPERCUSP_NATIVE_CONTAINER_EXEC';
+export interface NativeContainerExecBinding {
+  kind: 'docker-exec';
+  command: string;
+  sha256: string;
+}
 export function rootReadDenyPaths(
   entries: readonly Pick<import('node:fs').Dirent, 'name' | 'isSymbolicLink'>[],
 ): string[];

@@ -11,6 +11,8 @@ export const FLEET_SANDBOX_DENY_READ = Object.freeze([
   '~/.ssh', '~/.aws', '~/.gnupg', '~/.config/gcloud', '~/.papercusp', '~/.npmrc',
 ]);
 export const FLEET_SANDBOX_CACHE_ROOT = join(homedir(), '.cache', 'papercusp-fleet-sandbox');
+// Written only by capability:launch-agent's private backend-override context.
+export const NATIVE_CONTAINER_EXEC_ENV = 'PAPERCUSP_NATIVE_CONTAINER_EXEC';
 
 /** Expand real root entries only; root symlink aliases are covered at their target. */
 export function rootReadDenyPaths(entries) {
@@ -94,7 +96,11 @@ function scopedExecutableFingerprint(paths) {
  */
 export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   const encoded = env[SCOPED_INFERENCE_GATEWAY_ENV];
-  if (encoded === undefined) return null;
+  const containerEncoded = env[NATIVE_CONTAINER_EXEC_ENV];
+  if (encoded === undefined) {
+    if (containerEncoded !== undefined) throw new Error('Scoped native container boundary requires its metered route');
+    return null;
+  }
   let route;
   try { route = snapshotScopedInferenceGateway(JSON.parse(encoded)); }
   catch { throw new Error('Invalid scoped native sandbox route'); }
@@ -106,6 +112,44 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     throw new Error('Scoped native checkout/home must survive the private device namespace and cannot grant the filesystem root');
   const operatorEndpoint = loopbackEndpoint(env.PAPERCUSP_OPERATOR_URL);
   const gatewayEndpoint = loopbackEndpoint(route.baseURL);
+  const verifyBinding = options => {
+    let current;
+    try { current = snapshotScopedInferenceGateway(JSON.parse(options.env[SCOPED_INFERENCE_GATEWAY_ENV])); }
+    catch { throw new Error('Scoped native sandbox lost its route before spawn'); }
+    if (options.cwd !== cwd || options.env.PATH !== env.PATH || options.env.CODEX_HOME !== codexHome || options.env.PAPERCUSP_AGENT !== 'codex' ||
+        current.baseURL !== route.baseURL || current.token !== route.token ||
+        options.env[NATIVE_CONTAINER_EXEC_ENV] !== containerEncoded ||
+        loopbackEndpoint(options.env.PAPERCUSP_OPERATOR_URL) !== operatorEndpoint)
+      throw new Error('Scoped native sandbox binding changed before spawn');
+  };
+  if (containerEncoded !== undefined) {
+    let binding;
+    try { binding = JSON.parse(containerEncoded); } catch { throw new Error('Invalid scoped native container binding'); }
+    if (!binding || binding.kind !== 'docker-exec' || typeof binding.command !== 'string' || !isAbsolute(binding.command) ||
+        !/^[a-f0-9]{64}$/.test(binding.sha256) || Object.keys(binding).sort().join(',') !== 'command,kind,sha256' ||
+        env.PAPERCUSP_BACKEND_BIN_CODEX !== binding.command)
+      throw new Error('Invalid scoped native container binding');
+    const verifyExecutable = command => {
+      if (command !== binding.command || realpathSync(command) !== binding.command || !statSync(command).isFile() ||
+          (statSync(command).mode & 0o022) !== 0 ||
+          createHash('sha256').update(readFileSync(command)).digest('hex') !== binding.sha256)
+        throw new Error('Scoped native container executable binding changed before spawn');
+    };
+    verifyExecutable(binding.command);
+    // The operator-generated wrapper runs host preparation, then docker execs
+    // the agent in the task namespace. SRT would mount the source home before
+    // rename (EBUSY) and hide the Docker socket and trusted records. Admit only
+    // this exact wrapper, on every managed generation.
+    return (command, argv, options, realSpawn) => {
+      verifyBinding(options);
+      if (options.env.PAPERCUSP_BACKEND_BIN_CODEX !== binding.command)
+        throw new Error('Scoped native container override binding changed before spawn');
+      verifyExecutable(command);
+      const childEnv = { ...options.env };
+      delete childEnv[NATIVE_CONTAINER_EXEC_ENV];
+      return realSpawn(command, argv, { ...options, env: childEnv });
+    };
+  }
   const bin = srtBin === undefined
     ? (env.PATH ?? '').split(sep === '/' ? ':' : ';').filter(Boolean).map(p => join(p, 'srt')).find(existsSync)
     : srtBin;
@@ -119,13 +163,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   let runtimePaths;
   let executableFingerprint;
   return (command, argv, options, realSpawn) => {
-    let current;
-    try { current = snapshotScopedInferenceGateway(JSON.parse(options.env[SCOPED_INFERENCE_GATEWAY_ENV])); }
-    catch { throw new Error('Scoped native sandbox lost its route before spawn'); }
-    if (options.cwd !== cwd || options.env.PATH !== env.PATH || options.env.CODEX_HOME !== codexHome || options.env.PAPERCUSP_AGENT !== 'codex' ||
-        current.baseURL !== route.baseURL || current.token !== route.token ||
-        loopbackEndpoint(options.env.PAPERCUSP_OPERATOR_URL) !== operatorEndpoint)
-      throw new Error('Scoped native sandbox binding changed before spawn');
+    verifyBinding(options);
     const runtime = scopedRuntimeBinding(command, env);
     const observedRuntimePaths = runtime.readPaths;
     if (runtimePaths && JSON.stringify(runtimePaths) !== JSON.stringify(observedRuntimePaths))

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, rootReadDenyPaths, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
+import { buildProcessSrtSettings, createScopedNativeSandboxSpawn, NATIVE_CONTAINER_EXEC_ENV, rootReadDenyPaths, wrapProcessWithSrt } from './fleet-srt-spawn.mjs';
 
 const route = { baseURL: 'http://127.0.0.1:32001', token: 'a'.repeat(64) };
 const fixture = () => {
@@ -15,6 +16,46 @@ const fixture = () => {
 describe('required scoped native process boundary', () => {
   it('leaves ordinary native launches unchanged', () => {
     expect(createScopedNativeSandboxSpawn({ cwd: '/checkout', env: {} })).toBeNull();
+  });
+  it('admits only the frozen server-owned Docker wrapper and never leaks its authority into the child', () => {
+    const f = fixture();
+    const command = join(f.cwd, 'codex');
+    const source = '#!/bin/sh\nexit 0\n';
+    writeFileSync(command, source, { mode: 0o700 });
+    const binding = { kind: 'docker-exec', command, sha256: createHash('sha256').update(source).digest('hex') };
+    const env = { ...f.env, PAPERCUSP_BACKEND_BIN_CODEX: command, [NATIVE_CONTAINER_EXEC_ENV]: JSON.stringify(binding) };
+    let calls = 0;
+    const realSpawn = (bin: string, args: string[], options: any) => { calls++; return { bin, args, options }; };
+    try {
+      const boundary = createScopedNativeSandboxSpawn({ cwd: f.cwd, env, srtBin: null })!;
+      for (const args of [['first'], ['resume', 'native-2']]) {
+        const result = boundary(command, args, { cwd: f.cwd, env }, realSpawn);
+        expect(result.bin).toBe(command);
+        expect(result.args).toEqual(args);
+        expect(result.options.env[NATIVE_CONTAINER_EXEC_ENV]).toBeUndefined();
+        expect(env[NATIVE_CONTAINER_EXEC_ENV]).toBe(JSON.stringify(binding));
+      }
+      expect(() => boundary('/bin/sh', [], { cwd: f.cwd, env }, realSpawn)).toThrow(/executable binding changed/);
+      for (const patch of [
+        { CODEX_HOME: '/other' }, { PAPERCUSP_OPERATOR_URL: 'http://127.0.0.1:9072' },
+        { PAPERCUSP_BACKEND_BIN_CODEX: '/bin/sh' }, { [NATIVE_CONTAINER_EXEC_ENV]: undefined },
+        { PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify({ ...route, token: 'b'.repeat(64) }) },
+      ]) expect(() => boundary(command, [], { cwd: f.cwd, env: { ...env, ...patch } }, realSpawn)).toThrow(/binding changed/);
+      writeFileSync(command, source + '# changed\n');
+      expect(() => boundary(command, [], { cwd: f.cwd, env }, realSpawn)).toThrow(/executable binding changed/);
+      expect(calls).toBe(2);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); }
+  });
+  it('refuses malformed or unmetered container authority and leaves an unbound override inside SRT', () => {
+    const f = fixture();
+    try {
+      for (const value of ['{', '{}', JSON.stringify({ kind: 'docker-exec', command: '/bin/sh', sha256: 'a'.repeat(64) })])
+        expect(() => createScopedNativeSandboxSpawn({ ...f, env: { ...f.env, [NATIVE_CONTAINER_EXEC_ENV]: value } })).toThrow(/container binding/);
+      expect(() => createScopedNativeSandboxSpawn({ ...f, env: { [NATIVE_CONTAINER_EXEC_ENV]: '{}' } })).toThrow(/metered route/);
+      // An arbitrary executable override carries no permission to replace SRT.
+      expect(() => createScopedNativeSandboxSpawn({ ...f,
+        env: { ...f.env, PAPERCUSP_BACKEND_BIN_CODEX: '/bin/sh' }, srtBin: null })).toThrow(/refusing unconfined/);
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); }
   });
   it('omits root symlink aliases while retaining the real target entry in read denies', () => {
     const entry = (name: string, symlink = false) => ({ name, isSymbolicLink: () => symlink });
