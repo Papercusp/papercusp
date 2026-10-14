@@ -198,14 +198,15 @@ async function invoke(request, host) {
   }
   if (request.capability === 'social.delete') {
     const externalId = targetId(str(args.externalId));
-    let comment;
+    let comment; let isMedia = false;
     try {
       comment = await graph(host, request.source, urlFor(externalId, { fields: 'id,media' }));
     } catch (error) {
-      if (error.unsupportedCommentField !== true) throw error;
+      if (error?.unsupportedCommentField !== true) throw error;
+      isMedia = true;
     }
-    if (comment && (comment.id !== externalId || !str(comment.media?.id))) throw fault('transient', 'delete_requires_comment_object');
-    const mediaId = comment ? targetId(comment.media.id) : externalId;
+    if (!isMedia && (!object(comment) || comment.id !== externalId || !str(comment.media?.id))) throw fault('transient', 'delete_requires_comment_object');
+    const mediaId = isMedia ? externalId : targetId(comment.media.id);
     const media = await graph(host, request.source, urlFor(mediaId, { fields: 'id,media_type,owner' }));
     if (media?.id !== mediaId || !['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM'].includes(media.media_type)
       || str(media.owner?.id) !== config.igUserId) throw fault('transient', 'delete_media_not_owned');
