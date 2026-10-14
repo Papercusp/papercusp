@@ -1859,6 +1859,10 @@ export const chatRollupQueueInHarnessShared = harnessShared.table("chat_rollup_q
 	bucketKind: text("bucket_kind").notNull(),
 	bucketKey: text("bucket_key").notNull(),
 	queuedAt: timestamp("queued_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	attempts: integer().default(0).notNull(),
+	lastError: text("last_error"),
+	firstFailedAt: timestamp("first_failed_at", { withTimezone: true, mode: 'string' }),
+	deadLetteredAt: timestamp("dead_lettered_at", { withTimezone: true, mode: 'string' }),
 }, (table) => [
 	foreignKey({
 			columns: [table.workspaceId, table.dataSourceId],
@@ -1867,6 +1871,7 @@ export const chatRollupQueueInHarnessShared = harnessShared.table("chat_rollup_q
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.bucketKey, table.bucketKind, table.channelId, table.dataSourceId, table.workspaceId], name: "chat_rollup_queue_pkey"}),
 	pgPolicy("chat_rollup_queue_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("chat_rollup_queue_attempts_check", sql`attempts >= 0`),
 	check("chat_rollup_queue_bucket_key_check", sql`btrim(bucket_key) <> ''::text`),
 	check("chat_rollup_queue_bucket_kind_check", sql`bucket_kind = ANY (ARRAY['thread'::text, 'day'::text])`),
 	check("chat_rollup_queue_channel_id_check", sql`btrim(channel_id) <> ''::text`),
@@ -11322,6 +11327,66 @@ export const sharedSessionPresenceInHarnessShared = harnessShared.table("shared_
 	index("shared_session_presence_fleet_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.fleetSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(fleet_slug IS NOT NULL)`),
 	index("shared_session_presence_pot_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.potSlug.asc().nullsLast().op("text_ops"), table.lastSeenAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(pot_slug IS NOT NULL)`),
 	primaryKey({ columns: [table.machineLabel, table.ownerId, table.workspaceId], name: "shared_session_presence_pkey"}),
+]);
+
+export const siemExportDeliveriesInHarnessShared = harnessShared.table("siem_export_deliveries", {
+	deliveryId: text("delivery_id").default(sql`(gen_random_uuid())`).primaryKey().notNull(),
+	streamId: text("stream_id").notNull(),
+	idempotencyKey: text("idempotency_key").notNull(),
+	cursorFrom: text("cursor_from").notNull(),
+	cursorTo: text("cursor_to").notNull(),
+	length: integer().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	headSeq: bigint("head_seq", { mode: "number" }).notNull(),
+	headEntryHash: text("head_entry_hash").notNull(),
+	keyId: text("key_id"),
+	acknowledgedBy: text("acknowledged_by").notNull(),
+	acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("siem_export_deliveries_stream_time_idx").using("btree", table.streamId.asc().nullsLast().op("text_ops"), table.acknowledgedAt.desc().nullsFirst().op("timestamptz_ops")),
+	foreignKey({
+			columns: [table.streamId],
+			foreignColumns: [siemExportStreamsInHarnessShared.streamId],
+			name: "siem_export_deliveries_stream_id_fkey"
+		}),
+	unique("siem_export_deliveries_idempotency_uq").on(table.idempotencyKey, table.streamId),
+	check("siem_export_deliveries_acknowledged_by_check", sql`length(btrim(acknowledged_by)) > 0`),
+	check("siem_export_deliveries_cursor_from_check", sql`length(btrim(cursor_from)) > 0`),
+	check("siem_export_deliveries_cursor_moves_ck", sql`cursor_to <> cursor_from`),
+	check("siem_export_deliveries_cursor_to_check", sql`length(btrim(cursor_to)) > 0`),
+	check("siem_export_deliveries_head_entry_hash_check", sql`head_entry_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("siem_export_deliveries_head_seq_check", sql`head_seq >= 0`),
+	check("siem_export_deliveries_idempotency_key_check", sql`idempotency_key ~ '^[0-9a-f]{64}$'::text`),
+	check("siem_export_deliveries_key_id_check", sql`(key_id IS NULL) OR (key_id ~ '^k:[0-9a-f]{16}$'::text)`),
+	check("siem_export_deliveries_length_check", sql`length > 0`),
+	primaryKey({ columns: [table.deliveryId], name: "siem_export_deliveries_pkey"}),
+
+]);
+
+export const siemExportStreamsInHarnessShared = harnessShared.table("siem_export_streams", {
+	streamId: text("stream_id").primaryKey().notNull(),
+	kind: text().notNull(),
+	workspaceId: text("workspace_id"),
+	organizationId: uuid("organization_id"),
+	cursor: text().default('0').notNull(),
+	head: jsonb(),
+	keyId: text("key_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	deliveredBatches: bigint("delivered_batches", { mode: "number" }).default(0).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("siem_export_streams_organization_idx").using("btree", table.organizationId.asc().nullsLast().op("uuid_ops")).where(sql`(organization_id IS NOT NULL)`),
+	index("siem_export_streams_workspace_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(workspace_id IS NOT NULL)`),
+	check("siem_export_streams_cursor_check", sql`length(btrim(cursor)) > 0`),
+	check("siem_export_streams_delivered_batches_check", sql`delivered_batches >= 0`),
+	check("siem_export_streams_head_ck", sql`(head IS NULL) OR ((jsonb_typeof(head) = 'object'::text) AND (jsonb_typeof((head -> 'seq'::text)) = 'number'::text) AND (jsonb_typeof((head -> 'entryHash'::text)) = 'string'::text) AND (jsonb_typeof((head -> 'prevHash'::text)) = 'string'::text) AND (jsonb_typeof((head -> 'entryDigest'::text)) = 'string'::text) AND ((head ->> 'streamId'::text) = stream_id))`),
+	check("siem_export_streams_head_iff_delivered_ck", sql`(head IS NULL) = (delivered_batches = 0)`),
+	check("siem_export_streams_key_id_check", sql`(key_id IS NULL) OR (key_id ~ '^k:[0-9a-f]{16}$'::text)`),
+	check("siem_export_streams_kind_check", sql`kind = ANY (ARRAY['tool-invocations'::text, 'org-audit'::text])`),
+	check("siem_export_streams_subject_ck", sql`((kind = 'tool-invocations'::text) AND (workspace_id IS NOT NULL) AND (length(btrim(workspace_id)) > 0) AND (organization_id IS NULL) AND (stream_id = ('papercusp.siem-export:'::text || workspace_id))) OR ((kind = 'org-audit'::text) AND (organization_id IS NOT NULL) AND (workspace_id IS NULL) AND (stream_id = ('papercusp.siem-export.org-audit:'::text || (organization_id)::text)))`),
+	primaryKey({ columns: [table.streamId], name: "siem_export_streams_pkey"}),
+
 ]);
 
 export const slotParkedMessagesInHarnessShared = harnessShared.table("slot_parked_messages", {
