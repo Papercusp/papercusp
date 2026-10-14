@@ -8,17 +8,18 @@
 --
 --   * A document is under hold when its source_id names a data source with an ACTIVE hold, and the
 --     hold covers the whole source (channel_id IS NULL) or the document's provider container: the
---     document's metadata channelId, or the source_ref of its permission list (a Slack channel, a
---     GitHub repository).
+--     document's metadata channelId, or its permission list's source_ref. Connector lists are keyed
+--     '<source id>#<container>' (operator-core containerPermissionRef); a bare '<container>' also
+--     matches.
 --   * Chat-derived documents are exempt. Kinds chat-message, chat-thread and chat-window are renders
 --     of harness_shared.chat_messages, which 1320 already holds (with edit revisions); re-rollup must
---     stay free to replace them. operator-core chat-retrieval-units.ts owns these kind names and an
---     integration test pins this list to them.
+--     stay free to replace them. operator-core chat-retrieval-units.ts owns these kind names
+--     (CHAT_DERIVED_DOCUMENT_KINDS) and an integration test pins this list to them.
 --   * Under hold, DELETE is refused (including a cascade from users), as is an UPDATE that erases the
 --     text or moves the row to another workspace or source. Other updates (embeddings, metadata,
 --     re-sync of the same content) pass. The trigger fires only on UPDATE OF the guarded columns.
 --
--- Additive: two functions, one trigger. No hold rows exist before an operator places one, so the
+-- Additive: three functions, one trigger. No hold rows exist before an operator places one, so the
 -- release currently serving is unaffected until then.
 
 CREATE OR REPLACE FUNCTION harness_shared.document_is_chat_derived(p_kind text)
@@ -28,11 +29,11 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 COMMENT ON FUNCTION harness_shared.document_is_chat_derived(text) IS
-  'P-017a: document kinds rendered from harness_shared.chat_messages. Their content is held in chat_messages, so document legal holds exempt them. Pinned to chat-retrieval-units.ts by an integration test.';
+  'P-017a: document kinds rendered from harness_shared.chat_messages. Their content is held in chat_messages, so document legal holds exempt them. Pinned to chat-retrieval-units.ts CHAT_DERIVED_DOCUMENT_KINDS by an integration test.';
 
 -- Whether a hold's container (channel_id; NULL = the whole source) covers a document of the held source.
 CREATE OR REPLACE FUNCTION harness_shared.document_hold_container_matches(
-  p_workspace_id text, p_hold_channel_id text, p_metadata jsonb, p_permission_list_id uuid)
+  p_workspace_id text, p_source_id uuid, p_hold_channel_id text, p_metadata jsonb, p_permission_list_id uuid)
 RETURNS boolean
 LANGUAGE sql STABLE AS $$
   SELECT p_hold_channel_id IS NULL
@@ -42,11 +43,11 @@ LANGUAGE sql STABLE AS $$
           FROM harness_shared.document_permission_lists l
          WHERE l.workspace_id = p_workspace_id
            AND l.id = p_permission_list_id
-           AND l.source_ref = p_hold_channel_id)
+           AND l.source_ref IN (p_hold_channel_id, p_source_id::text || '#' || p_hold_channel_id))
 $$;
 
-COMMENT ON FUNCTION harness_shared.document_hold_container_matches(text, text, jsonb, uuid) IS
-  'P-017a: a hold container covers a document when the hold is source-wide, or names the document channelId or the source_ref of its permission list.';
+COMMENT ON FUNCTION harness_shared.document_hold_container_matches(text, uuid, text, jsonb, uuid) IS
+  'P-017a: a hold container covers a document when the hold is source-wide, or names the document channelId or its permission-list container (<source id>#<container> or a bare <container>).';
 
 CREATE OR REPLACE FUNCTION harness_shared.document_under_hold(
   p_workspace_id text, p_source_id uuid, p_kind text, p_metadata jsonb, p_permission_list_id uuid)
@@ -61,7 +62,7 @@ LANGUAGE sql STABLE AS $$
           AND h.data_source_id = p_source_id
           AND h.released_at IS NULL
           AND harness_shared.document_hold_container_matches(
-                p_workspace_id, h.channel_id, p_metadata, p_permission_list_id))
+                p_workspace_id, p_source_id, h.channel_id, p_metadata, p_permission_list_id))
 $$;
 
 COMMENT ON FUNCTION harness_shared.document_under_hold(text, uuid, text, jsonb, uuid) IS
@@ -103,5 +104,5 @@ CREATE TRIGGER documents_enforce_legal_hold
   FOR EACH ROW EXECUTE FUNCTION harness_shared.documents_enforce_legal_hold();
 
 GRANT EXECUTE ON FUNCTION harness_shared.document_is_chat_derived(text) TO harness_app, harness_admin;
-GRANT EXECUTE ON FUNCTION harness_shared.document_hold_container_matches(text, text, jsonb, uuid) TO harness_app, harness_admin;
+GRANT EXECUTE ON FUNCTION harness_shared.document_hold_container_matches(text, uuid, text, jsonb, uuid) TO harness_app, harness_admin;
 GRANT EXECUTE ON FUNCTION harness_shared.document_under_hold(text, uuid, text, jsonb, uuid) TO harness_app, harness_admin;
