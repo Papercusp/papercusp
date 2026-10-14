@@ -188,6 +188,7 @@ export const PG_DIAGNOSTIC_STAGES = [
   'scope-query', 'epoch-query', 'epoch-load', 'baseline-evidence', 'owner-check',
   'key-provider', 'keychain', 'native-loader', 'serialize', 'native-encrypt',
   'epoch-encrypt', 'hypercore-append', 'mark-drained',
+  'scorecards-get-evidence-read', 'scorecards-get-rubric-read',
 ] as const;
 /** Source-defined query legs retained only as bounded diagnostic labels. */
 export const PG_DIAGNOSTIC_QUERY_LEGS = [
