@@ -1,7 +1,7 @@
 'use strict';
 
 const manifest = require('./papercusp.json');
-const API = 'https://graph.facebook.com/v23.0';
+const API = 'https://graph.facebook.com/v26.0';
 const COMMENT_FIELDS = 'id,timestamp,text,username,like_count,hidden,parent_id,replies{id,timestamp,text,username,parent_id}';
 
 function fault(kind, message, extra) { return Object.assign(new Error(`instagram:${message}`), { kind }, extra || {}); }
@@ -51,7 +51,14 @@ async function graph(host, source, url, method = 'GET', params) {
     throw fault('rate-limited', 'graph_throttled', retryAfterSeconds === undefined ? {} : { retryAfterSeconds: Math.ceil(retryAfterSeconds) });
   }
   if (response.status === 401 || response.status === 403 || code === 10 || code === 190 || code === 200) throw fault('auth', 'graph_grant_refused');
-  if (response.status < 200 || response.status >= 300 || body?.error || body === null) throw fault('transient', method === 'POST' ? 'write_unconfirmed_do_not_retry' : 'graph_request_failed');
+  if (response.status < 200 || response.status >= 300 || body?.error || body === null) {
+    // Only this explicit type/field refusal permits the alternate media probe.
+    // Missing objects, insufficient grants and transient failures stay failures.
+    const unsupportedCommentField = method === 'GET' && code === 100
+      && /^Tried accessing nonexisting field \(media\) on node type \([A-Za-z_]+\)/.test(str(body?.error?.message));
+    throw fault('transient', method === 'POST' ? 'write_unconfirmed_do_not_retry' : 'graph_request_failed',
+      unsupportedCommentField ? { unsupportedCommentField: true } : {});
+  }
   return body;
 }
 function commentRecord(comment, mediaId) {
@@ -191,10 +198,17 @@ async function invoke(request, host) {
   }
   if (request.capability === 'social.delete') {
     const externalId = targetId(str(args.externalId));
-    // This grant documents comment moderation. A media id must not be presented
-    // as a deletable comment just because both ids are strings.
-    const comment = await graph(host, request.source, urlFor(externalId, { fields: 'id,text,media' }));
-    if (comment?.id !== externalId || !str(comment?.media?.id)) throw fault('transient', 'delete_requires_comment_object');
+    let comment;
+    try {
+      comment = await graph(host, request.source, urlFor(externalId, { fields: 'id,media' }));
+    } catch (error) {
+      if (error.unsupportedCommentField !== true) throw error;
+    }
+    if (comment && (comment.id !== externalId || !str(comment.media?.id))) throw fault('transient', 'delete_requires_comment_object');
+    const mediaId = comment ? targetId(comment.media.id) : externalId;
+    const media = await graph(host, request.source, urlFor(mediaId, { fields: 'id,media_type,owner' }));
+    if (media?.id !== mediaId || !['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM'].includes(media.media_type)
+      || str(media.owner?.id) !== config.igUserId) throw fault('transient', 'delete_media_not_owned');
     const body = await graph(host, request.source, urlFor(externalId), 'DELETE');
     if (typeof body === 'boolean') return { deleted: body };
     if (typeof body?.success !== 'boolean') throw fault('transient', 'delete_unconfirmed');

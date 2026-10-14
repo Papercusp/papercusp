@@ -18,12 +18,12 @@
     "capabilities": ["social.post", "social.reply", "social.delete"],
     "egressHosts": ["graph.facebook.com", "www.instagram.com", "www.facebook.com"],
     "oauth": {
-      "authorizeUrl": "https://www.facebook.com/v23.0/dialog/oauth",
-      "tokenUrl": "https://graph.facebook.com/v23.0/oauth/access_token",
+      "authorizeUrl": "https://www.facebook.com/v26.0/dialog/oauth",
+      "tokenUrl": "https://graph.facebook.com/v26.0/oauth/access_token",
       "clientRegistrationRef": "facebook",
       "scopeSeparator": ",",
       "scopes": ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement"],
-      "identity": { "url": "https://graph.facebook.com/v23.0/me?fields=id,name", "idField": "id", "displayNameField": "name" }
+      "identity": { "url": "https://graph.facebook.com/v26.0/me?fields=id,name", "idField": "id", "displayNameField": "name" }
     },
     "setup": {
       "appRegistration": {
