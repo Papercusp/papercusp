@@ -107,6 +107,8 @@ function advance(w, r) {
 }
 async function syncPage(request, host) {
   const config = configOf(request.config); const state = decode(request.cursor, config);
+  const catchUp = Object.keys(state.since).length
+    ? { path: 'backfill', reason: 'no-replay-supported' } : { path: 'cold-start' };
   if (state.phase === 'media') {
     const mediaUrl = urlFor(`${config.igUserId}/media`, { fields: 'id', limit: config.watchWindow, ...(state.mediaAfter ? { after: state.mediaAfter } : {}) });
     const body = await graph(host, request.source, mediaUrl);
@@ -119,18 +121,24 @@ async function syncPage(request, host) {
     if (!state.mediaAfter || state.mediaPage >= config.maxMediaPages || state.mediaIds.length >= config.watchWindow) {
       state.phase = state.mediaIds.length ? 'comments' : 'ready'; state.mediaAfter = null;
     }
-    return { records: [], nextCursor: JSON.stringify(state), hasMore: state.phase !== 'ready' };
+    return { records: [], nextCursor: JSON.stringify(state), hasMore: state.phase !== 'ready', catchUp };
   }
   const mediaId = state.mediaIds[state.mediaIndex];
   const commentUrl = urlFor(`${mediaId}/comments`, { fields: COMMENT_FIELDS, limit: 50 });
   const body = await graph(host, request.source, commentUrl);
   if (!Array.isArray(body.data) || body.data.length > 50) throw fault('transient', 'malformed_comment_window');
   const previous = state.since[mediaId];
-  // A full cold page has the same missing-history risk as a warm page that
-  // no longer reaches its watermark. Do not commit either as complete history.
-  if (body.data.length === 50 && (!previous || body.data.every((row) => instant(row.timestamp) && Date.parse(row.timestamp) > Date.parse(previous.at)))) {
-    throw fault('transient', 'capped_window_overflow', { lossRisk: { kind: 'capped-window-overflow', mediaId } });
-  }
+  // Admit reachable records while making incomplete history visible through
+  // the typed page contract. A transient throw used to discard this metadata.
+  const overflow = body.data.length === 50 && (!previous || body.data.every((row) => instant(row.timestamp) && Date.parse(row.timestamp) > Date.parse(previous.at)));
+  const lossRisk = overflow ? {
+    kind: 'capped-window-overflow',
+    oldestReachableAt: new Date(Math.min(...body.data.map((row) => {
+      if (!instant(row.timestamp)) throw fault('transient', 'malformed_comment');
+      return Date.parse(row.timestamp);
+    }))).toISOString(),
+    detail: `Media ${mediaId}: the newest-50 comment window cannot prove complete history${previous ? ` since ${previous.at}` : ' on first connect'}`,
+  } : undefined;
   const records = [];
   const pageIds = new Set();
   for (const record of flattenComments(body.data, mediaId)) {
@@ -146,7 +154,7 @@ async function syncPage(request, host) {
     state.phase = 'ready'; state.since = { ...state.since, ...state.seen }; state.seen = {};
     state.since = Object.fromEntries(Object.entries(state.since).filter(([id]) => state.mediaIds.some((media) => id === media || id.startsWith(`replies:${media}:`))));
   }
-  return { records, nextCursor: JSON.stringify(state), hasMore: state.phase !== 'ready' };
+  return { records, nextCursor: JSON.stringify(state), hasMore: state.phase !== 'ready', catchUp, ...(lossRisk ? { lossRisk } : {}) };
 }
 function mediaFrom(args) {
   if (!Array.isArray(args.media) || args.media.length === 0) throw fault('transient', 'media_required_instagram_is_media_primary');
