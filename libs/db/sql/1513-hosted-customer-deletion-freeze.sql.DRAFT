@@ -95,3 +95,129 @@ BEGIN
   END IF;
 END
 $postconditions$;
+
+-- Privileged mutations extend the existing fixed hosted_owner bridge. There
+-- are no new direct table grants to the hosted-service or browser role.
+DO $deletion_policies$
+DECLARE v_store text;
+BEGIN
+  FOREACH v_store IN ARRAY ARRAY[
+    'papercusp_auth.hosted_users', 'papercusp_auth.external_identities',
+    'papercusp_auth.organizations', 'papercusp_auth.organization_memberships',
+    'papercusp_auth.organization_invitation_refs', 'papercusp_auth.hosted_entitlements',
+    'papercusp_auth.hosted_user_preferences', 'papercusp_auth.hosted_sessions',
+    'papercusp_auth.workos_sealed_sessions', 'papercusp_auth.directory_group_role_mappings',
+    'papercusp_auth.directory_user_observations', 'papercusp_auth.hosted_cli_device_grants',
+    'papercusp_auth.hosted_cli_tokens', 'papercusp_auth.hosted_mcp_oauth_clients',
+    'papercusp_auth.hosted_mcp_oauth_requests', 'papercusp_auth.hosted_workspace_connectors',
+    'papercusp_auth.hosted_workspace_connector_tickets', 'harness_shared.customer_workspaces'
+  ] LOOP
+    EXECUTE format('GRANT SELECT, UPDATE, DELETE ON %s TO hosted_owner', v_store);
+    EXECUTE format('DROP POLICY IF EXISTS hosted_customer_deletion_owner ON %s', v_store);
+    EXECUTE format('CREATE POLICY hosted_customer_deletion_owner ON %s FOR ALL TO hosted_owner
+      USING (current_setting(''app.workspace_id'', true) = ''hosted-control-plane-service'')
+      WITH CHECK (current_setting(''app.workspace_id'', true) = ''hosted-control-plane-service'')', v_store);
+  END LOOP;
+END
+$deletion_policies$;
+
+CREATE OR REPLACE FUNCTION papercusp_auth.delete_hosted_customer_rows(
+  p_store text, p_organization_id text, p_operation_id text
+)
+RETURNS TABLE(outcome text, affected bigint, remaining bigint, reason text)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog
+AS $function$
+DECLARE
+  v_snapshot jsonb; v_users text[]; v_user_only boolean; v_predicate text;
+  v_subject text; v_count bigint; v_rows bigint; v_kind text := 'deleted';
+BEGIN
+  IF current_setting('app.workspace_id', true) IS DISTINCT FROM 'hosted-control-plane-service'
+     OR current_setting('app.organization_id', true) IS DISTINCT FROM p_organization_id
+     OR p_operation_id IS NULL OR btrim(p_operation_id) = '' THEN
+    RAISE EXCEPTION 'hosted customer deletion service scope is invalid' USING ERRCODE = '42501';
+  END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('hosted-deletion:' || p_organization_id, 0));
+  SELECT e.metadata->'snapshot' INTO STRICT v_snapshot
+    FROM papercusp_auth.organization_audit_events e
+   WHERE e.organization_id::text = p_organization_id
+     AND e.action = 'organization.data.deletion.access-frozen'
+     AND e.metadata->>'operationId' = p_operation_id;
+  IF v_snapshot->'request'->>'organizationId' IS DISTINCT FROM p_organization_id
+     OR v_snapshot->'request'->>'operationId' IS DISTINCT FROM p_operation_id
+     OR v_snapshot->'request'->'policy'->>'consent' IS DISTINCT FROM 'retain' THEN
+    RAISE EXCEPTION 'hosted customer deletion snapshot is invalid' USING ERRCODE = '42501';
+  END IF;
+  v_user_only := v_snapshot->'request'->'target'->>'kind' = 'user';
+  SELECT COALESCE(array_agg(u->>'userId'), ARRAY[]::text[]) INTO v_users
+    FROM jsonb_array_elements(v_snapshot->'users') u WHERE u->>'deleteUser' = 'true';
+  FOR v_subject IN SELECT unnest(v_users) ORDER BY 1 LOOP
+    PERFORM pg_advisory_xact_lock(hashtextextended('hosted-deletion-user:' || v_subject, 0));
+  END LOOP;
+  -- Every statement uses a fixed identifier and a bound, immutable scope.
+  CASE p_store
+    WHEN 'papercusp_auth.hosted_users' THEN
+      v_predicate := 't.id::text = ANY($2)'; v_kind := 'redacted';
+    WHEN 'papercusp_auth.external_identities' THEN
+      v_predicate := 't.hosted_user_id::text = ANY($2)'; v_kind := 'redacted';
+    WHEN 'papercusp_auth.organizations' THEN
+      IF v_user_only THEN RETURN QUERY SELECT 'not-attributable', 0::bigint, 0::bigint, 'Organization outside user deletion scope.'; RETURN; END IF;
+      v_predicate := 't.id::text = $1'; v_kind := 'redacted';
+    WHEN 'harness_shared.customer_workspaces' THEN
+      IF v_user_only THEN RETURN QUERY SELECT 'not-attributable', 0::bigint, 0::bigint, 'Workspace outside user deletion scope.'; RETURN; END IF;
+      IF EXISTS (SELECT 1 FROM harness_shared.customer_workspaces w WHERE w.organization_id = p_organization_id AND w.state <> 'deleted') THEN
+        RAISE EXCEPTION 'hosted customer deletion workspace teardown is incomplete' USING ERRCODE = '55000';
+      END IF;
+      v_predicate := 't.organization_id::text = $1'; v_kind := 'redacted';
+    WHEN 'papercusp_auth.organization_invitation_refs', 'papercusp_auth.directory_group_role_mappings',
+         'papercusp_auth.directory_user_observations', 'papercusp_auth.hosted_mcp_oauth_clients',
+         'papercusp_auth.hosted_workspace_connectors' THEN
+      IF v_user_only THEN RETURN QUERY SELECT 'not-attributable', 0::bigint, 0::bigint, 'Organization outside user deletion scope.'; RETURN; END IF;
+      v_predicate := CASE WHEN p_store = 'papercusp_auth.directory_user_observations'
+        THEN 't.external_organization_id = $3' ELSE 't.organization_id::text = $1' END;
+    WHEN 'papercusp_auth.organization_memberships', 'papercusp_auth.hosted_entitlements',
+         'papercusp_auth.hosted_user_preferences', 'papercusp_auth.hosted_sessions',
+         'papercusp_auth.hosted_cli_device_grants', 'papercusp_auth.hosted_cli_tokens',
+         'papercusp_auth.hosted_workspace_connector_tickets' THEN
+      v_predicate := CASE WHEN v_user_only THEN 't.user_id::text = ANY($2)'
+        ELSE '(t.organization_id::text = $1 OR t.user_id::text = ANY($2))' END;
+    WHEN 'papercusp_auth.hosted_mcp_oauth_requests' THEN
+      v_predicate := CASE WHEN v_user_only THEN 't.approved_by::text = ANY($2)'
+        ELSE '(t.organization_id::text = $1 OR t.approved_by::text = ANY($2))' END;
+    WHEN 'papercusp_auth.workos_sealed_sessions' THEN
+      v_predicate := CASE WHEN v_user_only
+        THEN 'EXISTS (SELECT 1 FROM papercusp_auth.hosted_sessions s WHERE s.upstream_session_id = t.external_session_id AND s.user_id::text = ANY($2))'
+        ELSE 'EXISTS (SELECT 1 FROM papercusp_auth.hosted_sessions s WHERE s.upstream_session_id = t.external_session_id AND (s.organization_id::text = $1 OR s.user_id::text = ANY($2)))' END;
+    ELSE RAISE EXCEPTION 'hosted customer deletion store is not allowed' USING ERRCODE = '42501';
+  END CASE;
+  v_subject := v_snapshot->'organizationIdentity'->>'subject';
+  IF v_kind = 'redacted' THEN
+    CASE p_store
+      WHEN 'papercusp_auth.hosted_users' THEN
+        EXECUTE format('UPDATE %s t SET primary_email=NULL, display_name=NULL, status=''deleted'', deleted_at=COALESCE(deleted_at,now()), updated_at=now() WHERE %s', p_store, v_predicate)
+          USING p_organization_id, v_users, v_subject;
+      WHEN 'papercusp_auth.external_identities' THEN
+        EXECUTE format('UPDATE %s t SET provider_email=NULL, profile=''{}''::jsonb, status=''deleted'', deleted_at=COALESCE(deleted_at,now()), updated_at=now() WHERE %s', p_store, v_predicate)
+          USING p_organization_id, v_users, v_subject;
+      WHEN 'papercusp_auth.organizations' THEN
+        EXECUTE format('UPDATE %s t SET display_name=''Deleted organization'', status=''deleted'', deleted_at=COALESCE(deleted_at,now()), updated_at=now() WHERE %s', p_store, v_predicate)
+          USING p_organization_id, v_users, v_subject;
+      WHEN 'harness_shared.customer_workspaces' THEN
+        EXECUTE format('UPDATE %s t SET display_name=''Deleted workspace'', updated_at=now() WHERE %s', p_store, v_predicate)
+          USING p_organization_id, v_users, v_subject;
+    END CASE;
+  ELSE
+    EXECUTE format('DELETE FROM %s t WHERE %s', p_store, v_predicate)
+      USING p_organization_id, v_users, v_subject;
+  END IF;
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  EXECUTE format('SELECT count(*) FROM %s t WHERE %s', p_store, v_predicate)
+    INTO v_count USING p_organization_id, v_users, v_subject;
+  RETURN QUERY SELECT v_kind, v_rows, v_count, CASE WHEN v_kind = 'redacted'
+    THEN 'Profile fields erased; inert identity retained for replay protection and record references.'
+    ELSE 'Snapshot-scoped account or ephemeral rows deleted.' END;
+END
+$function$;
+ALTER FUNCTION papercusp_auth.delete_hosted_customer_rows(text,text,text) OWNER TO hosted_owner;
+REVOKE ALL ON FUNCTION papercusp_auth.delete_hosted_customer_rows(text,text,text)
+  FROM PUBLIC, harness_app, harness_zero, hosted_app, hosted_service;
+GRANT EXECUTE ON FUNCTION papercusp_auth.delete_hosted_customer_rows(text,text,text) TO hosted_service;
