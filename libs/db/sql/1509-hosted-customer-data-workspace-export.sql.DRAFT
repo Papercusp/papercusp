@@ -1,0 +1,61 @@
+-- P-010: the hosted service may resolve the customer workspace ids for an
+-- already-authenticated organization export, without receiving directory
+-- SELECT. The function is deliberately narrow: it requires the transaction
+-- sentinel used by withHostedServiceContext and an organization GUC set by
+-- the authenticated caller.
+
+DROP POLICY IF EXISTS hosted_customer_workspace_export_owner
+  ON harness_shared.customer_workspaces;
+CREATE POLICY hosted_customer_workspace_export_owner
+  ON harness_shared.customer_workspaces
+  FOR SELECT TO hosted_owner
+  USING (
+    current_setting('app.workspace_id', true) = 'hosted-control-plane-service'
+    AND organization_id = NULLIF(current_setting('app.organization_id', true), '')
+  );
+
+CREATE OR REPLACE FUNCTION papercusp_auth.read_hosted_customer_export_workspaces(
+  p_organization_id text
+)
+RETURNS SETOF harness_shared.customer_workspaces
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, harness_shared, papercusp_auth
+AS $function$
+BEGIN
+  IF p_organization_id IS NULL OR btrim(p_organization_id) = '' THEN
+    RAISE EXCEPTION 'hosted customer export organization is required' USING ERRCODE = '22023';
+  END IF;
+  IF current_setting('app.workspace_id', true) IS DISTINCT FROM 'hosted-control-plane-service'
+     OR current_setting('app.organization_id', true) IS DISTINCT FROM p_organization_id THEN
+    RAISE EXCEPTION 'hosted customer export service scope is invalid' USING ERRCODE = '42501';
+  END IF;
+  RETURN QUERY
+    SELECT w.*
+      FROM harness_shared.customer_workspaces AS w
+     WHERE w.organization_id = p_organization_id
+     ORDER BY w.id;
+END
+$function$;
+
+ALTER FUNCTION papercusp_auth.read_hosted_customer_export_workspaces(text)
+  OWNER TO hosted_owner;
+REVOKE ALL ON FUNCTION papercusp_auth.read_hosted_customer_export_workspaces(text)
+  FROM PUBLIC, harness_app, harness_zero, hosted_app, hosted_service;
+GRANT EXECUTE ON FUNCTION papercusp_auth.read_hosted_customer_export_workspaces(text)
+  TO hosted_service;
+
+DO $postconditions$
+BEGIN
+  IF has_table_privilege('hosted_service', 'harness_shared.customer_workspaces', 'SELECT') THEN
+    RAISE EXCEPTION '1509: hosted_service must not receive direct customer_workspaces SELECT';
+  END IF;
+  IF NOT has_function_privilege(
+    'hosted_service',
+    'papercusp_auth.read_hosted_customer_export_workspaces(text)',
+    'EXECUTE'
+  ) THEN
+    RAISE EXCEPTION '1509: hosted_service export bridge is not executable';
+  END IF;
+END
+$postconditions$;
