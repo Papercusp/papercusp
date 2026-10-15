@@ -52,13 +52,50 @@ reads them: the host attaches them to the requests the package makes.
   starts each round with a membership page (every channel the app is in, with its members),
   then backfills each newly seen channel one `conversations.history` page at a time, thread
   replies included, as `history` records, so workflows bound to new messages never fire on old
-  ones. After that, each pass refreshes membership and the socket brings new messages. A Slack
-  rate limit makes the host wait out `Retry-After`.
+  ones. After that, each round refreshes membership and rescans one known channel's last seven
+  days; whole-history re-walks rotate across known channels about once every 30 days. The socket
+  brings new messages. A Slack rate limit makes the host wait out `Retry-After`.
 - **`search.live`**: `{ query, limit }` → `assistant.search.context` with the searching
   person's own user token, so Slack decides what they can see. Nothing is stored.
 - **`chat.channels`**: lists the channels the bot can read, for channel pickers in workflow
   settings.
 - **`chat.reply`**: `{ channelId, threadId, text }` → `chat.postMessage` in that thread.
+
+## Support and diagnostics
+
+Papercusp maintains this package's provider and host integration. The workspace administrator
+owns the Slack app installation, token renewal, channel access and mapping Slack identities to
+Papercusp users. Slack controls API availability and the app's granted scopes. This contract
+describes the existing 0.2.0 package; it does not certify a customer tenant or packaged release.
+
+Organization reads require the bot to belong to each selected channel, the history/read scopes
+above, and `source-acl` permission mapping. The host grants stored-message access only through
+current channel membership and mapped identities; corpus access also requires its personal
+grant. Membership changes take effect after the next successful membership refresh. An unfinished
+backfill or provider backoff can delay that refresh. Live search uses the searching person's own
+user token and Slack's current access decision; a revoked identity mapping prevents that search.
+
+Socket delivery handles edits and deletions while connected. After an outage, the rotating
+seven-day scan reconciles recent history within a sweep of known channels; older messages and
+threads need the rotating whole-history re-walk. Its bound is the 30-day rotation plus the time
+needed to finish paginated re-walks. These are successful-sync bounds, not a promise of immediate
+revocation or recovery during Slack throttling, missing scopes or an offline host. History records
+do not trigger workflows for new messages. Reading does not authorize posting: `chat.reply`
+requires its own applicable write policy and Slack `chat:write` grant.
+
+Authorized administrators can inspect the existing `/admin/triggers` snapshot (also reused by
+`triggers:list` and `triggers:status`). Each source reports `scope`, `scopeRef`, `permissionMode`,
+`backfillStatus`, `lastSyncAt`, `nextAttemptAt`, `failureCount`, `status` and `lastError`. A successful
+pass may leave backfill pending, so read `lastSyncAt` together with `backfillStatus`. A null last
+success means no successful driver pass is recorded. This projection adds no token values or
+expanded ACL. The Settings → Integrations card remains the place to connect or renew credentials.
+
+For `rate_limited`, honor the recorded next attempt and Slack's `Retry-After`; the driver keeps
+the uncommitted cursor and resumes it after backoff. For `reconnect_required` (including revoked
+tokens or missing scopes), restore the Slack grant and reconnect on the card; the driver marks
+the source `error` and stops automatic retries. After recovery, confirm a new successful pass,
+cleared error/failure count, completed backfill, and a scoped read as the affected person. Private
+network reachability is not applicable: this package declares only `slack.com` egress.
 
 ## Using it with a workflow
 
