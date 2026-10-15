@@ -1,6 +1,6 @@
 # X provider
 
-The `x` package uses the generic provider runtime for OAuth 2.0 with PKCE, token storage, network access, retry/backoff, cursor commits and social write safeguards. Set `userId` and `username` to the connected account. It emits `social-post` mentions and incoming replies and supports text posts, replies and deletion. Media upload is unsupported and is refused before sending a post.
+The package at `plugins/x` registers the existing `x-twitter` platform id through the generic provider runtime for OAuth 2.0 with PKCE, token storage, network access, retry/backoff, cursor commits and social write safeguards. Set `userId` and `username` to the connected account. It emits `social-post` mentions and incoming replies and supports text posts, replies and deletion. Media upload is unsupported and is refused before sending a post.
 
 Each `syncPage` makes one host request for at most ten posts. Mentions use `GET /2/users/:id/mentions`; incoming replies use recent search with `to:<username> is:reply`. The host bounds each source pass to `maxPagesPerSource` (default 20). Its committed opaque cursor retains unfinished pagination for the next pass. The package adds no retry loop or separate scheduler. The X console's spending limit remains the hard spending ceiling; request bounds alone do not guarantee a monthly bill.
 

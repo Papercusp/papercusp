@@ -19,7 +19,7 @@ function configOf(raw) {
   return { userId: raw.userId, username: raw.username.toLowerCase() };
 }
 function fresh(c, since = { mentions: null, replies: null }, checkedAt = null) {
-  return { v: 1, config: c, phase: 'mentions', token: null, before: null, since,
+  return { v: 1, config: c, phase: 'mentions', token: null, since,
     high: { ...since }, checkedAt, seenTokens: [], emitted: [], windowStart: null, windowEnd: null };
 }
 function decode(raw, c) {
@@ -28,7 +28,7 @@ function decode(raw, c) {
   try { s = JSON.parse(raw); } catch { throw fault('cursor-expired', 'cursor_unreadable'); }
   const ids = (v) => object(v) && ['mentions', 'replies'].every((k) => v[k] === null || validId(v[k]));
   if (!object(s) || s.v !== 1 || !object(s.config) || !['mentions', 'replies', 'ready'].includes(s.phase)
-    || !token(s.token) || !(s.before === null || validId(s.before)) || !ids(s.since) || !ids(s.high)
+    || !token(s.token) || !ids(s.since) || !ids(s.high)
     || !(s.checkedAt === null || instant(s.checkedAt)) || !(s.windowStart === null || instant(s.windowStart))
     || !(s.windowEnd === null || instant(s.windowEnd)) || !Array.isArray(s.seenTokens)
     || s.seenTokens.length > 50 || !s.seenTokens.every((v) => v !== null && token(v))
@@ -68,7 +68,7 @@ function recordOf(row, stream, c, users) {
   const ownReply = row.in_reply_to_user_id === c.userId && validId(parent);
   if ((stream === 'mentions' && ownReply) || (stream === 'replies' && !ownReply)) return null;
   const kind = stream === 'replies' ? 'reply' : 'mention';
-  const payload = { id: row.id, platform: 'x', kind, text: typeof row.note_tweet?.text === 'string' ? row.note_tweet.text : row.text,
+  const payload = { id: row.id, platform: 'x-twitter', kind, text: typeof row.note_tweet?.text === 'string' ? row.note_tweet.text : row.text,
     occurredAt: row.created_at, url: `https://x.com/i/web/status/${row.id}`, subjectId: parent || row.id };
   if (validId(row.author_id)) payload.author = users.get(row.author_id) || row.author_id;
   if (validId(parent)) { payload.replyToId = parent; payload.inReplyToUrl = `https://x.com/i/web/status/${parent}`; }
@@ -114,7 +114,11 @@ async function syncPage(request, host) {
   if (s.phase === 'ready') { s.since = { ...s.high }; s.checkedAt = s.windowEnd; s.emitted = []; }
   let from = previous;
   if (!from && request.catchUpFrom) {
-    try { const old = JSON.parse(request.catchUpFrom); if (instant(old.checkedAt)) from = old.checkedAt; } catch { /* Unknown rejected position supplies no evidence of loss. */ }
+    try {
+      const old = JSON.parse(request.catchUpFrom);
+      if (instant(old.checkedAt)) from = old.checkedAt;
+      else if (instant(old.windowStart)) from = old.windowStart;
+    } catch { /* Unknown rejected position supplies no evidence of loss. */ }
   }
   return { records, nextCursor: JSON.stringify(s), hasMore: s.phase !== 'ready',
     catchUp: request.catchUpFrom ? { path: 'backfill', reason: 'cursor-expired' }

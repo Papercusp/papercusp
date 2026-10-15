@@ -1,6 +1,6 @@
 {
   "kind": "plugin",
-  "name": "x",
+  "name": "x-twitter",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
   "description": "X mentions, incoming replies and text publishing through host-held OAuth. Fake and conformance verification; live acceptance pending.",
@@ -10,7 +10,7 @@
   "capabilities": [],
   "tools": [],
   "provider": {
-    "id": "x",
+    "id": "x-twitter",
     "contractVersion": 1,
     "displayName": "X",
     "datatypes": ["social-post"],
