@@ -1,0 +1,11 @@
+# X provider
+
+The `x` package uses the generic provider runtime for OAuth 2.0 with PKCE, token storage, network access, retry/backoff, cursor commits and social write safeguards. Set `userId` and `username` to the connected account. It emits `social-post` mentions and incoming replies and supports text posts, replies and deletion. Media upload is unsupported and is refused before sending a post.
+
+Each `syncPage` makes one host request for at most ten posts. Mentions use `GET /2/users/:id/mentions`; incoming replies use recent search with `to:<username> is:reply`. The host bounds each source pass to `maxPagesPerSource` (default 20). Its committed opaque cursor retains unfinished pagination for the next pass. The package adds no retry loop or separate scheduler. The X console's spending limit remains the hard spending ceiling; request bounds alone do not guarantee a monthly bill.
+
+Recent replies are limited to the API's seven-day search window. A cold read starts inside that window. A saved completed read older than the reachable window produces `lossRisk`, including after a host cursor reset with `catchUpFrom`. Complete history and deleted-post reconciliation are not claimed. Replies use their own search stream to avoid duplicate delivery through mentions. Post ids are compared without floating-point conversion.
+
+Contract sources checked 2026-10-15: [X OpenAPI 2.171](https://api.x.com/2/openapi.json) (SHA-256 `41f574a5156969e53aeee68d9ff174b5bb82045d2af94226c7acd460ed74bfbf`), [search operators](https://docs.x.com/x-api/posts/search/integrate/operators), and [OAuth with PKCE](https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code). The implementation reuses the host provider contract and the SDK conformance kit.
+
+Offline fake and conformance tests are in `packages/operator-core/lib/providers/x/x-provider.test.ts`; installation is checked by `social-package-registry.integration.test.ts`. Live verification is pending. Plan D-006 requires Avi's login acknowledgement and setting the approved $25 monthly limit in the X console **before any X API call**, including OAuth identity lookup. Creating the app or connecting the account remains behind those prerequisites.

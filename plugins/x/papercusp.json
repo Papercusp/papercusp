@@ -1,0 +1,49 @@
+{
+  "kind": "plugin",
+  "name": "x",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "X mentions, incoming replies and text publishing through host-held OAuth. Fake and conformance verification; live acceptance pending.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "x",
+    "contractVersion": 1,
+    "displayName": "X",
+    "datatypes": ["social-post"],
+    "capabilities": ["social.post", "social.reply", "social.delete"],
+    "egressHosts": ["api.x.com", "x.com"],
+    "oauth": {
+      "authorizeUrl": "https://x.com/i/oauth2/authorize",
+      "tokenUrl": "https://api.x.com/2/oauth2/token",
+      "clientRegistrationRef": "x",
+      "pkce": true,
+      "scopes": ["tweet.read", "tweet.write", "users.read", "offline.access"],
+      "identity": {
+        "url": "https://api.x.com/2/users/me",
+        "idField": "data.id",
+        "displayNameField": "data.username"
+      }
+    },
+    "setup": {
+      "appRegistration": {
+        "createUrl": "https://console.x.com/",
+        "docsUrl": "https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code",
+        "copyHint": "Configure OAuth 2.0 user authentication with the host callback and declared scopes. Set the approved monthly spending limit in the X console before connecting or calling the API."
+      }
+    },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "configSchema": {
+      "type": "object",
+      "required": ["userId", "username"],
+      "properties": {
+        "userId": { "type": "string", "title": "Connected X user id", "pattern": "^[0-9]{1,19}$" },
+        "username": { "type": "string", "title": "Connected X username (without @)", "pattern": "^[A-Za-z0-9_]{1,15}$" }
+      },
+      "additionalProperties": true
+    }
+  }
+}
