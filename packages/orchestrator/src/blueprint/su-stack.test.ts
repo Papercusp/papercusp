@@ -17,6 +17,26 @@ import { SU_TILES } from './su-decomposition.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const harnessDir = join(here, '..', '..', '..', 'harness'); // libs/papercusp/packages/harness
 
+test('host-managed assignment workflow preserves the sealed authority and evidence contract', () => {
+  const normal = composeSuStackSource({ harnessDir });
+  const controlled = composeSuStackSource({ harnessDir, workItemWorkflow: 'host-managed' });
+  assert.deepEqual(controlled.order, normal.order);
+  assert.ok(controlled.text.includes(KERNEL_SEAL_MARKER));
+  for (const retained of ['operator + admin', 'File locking is ENFORCED', 'Never contest a live peer',
+    '<!-- PAPERCUSP-SU:AUTO-MODE -->', 'root cause', 'filesChanged']) {
+    assert.ok(controlled.text.includes(retained), `retained invariant: ${retained}`);
+  }
+  assert.ok(controlled.text.includes('The host owns this assignment'));
+  for (const instruction of ['Declare a real intent + claim your lane',
+    "Finish with `work_items:complete", 'Plan before non-trivial work.',
+    'Registering work is a SEPARATE discipline']) {
+    assert.ok(normal.text.includes(instruction), `positive control: ${instruction}`);
+    assert.equal(controlled.text.includes(instruction), false, `withheld workflow: ${instruction}`);
+  }
+  assert.throws(() => composeSuStackSource({ harnessDir, workItemWorkflow: 'host-managed',
+    tiles: SU_TILES.filter(t => !t.anchor.startsWith('- **Plan before')) }), /workflow/);
+});
+
 test('composeSuStackSource — lossless over the real su.md: every non-dropped tile renders exactly once; identity tiles above the seal, kernel tiles under it', () => {
   const out = composeSuStackSource({ harnessDir });
   assert.equal(out.findings.filter((f) => f.tier === 'block').length, 0, JSON.stringify(out.findings));

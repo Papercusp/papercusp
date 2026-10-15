@@ -66,6 +66,7 @@ import {
 } from './mode-identities.js';
 import {
   SU_PART_DOCUMENTS,
+  SU_TILES,
   SU_PREAMBLE_REL,
   locateSuTiles,
   readSuSource,
@@ -78,6 +79,9 @@ import {
 } from './su-decomposition.js';
 
 export interface SuStackComposeOptions extends ComposeStackOptions {
+  /** Selected from authoritative host confinement, never a solver launch option.
+   * Keeps the sealed kernel and its invariants; delegates only ledger mechanics. */
+  workItemWorkflow?: 'host-managed';
   /** The harness install dir (default: the built-in harness via `harnessPath`). */
   harnessDir?: string;
   /** su.md text override (tests); default: read from the harness. */
@@ -219,10 +223,11 @@ function partDoc(id: SuPartDocument['id']): SuPartDocument {
   return d;
 }
 
-function textOf(located: readonly LocatedSuTile[], doc: SuPartDocument, drop: ReadonlySet<LocatedSuTile> = new Set()): string {
+function textOf(located: readonly LocatedSuTile[], doc: SuPartDocument, drop: ReadonlySet<LocatedSuTile> = new Set(),
+  workflow?: SuStackComposeOptions['workItemWorkflow']): string {
   return tilesOfDocument(located, doc)
     .filter((t) => !drop.has(t))
-    .map((t) => t.text)
+    .map((t) => workflow === 'host-managed' && t.hostWorkItemWorkflow ? t.hostWorkItemWorkflow : t.text)
     .join('');
 }
 
@@ -232,6 +237,12 @@ function textOf(located: readonly LocatedSuTile[], doc: SuPartDocument, drop: Re
  * ids so a render's `order` reads like the decomposition table.
  */
 export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocuments {
+  if (opts.workItemWorkflow !== undefined && opts.workItemWorkflow !== 'host-managed')
+    throw new Error('su-stack: invalid host work-item workflow');
+  if (opts.workItemWorkflow === 'host-managed' && SU_TILES.filter(t => t.hostWorkItemWorkflow).some(expected =>
+    !(opts.tiles ?? SU_TILES).some(t => t.anchor === expected.anchor && t.part === 'kernel' &&
+      t.hostWorkItemWorkflow === expected.hostWorkItemWorkflow)))
+    throw new Error('su-stack: required host workflow source tiles are missing or changed');
   const suText = opts.suText ?? readSuSource(opts.harnessDir);
   const preamble = readPreamble(opts);
   const located = locateSuTiles(suText, opts.tiles);
@@ -249,7 +260,7 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   const kernelDoc = partDoc('su.kernel');
   const docs: StackDocument[] = [
     { id: 'agent-base-preamble', layer: 'kernel', text: preamble, sourcePath: SU_PREAMBLE_REL },
-    { id: kernelDoc.id, layer: 'kernel', text: textOf(located, kernelDoc, drop), sourcePath: kernelDoc.path },
+    { id: kernelDoc.id, layer: 'kernel', text: textOf(located, kernelDoc, drop, opts.workItemWorkflow), sourcePath: kernelDoc.path },
   ];
   // The client seam tile renders AS the client layer — the per-client overlay is spliced there.
   const seam = located.filter((t) => t.part === 'client');

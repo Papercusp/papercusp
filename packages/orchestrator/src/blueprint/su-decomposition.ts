@@ -78,6 +78,9 @@ export interface SuTile {
    * duplicates. Kept here; P-003 keeps it ONCE, in the preamble.
    */
   dedupeWithPreamble?: string;
+  /** Host-owned assignments retain this invariant but delegate its ledger mechanics
+   * to the host. Only the trusted composer may select the replacement. */
+  hostWorkItemWorkflow?: string;
   /** The tile IS a `<!-- PAPERCUSP-SU:<seam> -->` splice marker, not prose. */
   seam?: string;
 }
@@ -124,6 +127,19 @@ export const SU_TILES: readonly SuTile[] = [
       'Lock discipline, claims, event/wake semantics and the directed-message priority are D-003’s protocol invariants — everything whose violation harms OTHER agents.',
   },
   {
+    anchor: '- **Declare a real intent + claim your lane — and hold a work-item before you edit.** On',
+    part: 'kernel',
+    label: 'registration mechanics; assignment ownership remains mandatory',
+    rationale: 'P-019: separate agent ledger mechanics from locks, claims and authority.',
+    hostWorkItemWorkflow: '- **Assignment ownership remains mandatory.** The host owns this assignment and its existing claim. Work only in the assigned checkout; do not create, claim, transfer or complete another assignment. File locks and peer claims still bind. Report blockers and evidence to the host in your final response.\n\n',
+  },
+  {
+    anchor: '- **Blocked on something announced? Await an event and sleep — never poll, never hold a',
+    part: 'kernel',
+    label: 'event protocol and directed coordination',
+    rationale: 'Retained protocol invariants, independent of assignment ledger workflow.',
+  },
+  {
     anchor: '## Working as a fleet MEMBER — the member operating loop',
     part: 'fleet-posture',
     posture: 'member',
@@ -135,6 +151,7 @@ export const SU_TILES: readonly SuTile[] = [
     part: 'kernel',
     label: 'completion evidence is a structured object; assumptions required',
     rationale: 'D-007’s narrowed kernel: "completion evidence required" is an invariant, not member style.',
+    hostWorkItemWorkflow: '- **Completion evidence is required.** Report summary, testsRun, testResult, verifiedHow, filesChanged and assumptions in your final response. Name checkout-relative files. The host records the evidence and decides assignment completion. A bug fix also needs the root cause, an alternative hypothesis, a distinguishing test, differing predicted observations, actual observations and evidence references. A universal claim requires an explicit population partition: checked, notChecked, notApplicable, plus residue. Name every unresolved defect and its responsible recipient; never claim success for unverified work. Read existing evidence before repeating a verification.\n\n',
   },
   {
     anchor: '- **Persist with `loop:arm`; each wake pull + advance one unit. Lane drained? Register',
@@ -183,6 +200,7 @@ export const SU_TILES: readonly SuTile[] = [
     label: 'plan-store lifecycle: plan-before-work tiers · activation audit · encode real deps',
     rationale:
       'Registration + plan-lifecycle discipline holds for ANY domain (a potato-salesman pot plans too); it is the "Registering work" tier rule stated at plan scope.',
+    hostWorkItemWorkflow: '- **Plan before changing code.** The host maintains the assignment plan, dependency order and acceptance criteria. Follow the assigned scope, reason through dependent steps and verify the result before reporting completion. Report any scope or acceptance ambiguity to the host; do not silently broaden the mission.\n\n',
   },
   {
     anchor: "- **Tests ship WITH the feature**, in the project's testing framework — not an ad-hoc",
@@ -323,6 +341,7 @@ export const SU_TILES: readonly SuTile[] = [
     part: 'kernel',
     label: 'registering work: trivial / substantive / big-scope tiers',
     rationale: 'Work-item registration discipline is D-007’s "completion evidence required" seen from the front — kernel.',
+    hostWorkItemWorkflow: '## Assignment workflow ownership\n\nThe host owns this assignment, its registration and its progress records. Your job is to solve the assigned task in its checkout and provide complete verification evidence in your final response. This delegation changes no authority, tool ceiling, file-lock rule, peer claim, mode registry or evidence requirement. It grants no access to another assignment.\n\n',
   },
   {
     anchor: '<!-- PAPERCUSP-SU:RESULT-DOOR -->',
