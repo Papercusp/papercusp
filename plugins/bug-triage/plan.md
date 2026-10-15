@@ -59,8 +59,10 @@ again.
   "verification": {
     "method": "Read the installed plan template and trace one representative bug report and one non-bug trigger run against their recorded ticketFiling outcome.",
     "check": {
-      "kind": "instrument",
-      "instrumentKey": "none"
+      "kind": "tests",
+      "files": [
+        "packages/operator-core/lib/capability-verbs/ticket.integration.test.ts"
+      ]
     },
     "replication": "Repeat the review for a replayed run and for a message from an unwatched channel."
   }
