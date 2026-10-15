@@ -14,7 +14,7 @@
     "contractVersion": 1,
     "displayName": "Facebook Personal Vault",
     "datatypes": ["social-post"],
-    "capabilities": ["sync.adopt"],
+    "capabilities": [],
     "egressHosts": ["graph.facebook.com", "www.facebook.com"],
     "oauth": {
       "authorizeUrl": "https://www.facebook.com/v23.0/dialog/oauth",

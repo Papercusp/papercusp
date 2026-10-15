@@ -2,7 +2,8 @@
 
 // The host owns credentials, leases, retries, cursor commits and vault delivery.
 const { createHash } = require('node:crypto');
-const DESCRIPTOR = require('./papercusp.json').provider;
+const manifest = require('./papercusp.json');
+const DESCRIPTOR = manifest.provider;
 const API = 'https://graph.facebook.com/v23.0';
 const fields = {
   profile: 'id,name,link,about,picture',
@@ -105,10 +106,10 @@ async function syncPage(request, host) {
 }
 
 async function invoke(request) {
-  if (request.capability !== 'sync.adopt') throw new Error(`provider_capability_unsupported:${request.capability}`);
-  // Legacy `since` missed edits to older posts. A single complete rescan is intentional;
-  // the host's version ledger makes retries and later complete scans replay safe.
-  return { cursor: null, backfillComplete: false };
+  throw new Error(`provider_capability_unsupported:${request.capability}`);
 }
 
-exports.providerAdapter = { describe: () => DESCRIPTOR, syncPage, invoke };
+module.exports = {
+  name: manifest.name, version: manifest.version, papercusp: manifest.papercusp, capabilities: [],
+  providerAdapter: { describe: () => DESCRIPTOR, syncPage, invoke },
+};
