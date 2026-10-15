@@ -32,7 +32,7 @@ function normalize(entity, type) {
   if (type === 'post' && Array.isArray(entity.attachments?.data) && entity.attachments.data.length) payload.media = entity.attachments.data;
   if (type === 'photo') payload.media = Array.isArray(entity.images) && entity.images.length ? entity.images
     : str(entity.picture) ? [{ url: str(entity.picture) }] : [];
-  return { datatype: 'social-post', nativeId: `${type}:${id}`, event: `${type}.synced`, payload,
+  return { datatype: 'social-post', nativeId: id, event: `${type}.synced`, payload,
     ...(occurredAt ? { occurredAt } : {}), version: digest(payload) };
 }
 
@@ -89,9 +89,10 @@ async function syncPage(request, host) {
   const records = [];
   for (const entity of type === 'profile' ? [body] : body.data) {
     const record = normalize(entity, type);
-    if (state.cycle[record.nativeId] === record.version) continue;
-    state.cycle[record.nativeId] = record.version;
-    if (state.seen[record.nativeId] !== record.version) records.push(record);
+    const key = `${type}:${record.nativeId}`;
+    if (state.cycle[key] === record.version) continue;
+    state.cycle[key] = record.version;
+    if (state.seen[key] !== record.version) records.push(record);
   }
   state.after = type === 'profile' ? null : afterOf(body, state.after);
   if (!state.after) state.phase = type === 'profile' ? 'post' : type === 'post' ? 'photo' : 'ready';
