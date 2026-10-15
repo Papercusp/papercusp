@@ -1075,6 +1075,13 @@ export const BlueprintOperationSchema = z.object({
     identity: IdentityOperationRefSchema.optional(),
     requiredTools: z.array(z.string().min(1)).default([]),
     model: OperationModelPolicySchema.optional(),
+    // P-012: the selected case policy is part of the immutable operation,
+    // never supplied by the employee or inferred from an operation's name.
+    supportCase: z.object({
+      allowedSources: z.array(z.string().trim().min(1).max(120)).min(1),
+      allowedActions: z.array(z.string().trim().min(1).max(120)).min(1),
+      maximumCostMicros: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    }).strict().optional(),
   }).prefault({}),
   artifacts: z.array(ArtifactOperationRefSchema).default([]),
   signals: z.record(OperationNameSchema, z.object({ payloadSchema: OperationJsonSchema }).strict()).default({}),
@@ -1087,6 +1094,12 @@ export const BlueprintOperationSchema = z.object({
       (operation.target.kind !== 'work-item' || operation.execution?.kind !== 'agent')) {
     context.addIssue({ code: 'custom', path: ['policy', 'model'],
       message: 'model policy requires a direct agent work-item operation' });
+  }
+  if (operation.policy.supportCase &&
+      (operation.target.kind !== 'work-item' || operation.execution?.kind !== 'agent' ||
+       !operation.acceptance.businessReview || !operation.privateInputSchema)) {
+    context.addIssue({ code: 'custom', path: ['policy', 'supportCase'],
+      message: 'support case policy requires a direct agent work item, business review and private case input' });
   }
 });
 export type BlueprintOperation = z.infer<typeof BlueprintOperationSchema>;

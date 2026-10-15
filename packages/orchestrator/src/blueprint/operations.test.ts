@@ -62,6 +62,24 @@ test('business review is an explicit revision-pinned acceptance policy', () => {
   }
 });
 
+test('selected support case policy is bounded and requires private content and business review', () => {
+  const op = { ...directOperation(), privateInputSchema: { type: 'object' },
+    acceptance: { resultSchema, businessReview: { accountableOwner: 'owner', reviewerPrincipals: ['reviewer'] } },
+    policy: { ...directOperation().policy, supportCase: {
+      allowedSources: ['slack'], allowedActions: ['prepare-handoff'], maximumCostMicros: 100_000,
+    } } };
+  assert.equal(BlueprintSchema.safeParse(raw([op])).success, true);
+  for (const invalid of [
+    { ...op, privateInputSchema: undefined },
+    { ...op, acceptance: { resultSchema } },
+    { ...op, execution: { kind: 'program' } },
+    ...[0, Infinity, 0.5, Number.MAX_SAFE_INTEGER + 1].map((maximumCostMicros) => ({
+      ...op, policy: { ...op.policy, supportCase: { ...op.policy.supportCase, maximumCostMicros } },
+    })),
+    { ...op, policy: { ...op.policy, supportCase: { ...op.policy.supportCase, allowedSources: [] } } },
+  ]) assert.equal(BlueprintSchema.safeParse(raw([invalid])).success, false);
+});
+
 test('direct and explicit-plan operations carry typed interfaces and exact pins', () => {
   const plan = {
     id: 'batch',
