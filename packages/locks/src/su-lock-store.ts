@@ -421,6 +421,27 @@ export async function sweepWorkspaceExpired(
  *
  * Timeout-agnostic: inherits the caller's SET LOCAL statement_timeout.
  */
+/**
+ * Equivalent to EXISTS(requested, lock_path_overlaps(path, requested)), without
+ * evaluating the three-way SQL function for every held/requested pair. A held
+ * ancestor is one of the requested path's literal prefixes; a held descendant
+ * starts with requested + '/'. ^@ is PostgreSQL's literal starts-with operator,
+ * so %, _, regexp characters and Unicode retain their ordinary path meaning.
+ *
+ * WI-6554700010015099: the pairwise predicate exceeded tryAcquire's 500ms
+ * statement budget once one owner held thousands of paths. Share the predicate
+ * across acquire, expiry and queue reads to preserve one boundary-safe rule.
+ */
+function filePathOverlap(sql: Sql, paths: readonly string[]) {
+  const ancestors = Array.from(new Set(paths.flatMap((path) => {
+    const parts = path.split('/');
+    return parts.map((_, index) => parts.slice(0, index + 1).join('/'));
+  })));
+  const descendants = paths.map((path) => `${path}/`);
+  return sql`(agent_file_locks.path = ANY(${ancestors}::text[])
+           OR agent_file_locks.path ^@ ANY(${descendants}::text[]))`;
+}
+
 export async function sweepPathsExpired(
   tx: Sql,
   coordinationDomain: string,
@@ -430,11 +451,7 @@ export async function sweepPathsExpired(
   const expiredLocks = await tx<Array<{ path: string }>>`
     DELETE FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
-       AND EXISTS (
-         SELECT 1
-           FROM unnest(${paths}::text[]) AS requested(path)
-          WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
-       )
+       AND ${filePathOverlap(tx, paths)}
        AND expires_ts <= clock_timestamp()
     RETURNING path
   `;
@@ -708,11 +725,7 @@ export async function tryAcquire(
     SELECT path, lock_id::text AS lock_id, expires_ts FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
        AND owner = ${owner}
-       AND EXISTS (
-         SELECT 1
-           FROM unnest(${paths}::text[]) AS requested(path)
-          WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
-       )
+       AND ${filePathOverlap(tx, paths)}
        AND expires_ts > clock_timestamp()
   `;
   const ownedSet = new Set(ownedRows.map((r) => r.path));
@@ -787,11 +800,7 @@ export async function tryAcquire(
     const blockedRows = await tx<Array<{ path: string }>>`
       SELECT path FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain}
-         AND EXISTS (
-           SELECT 1
-             FROM unnest(${newPaths}::text[]) AS requested(path)
-            WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
-         )
+         AND ${filePathOverlap(tx, newPaths)}
          AND expires_ts > clock_timestamp()
          AND owner != ${owner}
     `;
@@ -901,11 +910,7 @@ async function readBusySnapshot(
     SELECT path, owner, owner_label, intent, expires_ts
       FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
-       AND EXISTS (
-         SELECT 1
-           FROM unnest(${paths}::text[]) AS requested(path)
-          WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
-       )
+       AND ${filePathOverlap(tx, paths)}
        AND expires_ts > clock_timestamp()
        ${ownerFilter}
   `;
@@ -1468,11 +1473,7 @@ async function readQueueInner(
     ? sql``
     : paths.length === 0
       ? sql`AND FALSE`
-      : sql`AND EXISTS (
-          SELECT 1
-            FROM unnest(${paths}::text[]) AS requested(path)
-           WHERE lock_path_overlaps(agent_file_locks.path, requested.path)
-        )`;
+      : sql`AND ${filePathOverlap(sql, paths)}`;
   const ownerFilter = owner ? sql`AND owner = ${owner}` : sql``;
   // WI-5979: `null` = read every domain (diagnostic reads). `TRUE` rather than an
   // empty fragment so the surrounding `WHERE ... AND` chain stays well-formed.
