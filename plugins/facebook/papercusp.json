@@ -21,6 +21,7 @@
       "tokenUrl": "https://graph.facebook.com/v23.0/oauth/access_token",
       "clientRegistrationRef": "facebook",
       "scopeSeparator": ",",
+      "refreshPolicy": "reauthorize",
       "scopes": ["public_profile", "user_posts", "user_photos"],
       "identity": {
         "url": "https://graph.facebook.com/v23.0/me?fields=id,name",
