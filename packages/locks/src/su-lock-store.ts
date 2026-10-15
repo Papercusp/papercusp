@@ -1257,18 +1257,104 @@ export interface QueueResult {
   completed?: WaiterRow[];
 }
 
+export type ReadQueuePhase = 'pool-acquire-and-begin' | 'readQueue' | 'transaction-settlement';
+
+export interface ReadQueuePhaseEvent {
+  phase: ReadQueuePhase;
+  state: 'start' | 'end';
+  durationMs?: number;
+}
+
+export interface ReadQueueOptions {
+  /** Diagnostic-only observer. Observer errors never affect the read. */
+  onPhase?: (event: ReadQueuePhaseEvent) => void;
+}
+
+function reportReadQueuePhase(
+  observer: ReadQueueOptions['onPhase'],
+  event: ReadQueuePhaseEvent,
+): void {
+  if (!observer) return;
+  try {
+    observer(event);
+  } catch {
+    // Diagnostics must not change lock-read behavior.
+  }
+}
+
 export async function readQueue(
   sqlIn: Sql,
   params: QueueParams,
+  options: ReadQueueOptions = {},
 ): Promise<QueueResult> {
   // Wrap in a transaction so SET LOCAL statement_timeout is scoped to
   // this read (plan §6.1: queue = 1000ms). Without a transaction,
   // SET LOCAL is a no-op; SET (without LOCAL) would leak across the
   // pool. The transaction is read-only — no advisory lock needed.
-  return sqlIn.begin(async (sql) => {
-    await sql`SET LOCAL statement_timeout = '1s'`;
-    return readQueueInner(sql as unknown as Sql, params);
-  }) as Promise<QueueResult>;
+  if (!options.onPhase) {
+    return sqlIn.begin(async (sql) => {
+      await sql`SET LOCAL statement_timeout = '1s'`;
+      return readQueueInner(sql as unknown as Sql, params);
+    }) as Promise<QueueResult>;
+  }
+
+  const observer = options.onPhase;
+  const poolStartedAt = Date.now();
+  let transactionEntered = false;
+  let settlementStartedAt: number | null = null;
+  reportReadQueuePhase(observer, { phase: 'pool-acquire-and-begin', state: 'start' });
+  try {
+    const result = await sqlIn.begin(async (sql) => {
+      transactionEntered = true;
+      reportReadQueuePhase(observer, {
+        phase: 'pool-acquire-and-begin',
+        state: 'end',
+        durationMs: Math.max(0, Date.now() - poolStartedAt),
+      });
+
+      const readStartedAt = Date.now();
+      reportReadQueuePhase(observer, { phase: 'readQueue', state: 'start' });
+      let queue: QueueResult;
+      try {
+        await sql`SET LOCAL statement_timeout = '1s'`;
+        queue = await readQueueInner(sql as unknown as Sql, params);
+      } finally {
+        reportReadQueuePhase(observer, {
+          phase: 'readQueue',
+          state: 'end',
+          durationMs: Math.max(0, Date.now() - readStartedAt),
+        });
+      }
+
+      settlementStartedAt = Date.now();
+      reportReadQueuePhase(observer, { phase: 'transaction-settlement', state: 'start' });
+      return queue;
+    });
+    if (settlementStartedAt !== null) {
+      reportReadQueuePhase(observer, {
+        phase: 'transaction-settlement',
+        state: 'end',
+        durationMs: Math.max(0, Date.now() - settlementStartedAt),
+      });
+      settlementStartedAt = null;
+    }
+    return result as QueueResult;
+  } finally {
+    if (!transactionEntered) {
+      reportReadQueuePhase(observer, {
+        phase: 'pool-acquire-and-begin',
+        state: 'end',
+        durationMs: Math.max(0, Date.now() - poolStartedAt),
+      });
+    }
+    if (settlementStartedAt !== null) {
+      reportReadQueuePhase(observer, {
+        phase: 'transaction-settlement',
+        state: 'end',
+        durationMs: Math.max(0, Date.now() - settlementStartedAt),
+      });
+    }
+  }
 }
 
 /** One owner's live interest in one path — held OR intended. Shaped for the

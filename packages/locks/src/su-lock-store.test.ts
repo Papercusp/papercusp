@@ -191,4 +191,27 @@ describe('readQueue', () => {
 
     expect(pool.statements.some((statement) => statement.includes('FROM agent_lock_waiters w'))).toBe(true);
   });
+
+  it('reports pool acquisition, queue read, and transaction settlement as separate phases', async () => {
+    const pool = fakePool();
+    const phases: Array<{ phase: string; state: string; durationMs?: number }> = [];
+
+    await readQueue(
+      pool.sql,
+      { coordinationDomain: 'test-domain', includeWaiting: false },
+      { onPhase: (event) => phases.push(event) },
+    );
+
+    expect(phases.map(({ phase, state }) => `${phase}:${state}`)).toEqual([
+      'pool-acquire-and-begin:start',
+      'pool-acquire-and-begin:end',
+      'readQueue:start',
+      'readQueue:end',
+      'transaction-settlement:start',
+      'transaction-settlement:end',
+    ]);
+    expect(phases.filter(({ state }) => state === 'end').every(({ durationMs }) =>
+      typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0,
+    )).toBe(true);
+  });
 });
