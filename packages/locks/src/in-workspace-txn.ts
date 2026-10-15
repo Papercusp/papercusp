@@ -13,6 +13,7 @@
  * the advisory lock and shouldn't pay its cost.
  */
 
+import { performance } from 'node:perf_hooks';
 import type { Sql } from 'postgres';
 import { ensureBootstrap, getTxPool, SU_LOCKS_FEATURE_KEY } from './su-lock-store';
 import { startBackgroundJanitor } from './workspace-listener';
@@ -42,6 +43,22 @@ export class WorkspaceContendedError extends Error {
  *  statement_timeout (query_canceled). */
 const CONTENTION_CODES = new Set(['55P03', '57014']);
 
+export type WorkspaceTxnPhase =
+  | 'bootstrap'
+  | 'background-janitor-arm'
+  | 'pool-lookup'
+  | 'pool-acquire-and-begin'
+  | 'transaction-settings'
+  | 'advisory-scope'
+  | 'operation'
+  | 'transaction-settlement'
+  | 'transaction-total';
+
+export interface WorkspaceTxnPhaseTiming {
+  phase: WorkspaceTxnPhase;
+  durationMs: number;
+}
+
 /** True under vitest / NODE_ENV=test — the background janitor timer is
  *  skipped there so no wall-clock tick can race a test's fixtures
  *  (tests drive runBackgroundJanitorOnce() directly). */
@@ -69,11 +86,58 @@ export interface WorkspaceTxnOptions {
    */
   minLockTimeoutMs?: number;
   minStatementTimeoutMs?: number;
+  /**
+   * Optional diagnostic observer. It is called only for this transaction and
+   * failures in the observer are swallowed so instrumentation cannot alter
+   * lock behavior or the transaction result.
+   */
+  onPhase?: (timing: WorkspaceTxnPhaseTiming) => void;
 }
 
 function timeoutWithFloor(configuredMs: number, floorMs: number | undefined): number {
   if (floorMs == null || !Number.isFinite(floorMs) || floorMs <= 0) return configuredMs;
   return Math.max(configuredMs, Math.trunc(floorMs));
+}
+
+function reportWorkspaceTxnPhase(
+  observer: ((timing: WorkspaceTxnPhaseTiming) => void) | undefined,
+  phase: WorkspaceTxnPhase,
+  durationMs: number,
+): void {
+  if (!observer) return;
+  try {
+    observer({ phase, durationMs: Math.max(0, durationMs) });
+  } catch {
+    // Diagnostics must never change the transaction outcome.
+  }
+}
+
+function measureSyncPhase<T>(
+  observer: ((timing: WorkspaceTxnPhaseTiming) => void) | undefined,
+  phase: WorkspaceTxnPhase,
+  operation: () => T,
+): T {
+  if (!observer) return operation();
+  const startedAt = performance.now();
+  try {
+    return operation();
+  } finally {
+    reportWorkspaceTxnPhase(observer, phase, performance.now() - startedAt);
+  }
+}
+
+async function measureAsyncPhase<T>(
+  observer: ((timing: WorkspaceTxnPhaseTiming) => void) | undefined,
+  phase: WorkspaceTxnPhase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!observer) return operation();
+  const startedAt = performance.now();
+  try {
+    return await operation();
+  } finally {
+    reportWorkspaceTxnPhase(observer, phase, performance.now() - startedAt);
+  }
 }
 
 function pathAncestors(path: string): string[] {
@@ -154,17 +218,38 @@ export async function inWorkspaceTxn<T>(
   fn: (tx: Sql) => Promise<T>,
   options: WorkspaceTxnOptions = {},
 ): Promise<T> {
-  await ensureBootstrap();
+  const onPhase = options.onPhase;
+  const phaseTimings = onPhase ? [] as WorkspaceTxnPhaseTiming[] : null;
+  const phaseObserver = onPhase
+    ? (timing: WorkspaceTxnPhaseTiming) => {
+        phaseTimings?.push(timing);
+        onPhase(timing);
+      }
+    : undefined;
+  await measureAsyncPhase(phaseObserver, 'bootstrap', () => ensureBootstrap());
   // Arm the background expiry janitor on the first mutating locks:* op
   // (file-locking #4). Idempotent + cheap, so calling it every op is
   // fine; the timer module lives in workspace-listener.ts.
-  if (!isTestEnv()) startBackgroundJanitor();
-  const sql = getTxPool();
+  if (!isTestEnv()) {
+    measureSyncPhase(phaseObserver, 'background-janitor-arm', () => startBackgroundJanitor());
+  }
+  const sql = measureSyncPhase(phaseObserver, 'pool-lookup', () => getTxPool());
+  const transactionStartedAt = phaseObserver ? performance.now() : null;
+  const transactionPhaseStartIndex = phaseTimings?.length ?? 0;
+  let transactionEntered = false;
   // postgres-js's `begin` returns the handler's value but wraps it in
   // UnwrapPromiseArray<T>; for our non-array results the cast is safe.
   let result: unknown;
   try {
     result = await sql.begin(async (tx) => {
+    transactionEntered = true;
+    if (transactionStartedAt !== null) {
+      reportWorkspaceTxnPhase(
+        phaseObserver,
+        'pool-acquire-and-begin',
+        performance.now() - transactionStartedAt,
+      );
+    }
     // Diagnostic name visible in pg_stat_activity (set below, in the same
     // round trip as the timeouts — WI-10003631).
     // Per-workspace lock_timeout + statement_timeout. Baked 5s/5s, but runtime-settable via the
@@ -179,16 +264,27 @@ export async function inWorkspaceTxn<T>(
       configuredTimeouts.statementTimeoutMs,
       options.minStatementTimeoutMs,
     );
-    await tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true),
+    await measureAsyncPhase(phaseObserver, 'transaction-settings', () =>
+      tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true),
                     set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true),
-                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`;
-    await acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths);
+                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`,
+    );
+    await measureAsyncPhase(phaseObserver, 'advisory-scope', () =>
+      acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths),
+    );
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type
     // rather than juggling a union that TS can't resolve as callable.
-    return fn(tx as unknown as Sql);
+    return measureAsyncPhase(phaseObserver, 'operation', () => fn(tx as unknown as Sql));
     });
   } catch (err) {
+    if (transactionStartedAt !== null && !transactionEntered) {
+      reportWorkspaceTxnPhase(
+        phaseObserver,
+        'pool-acquire-and-begin',
+        performance.now() - transactionStartedAt,
+      );
+    }
     // Map a same-workspace contention timeout (advisory-lock lock_timeout /
     // statement_timeout) into a typed error callers turn into a structured busy
     // result — never a raw postgres error to the agent (P-015).
@@ -197,6 +293,21 @@ export async function inWorkspaceTxn<T>(
       throw new WorkspaceContendedError(coordinationDomain, code, err);
     }
     throw err;
+  } finally {
+    if (transactionStartedAt !== null) {
+      const transactionTotalMs = performance.now() - transactionStartedAt;
+      const measuredTransactionPhasesMs =
+        phaseTimings?.slice(transactionPhaseStartIndex)
+          .reduce((sum, timing) => sum + timing.durationMs, 0) ?? 0;
+      // This residual covers commit/rollback and any transaction-framework
+      // work not named above; it is diagnostic, not a separate handler phase.
+      reportWorkspaceTxnPhase(
+        phaseObserver,
+        'transaction-settlement',
+        transactionTotalMs - measuredTransactionPhasesMs,
+      );
+      reportWorkspaceTxnPhase(phaseObserver, 'transaction-total', transactionTotalMs);
+    }
   }
   return result as T;
 }
