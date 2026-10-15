@@ -7,6 +7,7 @@
   "author": "Papercusp",
   "license": "MIT",
   "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [],
   "tools": [],
   "provider": {
