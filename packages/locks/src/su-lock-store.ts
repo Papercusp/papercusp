@@ -22,7 +22,11 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres, { type Sql, type TransactionSql } from 'postgres';
-import { locksHost } from './config';
+import {
+  beginAcquireDiagnostic,
+  locksHost,
+  recordPoolMaxDiagnostic,
+} from './config';
 import {
   sweepResourceExpired,
   sweepResourceWaitersExpired,
@@ -45,6 +49,9 @@ export type SuTransactionSql = TransactionSql<Record<string, unknown>>;
  * definition.
  */
 export const SU_LOCKS_FEATURE_KEY = 101;
+/** Registry label for the dedicated transactional SU-lock pool. */
+export const SU_LOCK_TX_POOL_LABEL = 'su-lock-tx';
+const SU_LOCK_TX_POOL_MAX = 10;
 
 // ───────── Connection pools ─────────
 
@@ -76,6 +83,28 @@ function mainUrl(): string {
 let txPool: Sql | null = null;
 let listenerPool: Sql | null = null;
 let bootstrapped = false;
+
+/**
+ * Begin one transaction on the SU pool while reporting its connection
+ * acquisition to the host's existing process-local registry. The wrapper is
+ * deliberately fail-soft: registry callbacks are guarded by config.ts and
+ * cannot alter the transaction result.
+ */
+export async function beginSuLockTransaction<T>(
+  sql: Sql,
+  run: (tx: SuTransactionSql) => Promise<T>,
+): Promise<T> {
+  const ticket = beginAcquireDiagnostic(SU_LOCK_TX_POOL_LABEL);
+  try {
+    const result = await sql.begin(async (tx) => {
+      ticket?.acquired();
+      return run(tx as SuTransactionSql);
+    });
+    return result as unknown as T;
+  } finally {
+    ticket?.release();
+  }
+}
 
 /**
  * EI-18122461766429683: this package has no dependency on `@papercusp/db-org`
@@ -132,12 +161,13 @@ export function getTxPool(): Sql {
   if (!txPool) {
     txPool = postgres(suUrl(), {
       ...suPoolConnectionOptions('su-lock-tx'),
-      max: 10,
+      max: SU_LOCK_TX_POOL_MAX,
       idle_timeout: TX_POOL_IDLE_TIMEOUT_SEC,
       prepare: false,
       // Run our SET LOCAL inside each txn; don't let postgres-js auto-prepare
       // statements across connections (the SET LOCAL won't carry).
     });
+    recordPoolMaxDiagnostic(SU_LOCK_TX_POOL_LABEL, SU_LOCK_TX_POOL_MAX);
   }
   return txPool;
 }
@@ -315,7 +345,7 @@ export async function ensureBootstrap(): Promise<void> {
   `;
 
   // Now serialize the migration runner across processes.
-  await sql.begin(async (tx) => {
+  await beginSuLockTransaction(sql, async (tx) => {
     await tx`LOCK TABLE su_meta IN SHARE UPDATE EXCLUSIVE MODE`;
 
     const appliedRows = await tx<Array<{ key: string }>>`
@@ -540,7 +570,7 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
 
   for (const { coordination_domain } of dirty) {
     try {
-      await sql.begin(async (txn) => {
+      await beginSuLockTransaction(sql, async (txn) => {
         const tx = txn as unknown as Sql;
         await tx`SET LOCAL statement_timeout = '2s'`;
         const got = await tx<Array<{ locked: boolean }>>`
@@ -569,7 +599,7 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
   }
 
   try {
-    await sql.begin(async (txn) => {
+    await beginSuLockTransaction(sql, async (txn) => {
       const tx = txn as unknown as Sql;
       await tx`SET LOCAL statement_timeout = '5s'`;
       await tx`
@@ -1297,7 +1327,7 @@ export async function readQueue(
   // SET LOCAL is a no-op; SET (without LOCAL) would leak across the
   // pool. The transaction is read-only — no advisory lock needed.
   if (!options.onPhase) {
-    return sqlIn.begin(async (sql) => {
+    return beginSuLockTransaction(sqlIn, async (sql) => {
       await sql`SET LOCAL statement_timeout = '1s'`;
       return readQueueInner(sql as unknown as Sql, params);
     }) as Promise<QueueResult>;
@@ -1309,7 +1339,7 @@ export async function readQueue(
   let settlementStartedAt: number | null = null;
   reportReadQueuePhase(observer, { phase: 'pool-acquire-and-begin', state: 'start' });
   try {
-    const result = await sqlIn.begin(async (sql) => {
+    const result = await beginSuLockTransaction(sqlIn, async (sql) => {
       transactionEntered = true;
       reportReadQueuePhase(observer, {
         phase: 'pool-acquire-and-begin',

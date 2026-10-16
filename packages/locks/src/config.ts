@@ -28,6 +28,24 @@ export interface TxnTimeouts {
 }
 
 /**
+ * Minimal structural ticket used to connect the SU pool to a host's
+ * acquisition registry without making this host-agnostic package depend on a
+ * particular database implementation.
+ */
+export interface AcquireDiagnosticTicket {
+  /** The transaction has obtained a connection and entered its callback. */
+  acquired: () => void;
+  /** The transaction has settled, whether it committed or failed. */
+  release: () => void;
+}
+
+/** Optional host-provided bridge to a process-local pool acquisition registry. */
+export interface AcquireDiagnostics {
+  beginAcquire?: (pool: string) => AcquireDiagnosticTicket | null;
+  recordPoolMax?: (pool: string, max: number) => void;
+}
+
+/**
  * The baked defaults — the per-workspace txn wrapper's safe floor (5s/5s), the values that shipped
  * before db:txn-timeouts. Used whenever the host wires no getTxnTimeouts callback (the locks package
  * standalone, or tests). MUST stay in lock-step with operator-core's TXN_TIMEOUTS_DEFAULTS.
@@ -53,6 +71,12 @@ export interface LocksHost {
    * the deliberately-narrow seam. live-configurability-audit-2026-06-20 P-020.
    */
   getTxnTimeouts?: () => TxnTimeouts;
+  /**
+   * OPTIONAL: connect this package's pools to a host-local acquisition
+   * registry. Missing or failing callbacks are ignored so diagnostics can
+   * never change lock behavior.
+   */
+  acquireDiagnostics?: AcquireDiagnostics;
 }
 
 let _host: LocksHost | null = null;
@@ -96,5 +120,38 @@ export function txnTimeouts(): TxnTimeouts {
     };
   } catch {
     return DEFAULT_TXN_TIMEOUTS;
+  }
+}
+
+/**
+ * Open a best-effort diagnostic ticket for one SU pool acquisition. The
+ * returned methods are guarded individually: a broken observer must not turn
+ * a lock operation into a failed lock operation.
+ */
+export function beginAcquireDiagnostic(pool: string): AcquireDiagnosticTicket | null {
+  try {
+    const ticket = _host?.acquireDiagnostics?.beginAcquire?.(pool);
+    if (!ticket || typeof ticket.acquired !== 'function' || typeof ticket.release !== 'function') {
+      return null;
+    }
+    return {
+      acquired: () => {
+        try { ticket.acquired(); } catch { /* diagnostics are fail-soft */ }
+      },
+      release: () => {
+        try { ticket.release(); } catch { /* diagnostics are fail-soft */ }
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Record the configured SU pool ceiling when the pool is built. */
+export function recordPoolMaxDiagnostic(pool: string, max: number): void {
+  try {
+    _host?.acquireDiagnostics?.recordPoolMax?.(pool, max);
+  } catch {
+    // Diagnostics must never change pool construction or lock behavior.
   }
 }

@@ -9,8 +9,16 @@
  * Submodule unit test (locks) — tab-neutral, genuine coverage.
  * Run: cd libs/papercusp/packages/locks && npx vitest run src/config.test.ts
  */
-import { describe, expect, it } from 'vitest';
-import { configureLocks, locksHost, txnTimeouts, DEFAULT_TXN_TIMEOUTS, type LocksHost } from './config';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  beginAcquireDiagnostic,
+  configureLocks,
+  locksHost,
+  recordPoolMaxDiagnostic,
+  txnTimeouts,
+  DEFAULT_TXN_TIMEOUTS,
+  type LocksHost,
+} from './config';
 
 describe('@papercusp/locks host seam', () => {
   it('throws a clear error when locksHost() is read before configuration', () => {
@@ -67,5 +75,28 @@ describe('@papercusp/locks txnTimeouts() — P-020 db:txn-timeouts seam', () => 
       getTxnTimeouts: () => ({ lockTimeoutMs: Number.NaN, statementTimeoutMs: 30000 }),
     });
     expect(txnTimeouts()).toEqual({ lockTimeoutMs: 5000, statementTimeoutMs: 30000 });
+  });
+
+  it('bridges acquire diagnostics through the host seam and keeps callbacks fail-soft', () => {
+    const ticket = {
+      acquired: vi.fn(() => { throw new Error('observer failure'); }),
+      release: vi.fn(),
+    };
+    const beginAcquire = vi.fn(() => ticket);
+    const recordPoolMax = vi.fn(() => { throw new Error('observer failure'); });
+    const host: LocksHost = {
+      getAdminBaseUrl: () => 'postgres://main',
+      acquireDiagnostics: { beginAcquire, recordPoolMax },
+    };
+
+    configureLocks(host);
+    recordPoolMaxDiagnostic('su-lock-tx', 10);
+    const guarded = beginAcquireDiagnostic('su-lock-tx');
+
+    expect(recordPoolMax).toHaveBeenCalledWith('su-lock-tx', 10);
+    expect(beginAcquire).toHaveBeenCalledWith('su-lock-tx');
+    expect(() => guarded?.acquired()).not.toThrow();
+    expect(() => guarded?.release()).not.toThrow();
+    expect(ticket.release).toHaveBeenCalledTimes(1);
   });
 });

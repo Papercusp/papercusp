@@ -15,7 +15,12 @@
 
 import { performance } from 'node:perf_hooks';
 import type { Sql } from 'postgres';
-import { ensureBootstrap, getTxPool, SU_LOCKS_FEATURE_KEY } from './su-lock-store';
+import {
+  beginSuLockTransaction,
+  ensureBootstrap,
+  getTxPool,
+  SU_LOCKS_FEATURE_KEY,
+} from './su-lock-store';
 import { startBackgroundJanitor } from './workspace-listener';
 import { txnTimeouts } from './config';
 
@@ -241,7 +246,7 @@ export async function inWorkspaceTxn<T>(
   // UnwrapPromiseArray<T>; for our non-array results the cast is safe.
   let result: unknown;
   try {
-    result = await sql.begin(async (tx) => {
+    result = await beginSuLockTransaction(sql, async (tx) => {
     transactionEntered = true;
     if (transactionStartedAt !== null) {
       reportWorkspaceTxnPhase(
