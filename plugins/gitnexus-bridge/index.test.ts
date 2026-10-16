@@ -285,6 +285,17 @@ describe('TOOL_OVERRIDES — agent-vocabulary description/guidance for code-sear
     expect(text).toContain('path');
   });
 
+  it('tool_map override states the repository-name contract that prevents path-shaped calls', () => {
+    const override = TOOL_OVERRIDES.tool_map;
+    expect(override).toBeDefined();
+    const text = JSON.stringify(override).toLowerCase();
+    expect(text).toContain('repository name');
+    expect(text).toContain('filesystem path');
+    expect(text).toContain('papercusp');
+    expect(text).toContain('omit');
+    expect(text).toContain('@group');
+  });
+
   it('a tool with no override entry is simply absent from the map (upstream description falls through unchanged)', () => {
     expect(TOOL_OVERRIDES.list_repos).toBeUndefined();
     expect(TOOL_OVERRIDES.totally_new_upstream_tool).toBeUndefined();
@@ -544,6 +555,12 @@ describe('applyRepoPolicy (P-004)', () => {
     for (const escape of [releaseCheckout, '.', '../peer-worktree']) {
       expect(() => applyRepoPolicy('query', { repo: escape }, policy)).toThrow(/not allowed on this bridge/);
     }
+  });
+
+  it('applies the same name-only rail to tool_map', () => {
+    expect(applyRepoPolicy('tool_map', {}, policy).repo).toBe('papercusp');
+    expect(() => applyRepoPolicy('tool_map', { repo: nodePath.join(homedir(), 'papercupai-workspace', 'papercusp') }, policy))
+      .toThrow(/not allowed on this bridge/);
   });
 
   it('refuses an @group fan-out', () => {

@@ -527,6 +527,20 @@ export const TOOL_OVERRIDES: Record<string, { description: string; guidance: Non
       chaining: 'Start with known symbols returned by gitnexus.context or graph:query.',
     },
   },
+  tool_map: {
+    description:
+      'List MCP/RPC tool definitions and their handler files for the indexed repository. The optional `repo` ' +
+      'argument is a repository NAME, not a filesystem path or `@group`; omit it to use the papercusp index or ' +
+      'pass `repo:"papercusp"`.',
+    guidance: {
+      when: 'When you need the indexed definitions and handler locations for MCP/RPC tools.',
+      notWhen:
+        'Do not pass process.cwd(), an absolute filesystem path, or an `@group` as `repo`; this bridge accepts repository names only. ' +
+        'Use graph:query or scoped rg for topology and current source.',
+      chaining:
+        'Start with repo omitted or repo:"papercusp", then corroborate handler locations in current source before editing.',
+    },
+  },
   pdg_query: {
     description:
       'Query the persisted Program Dependence Graph from `gitnexus analyze --pdg`: `controls` returns ' +
