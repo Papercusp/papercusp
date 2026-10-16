@@ -210,8 +210,7 @@ async function ask(rl: readline.Interface, prompt: string, masked = false): Prom
     process.stdout.write(prompt);
     const stdin = process.stdin as NodeJS.ReadStream & { isRaw?: boolean };
     let buffer = '';
-    const onData = (chunk: Buffer) => {
-      const ch = chunk.toString('utf8');
+    const onData = (ch: string) => {
       if (ch === '\n' || ch === '\r' || ch === '\x04') {
         stdin.removeListener('data', onData);
         if (stdin.isRaw && stdin.setRawMode) stdin.setRawMode(false);
@@ -231,6 +230,7 @@ async function ask(rl: readline.Interface, prompt: string, masked = false): Prom
       }
     };
     if (stdin.setRawMode) stdin.setRawMode(true);
+    stdin.setEncoding('utf8');
     stdin.resume();
     stdin.on('data', onData);
   });
