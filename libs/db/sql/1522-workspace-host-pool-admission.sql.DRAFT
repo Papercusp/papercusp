@@ -1,0 +1,14 @@
+-- P-534: extend the existing host inventory and operation reservation ledger.
+-- Nullable columns preserve every older writer. No second scheduler or allocation table.
+ALTER TABLE harness_shared.workspace_hosts
+  ADD COLUMN IF NOT EXISTS pool_observation JSONB
+    CHECK (pool_observation IS NULL OR jsonb_typeof(pool_observation) = 'object');
+
+ALTER TABLE harness_shared.workspace_host_operations
+  ADD COLUMN IF NOT EXISTS admission_receipt JSONB
+    CHECK (admission_receipt IS NULL OR jsonb_typeof(admission_receipt) = 'object');
+
+COMMENT ON COLUMN harness_shared.workspace_hosts.pool_observation IS
+  'Controller-authored capacity/clean-state observation, bound to host generation and controller fence. Never customer input.';
+COMMENT ON COLUMN harness_shared.workspace_host_operations.admission_receipt IS
+  'Immutable hosted admission input and result for replay; queued/running operations are VM/data reservations.';
