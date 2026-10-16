@@ -54,7 +54,8 @@ again.
     "requiredScope": [
       "plan-run"
     ],
-    "evidencePlane": "tree"
+    "evidencePlane": "tree",
+    "requiredTestLayers": ["integration"]
   },
   "verification": {
     "method": "Read the installed plan template and trace one representative bug report and one non-bug trigger run against their recorded ticketFiling outcome.",
