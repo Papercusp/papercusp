@@ -50,6 +50,19 @@ import { SLOT_IDS, type SlotId } from './slots.js';
 export const SU_SOURCE_REL = 'blueprints/base/prompts/su.md';
 /** Harness-relative path of the kernel's base text (D-018). */
 export const SU_PREAMBLE_REL = 'blueprints/base/prompts/agent-base-preamble.md';
+
+/** The common preamble also carries ledger mechanics. Like the su.md workflow
+ * tiles, these exact source spans delegate only registration to the host. */
+export const SU_PREAMBLE_HOST_WORKFLOW: readonly { text: string; hostWorkItemWorkflow: string }[] = [
+  {
+    text: 'Record what you\nfound and did on the work item / plan so it is durable, and carry any still-open\nitem forward; never silently drop it.',
+    hostWorkItemWorkflow: 'Report what you found and did, with evidence and any still-open work, to the host.\nThe host records the findings and owns their follow-up; never silently drop them.',
+  },
+  {
+    text: 'And because others may be waiting on the same stalled event, make the\ninvestigation visible: file a work item for it and CLAIM it (search first — if one\nalready exists, subscribe/coordinate on it instead of duplicating), so the pot sees the\nstall is owned instead of N agents each silently waiting on the same dead event.',
+    hostWorkItemWorkflow: 'Report the stall and its evidence to the host so it can coordinate the existing\nassignment and register any necessary follow-up. Continue investigating within your\nassigned scope; do not create or claim another assignment.',
+  },
+];
 /** The base role library — every prompt in it gets a disposition row below. */
 export const BASE_ROLE_LIBRARY_REL = 'blueprints/base/prompts';
 

@@ -6,13 +6,14 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { composeSuStackSource, composeSuStackMutation, suEffectiveBinding, suPostureBinding, suSessionBinding, suStackDocuments } from './su-stack.js';
 import { bindingRefs, STACK_INJECTION_STAMP } from './stack-mutation.js';
 import { KERNEL_SEAL_MARKER } from './render-stack.js';
 import { CLIENT_SEAM_MARKER } from './identity-lint.js';
-import { SU_TILES } from './su-decomposition.js';
+import { SU_PREAMBLE_REL, SU_TILES } from './su-decomposition.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const harnessDir = join(here, '..', '..', '..', 'harness'); // libs/papercusp/packages/harness
@@ -29,12 +30,30 @@ test('host-managed assignment workflow preserves the sealed authority and eviden
   assert.ok(controlled.text.includes('The host owns this assignment'));
   for (const instruction of ['Declare a real intent + claim your lane',
     "Finish with `work_items:complete", 'Plan before non-trivial work.',
-    'Registering work is a SEPARATE discipline']) {
+    'Registering work is a SEPARATE discipline',
+    'file a work item for it and CLAIM it',
+    'Record what you\nfound and did on the work item / plan']) {
     assert.ok(normal.text.includes(instruction), `positive control: ${instruction}`);
     assert.equal(controlled.text.includes(instruction), false, `withheld workflow: ${instruction}`);
   }
   assert.throws(() => composeSuStackSource({ harnessDir, workItemWorkflow: 'host-managed',
     tiles: SU_TILES.filter(t => !t.anchor.startsWith('- **Plan before')) }), /workflow/);
+});
+
+test('host-managed preamble keeps blocker investigation and refuses missing or ambiguous workflow source', () => {
+  const preamble = readFileSync(join(harnessDir, SU_PREAMBLE_REL), 'utf8');
+  const controlled = composeSuStackSource({ harnessDir, workItemWorkflow: 'host-managed' });
+  for (const retained of ['check its concrete progress', 'investigate and fix it',
+    'Report the stall and its evidence to the host', 'The host records the findings',
+    'A slow check that keeps failing is a loop', 'Root cause named', 'Verified —']) {
+    assert.ok(controlled.text.includes(retained), `retained blocker duty: ${retained}`);
+  }
+  const changed = preamble.replace('file a work item for it and CLAIM it', 'FILE A DIFFERENT ITEM');
+  assert.ok(composeSuStackSource({ harnessDir, preambleText: changed }).text.includes('FILE A DIFFERENT ITEM'));
+  for (const preambleText of [changed, preamble + '\n' + preamble]) {
+    assert.throws(() => composeSuStackSource({ harnessDir, preambleText,
+      workItemWorkflow: 'host-managed' }), /workflow.*preamble/i);
+  }
 });
 
 test('composeSuStackSource — lossless over the real su.md: every non-dropped tile renders exactly once; identity tiles above the seal, kernel tiles under it', () => {

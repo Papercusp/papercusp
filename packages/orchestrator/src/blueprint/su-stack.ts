@@ -67,6 +67,7 @@ import {
 import {
   SU_PART_DOCUMENTS,
   SU_TILES,
+  SU_PREAMBLE_HOST_WORKFLOW,
   SU_PREAMBLE_REL,
   locateSuTiles,
   readSuSource,
@@ -212,9 +213,17 @@ function preambleHeadings(preamble: string): Set<string> {
 }
 
 function readPreamble(opts: SuStackComposeOptions): string {
-  if (opts.preambleText != null) return opts.preambleText;
   const p = opts.harnessDir ? join(opts.harnessDir, SU_PREAMBLE_REL) : harnessPath(...SU_PREAMBLE_REL.split('/'));
-  return readFileSync(p, 'utf8');
+  let text = opts.preambleText ?? readFileSync(p, 'utf8');
+  if (opts.workItemWorkflow === 'host-managed') {
+    for (const workflow of SU_PREAMBLE_HOST_WORKFLOW) {
+      const parts = text.split(workflow.text);
+      if (parts.length !== 2)
+        throw new Error('su-stack: host workflow preamble source is missing or ambiguous');
+      text = parts.join(workflow.hostWorkItemWorkflow);
+    }
+  }
+  return text;
 }
 
 function partDoc(id: SuPartDocument['id']): SuPartDocument {
