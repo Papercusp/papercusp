@@ -1,0 +1,41 @@
+{
+  "kind": "plugin",
+  "name": "mastodon",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Mastodon home timeline and mention reads with instance-bound status publishing.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "mastodon", "contractVersion": 1, "displayName": "Mastodon",
+    "datatypes": ["social-post"],
+    "capabilities": ["social.post", "social.reply", "social.delete"],
+    "egressHosts": [],
+    "oauth": {
+      "instance": true, "authorizeUrl": "/oauth/authorize", "tokenUrl": "/oauth/token",
+      "clientRegistrationRef": "mastodon", "refreshPolicy": "reauthorize",
+      "scopes": ["read:accounts", "read:statuses", "read:notifications", "write:statuses"],
+      "identity": { "url": "/api/v1/accounts/verify_credentials", "idField": "id", "displayNameField": "acct" }
+    },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "setup": { "appRegistration": {
+      "createUrl": "/settings/applications/new",
+      "docsUrl": "https://docs.joinmastodon.org/client/token/",
+      "copyHint": "On your Mastodon instance, open Preferences → Development, create an application with these scopes and the callback shown here, then save its client credentials for that instance."
+    } },
+    "configSchema": {
+      "type": "object", "required": ["connectionOrigin", "connectionAccountId"],
+      "properties": {
+        "connectionOrigin": { "type": "string", "title": "Connected instance", "readOnly": true },
+        "connectionAccountId": { "type": "string", "title": "Connected account", "readOnly": true },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 40, "default": 40 },
+        "maxPages": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
