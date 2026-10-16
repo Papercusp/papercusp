@@ -22,9 +22,71 @@
  * ("Run after any new .sql migration") and by CI's drift check, not here.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 describe('pull-schema.mjs main-guard (EI-18786840446203185)', () => {
+  it('the real CLI refuses missing runtime policies before rewriting either mirror', () => {
+    const root = mkdtempSync(join(tmpdir(), 'pull-schema-policies-'));
+    try {
+      // The CLI may write only inside this disposable tree, even if its guard
+      // regresses. psql is a deterministic catalog fixture; no DB is contacted.
+      const db = join(root, 'libs/papercusp/libs/db');
+      const script = join(db, 'scripts/pull-schema.mjs');
+      mkdirSync(dirname(script), { recursive: true });
+      cpSync(new URL('../src/', import.meta.url), join(db, 'src'), {
+        recursive: true,
+        filter: (path) => statSync(path).isDirectory() || path.endsWith('.mjs'),
+      });
+      copyFileSync(new URL('./pull-schema.mjs', import.meta.url), script);
+      symlinkSync(realpathSync(new URL('../../../../../node_modules', import.meta.url)),
+        join(root, 'node_modules'), 'dir');
+      mkdirSync(join(root, 'scripts/lib'), { recursive: true });
+      writeFileSync(join(root, 'scripts/lib/fs-mutex.mjs'),
+        'export async function withFsMutex(_name, run) { return run(); }');
+      mkdirSync(join(db, 'sql'));
+      writeFileSync(join(db, 'sql/000-baseline.sql'), '-- fixture');
+      const schema = [
+        'export const tenantRows = harnessShared.table("tenant_rows", {',
+        '  id: text(),',
+        '}, (table) => [',
+        '  pgPolicy("tenant_rows_workspace_isolation", { for: "all" }),',
+        ']);',
+      ].join('\n');
+      const schemaPath = join(db, 'src/schema/generated.ts');
+      const relationsPath = join(db, 'src/schema/generated-relations.ts');
+      writeFileSync(schemaPath, schema);
+      writeFileSync(relationsPath, '// original relations');
+      const bin = join(root, 'bin');
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'psql'), [
+        '#!/usr/bin/env node',
+        'const query = process.argv.at(-1);',
+        'if (query.includes("pg_policies")) console.log("[]");',
+        'else if (query.includes("json_build_object")) console.log(JSON.stringify({count:1,latestFilename:"000-baseline.sql",latestAppliedAt:null}));',
+        'else if (query.includes("schema_migrations")) console.log("000-baseline.sql");',
+        'else if (query === "SELECT 1") console.log("1");',
+        'else process.exitCode = 2;',
+      ].join('\n'), { mode: 0o755 });
+
+      const result = spawnSync(process.execPath, [script], {
+        cwd: root, encoding: 'utf8', timeout: 10_000,
+        env: { ...process.env, NODE_OPTIONS: '', PATH: `${bin}:${process.env.PATH}`,
+          HARNESS_ADMIN_DATABASE_URL: 'postgresql://fixture@127.0.0.1:1/fixture' },
+      });
+      expect(result.error).toBeUndefined();
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('REFUSING TO PULL: target lacks 1 policy/policies');
+      expect(result.stderr).toContain('harness_shared.tenant_rows.tenant_rows_workspace_isolation');
+      expect(readFileSync(schemaPath, 'utf8')).toBe(schema);
+      expect(readFileSync(relationsPath, 'utf8')).toBe('// original relations');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it('refuses to run its side effects when merely IMPORTED, not executed as the CLI entrypoint', async () => {
     await expect(import('./pull-schema.mjs')).rejects.toThrow(
       /IMPORTED rather than run\. Refusing to execute/,

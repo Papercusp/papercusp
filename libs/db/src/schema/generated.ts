@@ -13620,6 +13620,7 @@ export const workspaceHostResourcesInHarnessShared = harnessShared.table("worksp
 	deletionConfirmation: jsonb("deletion_confirmation"),
 	error: jsonb(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	incarnationId: text("incarnation_id"),
 }, (table) => [
 	index("workspace_host_resources_host_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.hostId.asc().nullsLast().op("text_ops"), table.logicalKey.asc().nullsLast().op("text_ops")),
 	foreignKey({
