@@ -42,9 +42,16 @@ media-primary: a video with no caption is ordinary. The payload carries
 reporting an empty summary as a fault.
 
 ## Steps
-- **P-001** `todo` Read the triggering payload, use only supplied fields, and record the platform, permalink, posted time, and first line of text—or state no caption when textAbsent is true. Ask the owner only when the stated escalation condition applies; take no platform write.
 
-1. Call `triggers:read-payload { planRunId: payload.plan_run.runId }` and read its `payload`. Use ONLY fields that are actually present on it — an
+Read `triggers:read-payload { planRunId: payload.plan_run.runId }` once. When
+`response.events` is present, process every entry in that complete batch. Otherwise process
+the response as one entry. Use each entry's own `source`, `event`, `payload`, `dedupeKey` and
+`occurredAt`; the top-level fields describe only the first event. Apply the steps below to
+each entry independently and include every outcome in the completion.
+
+- **P-001** `todo` Read every delivered event in the batch, use only supplied fields, and record the platform, permalink, posted time, and first line of text—or state no caption when textAbsent is true. Ask the owner only when the stated escalation condition applies; take no platform write.
+
+1. For the current entry, read its `payload`. Use ONLY fields that are actually present on it — an
    absent field means TikTok did not supply one, not that you should go looking for
    it elsewhere.
 2. Summarize the event in your completion, in one or two lines: the platform, the

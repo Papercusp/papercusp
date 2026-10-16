@@ -21,25 +21,16 @@ represents a window's worth of comments. A digest is exactly what coalescing pro
 a separate periodic sweep beside it would poll for events the binding engine is already batching.
 
 That is why the per-binding windows differ and the caps do not read alike. Each is the value
-`socialStormPolicyFor()` derives from that platform's own rate budget: Reddit's documented 60
+`providerStormPolicyFor()` derives from that platform's own rate budget: Reddit's documented 60
 requests/minute funds 30 runs per five-minute window, YouTube's 10,000 daily units funds 3,
 Threads' dynamic allowance funds 16, and Facebook Pages and Instagram — whose budgets scale with
 impressions and are only observable as percentages — fund 1. A single hand-picked cap across five
 platforms would have to be the smallest of them to be safe, which would throttle Reddit by 30×.
 
-**A digest run does not see every comment in its own payload, and it cannot read the ones that
-were coalesced into it.** The run is launched by ONE trigger event; the rest of the window's
-comments fold into that run inside the binding engine and are recorded in
-`harness_shared.trigger_deliveries`, for which **no agent-facing verb exists** — the `triggers:*`
-family is create/bind/arm/disarm/list/status, with no deliveries read. So a plan step that said
-"read the coalesced comments from the delivery ledger" would name a capability the agent does not
-have. Summarising only the launching event would instead produce a digest of one comment while
-reporting a window.
-
-The way out is the landed read path: **`social:search` takes a `platforms` list and a
-`{ from, to }` datetime window**, which is exactly the query a digest needs, and each hit carries a
-ready-made canonical `postId`. The window is reconstructed from the launching event's timestamp
-rather than from delivery rows. See D-004.
+A digest reads its complete retained batch through `triggers:read-payload`; it does not
+query the private delivery ledger. Use `social:search` with a platform and time window to
+supplement that batch and obtain opaque post identifiers. Search limits remain visible,
+while every delivered batch entry must be represented even when search is truncated.
 
 Comment volume is bursty and unbounded in a way mail is not: one post going wide produces thousands
 of genuinely distinct comments in minutes. Nothing is dropped by the policy — the cap bounds RUNS,
@@ -48,7 +39,17 @@ digest must report rather than hide.
 
 ## Phase 1 — Collect
 
-- **P-001** `todo` Read the launching event from the event `payload` returned by `triggers:read-payload { planRunId: payload.plan_run.runId }` and its platform from `payload.plan_run.inputs.trigger.source`. Take the window's end from the launching event's `occurredAt` (falling back to now when absent) and its start from that minus the source's storm-policy `windowSeconds`.
+Read `triggers:read-payload { planRunId: payload.plan_run.runId }` once. When
+`response.events` is present, process every entry in that complete batch. Otherwise process
+the response as one entry. Use each entry's own `source`, `event`, `payload`, `dedupeKey` and
+`occurredAt`; the top-level fields describe only the first event. Apply the steps below to
+each entry independently and include every outcome in the completion.
+
+Combine the batch entries with the search hits below, deduplicating by supplied stable
+source and external identifiers. Report retained batch coverage separately from search overflow.
+
+
+- **P-001** `todo` Read every delivered batch entry and its own `source` and `occurredAt`. For each platform, take the search window end from its latest supplied timestamp (now when absent) and the start from its earliest timestamp minus the source’s storm-policy `windowSeconds`. Include the payload of every entry in the digest.
 - **P-002** `todo` Call `social:search` ONCE PER PLATFORM in scope, passing that `{ from, to }` window, the single platform in `platforms`, and `limit` = `payload.plan_run.inputs.maxCommentsPerPlatform`. Take each hit's `postId` VERBATIM — never assemble one from a platform and an id. Read `scopesSearched` and `skipped` from every response: a platform that was skipped is absent from the digest, and saying so is the difference between an empty section and an unsearched one.
 - **P-003** `todo` A search returning exactly `limit` hits for a platform means the window OVERFLOWED and older comments in it are unreported. Record that per platform explicitly; a truncated digest that reads as complete is the failure this step exists to prevent.
 
