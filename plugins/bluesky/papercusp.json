@@ -5,6 +5,20 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://atproto.com/specs/event-stream",
+        "https://atproto.com/specs/xrpc",
+        "https://raw.githubusercontent.com/bluesky-social/atproto/main/lexicons/com/atproto/repo/createRecord.json",
+        "https://raw.githubusercontent.com/bluesky-social/atproto/main/lexicons/app/bsky/feed/post.json",
+        "https://raw.githubusercontent.com/bluesky-social/atproto/main/lexicons/com/atproto/repo/strongRef.json"
+      ],
+      "budgetHeaders": [
+        "Retry-After"
+      ],
+      "notes": "HTTP 429 with Retry-After is documented at connection time. A consumer that falls behind receives a \"too slow\" error and is disconnected, so the adapter must keep up or reconnect by cursor."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [

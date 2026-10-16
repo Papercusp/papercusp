@@ -4,6 +4,45 @@
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] }, "capabilities": [], "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://developers.google.com/youtube/v3/getting-started",
+        "https://developers.google.com/youtube/v3/docs/activities/list",
+        "https://developers.google.com/youtube/v3/docs/commentThreads/list",
+        "https://developers.google.com/youtube/v3/docs/comments/insert",
+        "https://developers.google.com/youtube/v3/docs/videos/insert"
+      ],
+      "quotaUnitsPerDay": 10000,
+      "buckets": {
+        "general": {
+          "appliesTo": "all endpoints except search.list and videos.insert (activities.list 1, commentThreads.list 1, comments.list 1, comments.insert 50)",
+          "perDay": 10000,
+          "unit": "units",
+          "verbs": [
+            "read",
+            "reply",
+            "delete"
+          ]
+        },
+        "search": {
+          "appliesTo": "search.list",
+          "perDay": 100,
+          "unit": "calls",
+          "notes": "A separate allocation; unused general units cannot buy another search."
+        },
+        "videoUploads": {
+          "appliesTo": "videos.insert",
+          "perDay": 100,
+          "unit": "calls",
+          "verbs": [
+            "post"
+          ],
+          "notes": "The \"Video Uploads quota bucket\". Each call costs 1 unit, NOT the widely-repeated 1600 — that figure is stale, and the real constraint is this 100-CALL ceiling, which no amount of unused general quota replenishes (D-020)."
+        }
+      },
+      "notes": "THREE non-fungible budgets, verified against two independent vendor pages (D-020). A cap derived from quotaUnitsPerDay alone is meaningless for uploads and searches, so a per-verb consumer must read `buckets`."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [

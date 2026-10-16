@@ -5,6 +5,40 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://learn.microsoft.com/en-us/linkedin/shared/authentication/getting-access",
+        "https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin",
+        "https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/sign-in-with-linkedin-v2",
+        "https://learn.microsoft.com/en-us/linkedin/marketing/integrations/community-management/shares/posts-api",
+        "https://learn.microsoft.com/en-us/linkedin/marketing/integrations/community-management/shares/comments-api",
+        "https://learn.microsoft.com/en-us/linkedin/shared/api-guide/concepts/rate-limits",
+        "https://learn.microsoft.com/en-us/linkedin/shared/authentication/authorization-code-flow"
+      ],
+      "buckets": {
+        "member": {
+          "appliesTo": "a single member per application, resetting midnight UTC",
+          "perDay": 150,
+          "unit": "calls",
+          "verbs": [
+            "post",
+            "delete"
+          ],
+          "notes": "The binding limit for one owner. Note this counts REQUESTS, not posts: a create is one call, so an adapter that also polled would spend the same 150."
+        },
+        "application": {
+          "appliesTo": "the whole application across all members, resetting midnight UTC",
+          "perDay": 100000,
+          "unit": "calls",
+          "verbs": [
+            "post",
+            "delete"
+          ]
+        }
+      },
+      "notes": "Member 150 requests/day, Application 100,000 requests/day, both resetting at midnight UTC. The member limit is the binding one for a single owner, so it is the floor here. ⚠ ZERO API-SIDE OBSERVABILITY: no response header reports quota or usage, and unlike Threads there is no limits ENDPOINT either, so observedPeakUsagePct can never become non-null and this floor is permanent. The only feedback loop is an email alert at 75% of quota — application-level only, explicitly not real-time (\"delay of approximately 1-2 hours\"), and therefore useless to the adapter. Throttling surfaces as HTTP 429, which is also returned \"in rare cases ... as part of infrastructure protection\", so a 429 is not proof the daily cap was reached. SECOND, INDEPENDENT THROTTLE: comment creation carries a \"short term 1 minute rate limit\" (429 \"Comment create throttled: creation rate limit exceeded for member\") — LinkedIn must not be modelled as daily-only, even though this adapter does not comment today."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [

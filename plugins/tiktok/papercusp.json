@@ -5,6 +5,19 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://developers.tiktok.com/doc/tiktok-api-v2-video-list",
+        "https://developers.tiktok.com/doc/display-api-get-started/",
+        "https://developers.tiktok.com/doc/tiktok-api-scopes/",
+        "https://developers.tiktok.com/doc/content-posting-api-get-started/",
+        "https://developers.tiktok.com/doc/content-posting-api-reference-upload-video/",
+        "https://developers.tiktok.com/doc/content-posting-api-reference-get-video-status/",
+        "https://developers.tiktok.com/doc/content-sharing-guidelines/"
+      ],
+      "notes": "NO rate limit is documented for the Display API (/v2/video/list/) on either its reference or its get-started page — verified 2026-08-23, an absence rather than an unread field. The published TikTok limits (6 req/min inbox init, 30 req/min status fetch, both per user access_token) belong to Content Posting endpoints this read-only row never calls. max_count is the one hard documented bound on this endpoint: default 10, maximum 20."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [

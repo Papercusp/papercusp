@@ -12,6 +12,45 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://developers.facebook.com/docs/instagram-platform/overview",
+        "https://developers.facebook.com/docs/instagram-platform/content-publishing",
+        "https://developers.facebook.com/docs/instagram-platform/comment-moderation",
+        "https://developers.facebook.com/docs/instagram-platform/reference/instagram-media",
+        "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-media/comments/",
+        "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-comment/",
+        "https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-comment/replies/",
+        "https://developers.facebook.com/docs/permissions",
+        "https://developers.facebook.com/docs/graph-api/overview/rate-limiting"
+      ],
+      "budgetHeaders": [
+        "X-Business-Use-Case-Usage"
+      ],
+      "dynamicQuota": {
+        "formula": "Calls within 24 hours = 4800 * Number of Impressions",
+        "driver": "the number of times any content from the app user's Instagram professional account has entered a person's screen within the last 24 hours",
+        "usageHeader": "X-Business-Use-Case-Usage",
+        "assumedDailyFloor": 4800,
+        "throttleCodes": [
+          80002
+        ],
+        "retryExtendsBlock": true
+      },
+      "buckets": {
+        "publishing": {
+          "appliesTo": "POST /{ig-id}/media_publish — organic feed posts (a carousel counts as one)",
+          "perDay": 50,
+          "unit": "calls",
+          "verbs": [
+            "post"
+          ],
+          "notes": "Call-capped, not unit-capped: the cap counts PUBLISHES regardless of media size, and \"This limit is enforced on the POST /{ig-id}/media_publish endpoint\" — so container creation and status polling do not draw on it. `reply` is deliberately NOT declared here: a comment reply is not a published post and the cap is documented on media_publish alone, so replies fall to the call budget instead."
+        }
+      },
+      "notes": "THE PUBLISHING CAP IS QUERYABLE AND THE CALL BUDGET IS NOT — the sharpest operational difference from Facebook Pages. GET /{ig-id}/content_publishing_limit reports \"app user's current publishing rate limit usage\" as an ABSOLUTE figure, so the 100-vs-50 documentation contradiction is resolvable at runtime by asking; the 50 above is only the compile-time floor to act on before the first answer arrives. The call budget has no such endpoint: X-Business-Use-Case-Usage reports percentages only, which is why `assumedDailyFloor` exists at all (D-029). ⚠ ONE UNRESOLVED AMBIGUITY, recorded rather than smoothed over: the Instagram overview states the call formula over \"a rolling 24 hour window\", while the header reference describes `call_count` as \"a whole number expressing the percentage of allowed calls made by your app over a rolling one hour period\". The two windows cannot both be right. It does not change the cap arithmetic — a percentage of the allowance is a headroom fraction either way — but it does change how fast headroom recovers, so no code may assume a recovery rate from it. ⚠ A THROTTLE MUST NOT BE RETRIED: \"When the limit has been reached, stop making API calls. Continuing to make calls will continue to increase your call count, which will increase the time before calls will be successful again.\" Declared usage type: instagram."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [

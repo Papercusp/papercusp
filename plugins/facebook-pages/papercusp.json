@@ -11,6 +11,34 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://developers.facebook.com/docs/pages-api/getting-started",
+        "https://developers.facebook.com/docs/pages-api/posts",
+        "https://developers.facebook.com/docs/permissions",
+        "https://developers.facebook.com/docs/graph-api/results",
+        "https://developers.facebook.com/docs/graph-api/reference/page/",
+        "https://developers.facebook.com/docs/graph-api/reference/page/feed/",
+        "https://developers.facebook.com/docs/graph-api/reference/v23.0/object/comments",
+        "https://developers.facebook.com/docs/graph-api/overview/rate-limiting"
+      ],
+      "budgetHeaders": [
+        "X-Business-Use-Case-Usage"
+      ],
+      "dynamicQuota": {
+        "formula": "Calls within 24 hours = 4800 * Number of Engaged Users",
+        "driver": "the number of Users who engaged with the Page per 24 hours, over a rolling 24-hour window",
+        "usageHeader": "X-Business-Use-Case-Usage",
+        "assumedDailyFloor": 4800,
+        "throttleCodes": [
+          80001,
+          32
+        ],
+        "retryExtendsBlock": true
+      },
+      "notes": "The TOKEN TYPE selects the regime: \"requests made with application or user access tokens are subject to Platform Rate Limits, while requests made with system user or page access tokens are subject to Business Use Case Rate Limits\", and BUC wins when both could apply. So the D-027 credential mix-up does not merely return empty comments — it silently relocates the caller into a different, per-HOUR budget with a different error code, which is why BOTH 80001 (page/system-user token) and 32 (user token) are handled. ⚠ A THROTTLE MUST NOT BE RETRIED: \"Continuing to make calls will continue to increase your call count, which will increase the time before calls will be successful again.\" Park for the header's `estimated_time_to_regain_access` (minutes); no fixed fallback duration is documented, so none may be invented. Declared usage type: pages."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [

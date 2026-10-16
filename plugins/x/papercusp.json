@@ -11,6 +11,10 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": null,
+      "sources": []
+    },
     "verification": {
       "verifiedAt": "2026-10-15",
       "sources": [

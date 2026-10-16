@@ -5,6 +5,24 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "rateBudget": {
+      "verifiedAt": "2026-08-23",
+      "sources": [
+        "https://github.com/reddit-archive/reddit/wiki/API",
+        "https://github.com/reddit-archive/reddit/wiki/JSON",
+        "https://github.com/reddit-archive/reddit/wiki/OAuth2",
+        "https://raw.githubusercontent.com/reddit-archive/reddit/master/r2/r2/controllers/api.py",
+        "https://raw.githubusercontent.com/reddit-archive/reddit/master/r2/r2/controllers/listingcontroller.py",
+        "https://raw.githubusercontent.com/reddit-archive/reddit/master/r2/r2/lib/validator/validator.py"
+      ],
+      "requestsPerMinute": 60,
+      "budgetHeaders": [
+        "X-Ratelimit-Used",
+        "X-Ratelimit-Remaining",
+        "X-Ratelimit-Reset"
+      ],
+      "notes": "OAuth2 clients may make up to 60 requests per minute. Batch endpoints are preferred over looping single-resource calls."
+    },
     "verification": {
       "verifiedAt": "2026-10-16",
       "sources": [
