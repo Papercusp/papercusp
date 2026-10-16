@@ -1,0 +1,33 @@
+{
+  "kind": "plugin", "name": "reddit", "version": "0.1.0", "papercusp": "^0.1.0",
+  "description": "Reddit inbox comment replies, mentions and account submissions with host-mediated publishing.",
+  "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [], "tools": [],
+  "provider": {
+    "id": "reddit", "contractVersion": 1, "displayName": "Reddit",
+    "datatypes": ["social-post"], "capabilities": ["social.post", "social.reply", "social.delete"],
+    "egressHosts": ["www.reddit.com", "oauth.reddit.com"],
+    "oauth": {
+      "authorizeUrl": "https://www.reddit.com/api/v1/authorize?duration=permanent",
+      "tokenUrl": "https://www.reddit.com/api/v1/access_token",
+      "clientRegistrationRef": "reddit", "tokenEndpointAuthMethod": "client_secret_basic", "userAgentRequired": true,
+      "scopes": ["identity", "read", "history", "privatemessages", "submit", "edit"],
+      "identity": { "url": "https://oauth.reddit.com/api/v1/me", "idField": "id", "displayNameField": "name" }
+    },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "setup": { "appRegistration": {
+      "createUrl": "https://www.reddit.com/prefs/apps",
+      "docsUrl": "https://github.com/reddit-archive/reddit/wiki/OAuth2",
+      "copyHint": "Create your Reddit web app with the callback shown here. Save its client ID, secret and your truthful <platform>:<app ID>:<version> (by /u/<username>) User-Agent. Use your actual contact username; Reddit forbids false identification. API access may require Reddit approval."
+    } },
+    "configSchema": {
+      "type": "object", "required": ["accountLabel"],
+      "properties": {
+        "accountLabel": { "type": "string", "title": "Connected Reddit username", "readOnly": true },
+        "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 },
+        "maxPages": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 200 }
+      }, "additionalProperties": false
+    }
+  }
+}
