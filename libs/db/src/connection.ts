@@ -920,7 +920,8 @@ function resolveAdminUrl(opts?: {
   _resolvedAdminUrlSource = 'fallback';
   return `postgresql://harness_admin:harness_admin_pwd@localhost:${Number(process.env.PAPERCUSP_PG_PORT) || 5432}/papercusp`;
 }
-function adminUrl(opts?: {
+/** Shared admin target for DBOS and direct SQL clients; preserves operator env-file precedence. */
+export function adminUrl(opts?: {
   isPortServed?: DiscoveryPortProbe;
   operatorEnvironmentFile?: string;
 }): string {
