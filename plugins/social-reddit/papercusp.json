@@ -4,7 +4,7 @@
   "name": "@papercupai/social-reddit",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "Reddit platform trigger pack: Watches posts and comments in the subreddits you name. Records each event and publishes nothing.",
+  "description": "Reddit platform trigger pack: Watches the connected account's comment replies, mentions and submissions. Records each event and publishes nothing.",
   "author": "Papercusp",
   "publisher": "@papercupai",
   "license": "MIT",
@@ -19,19 +19,17 @@
       "redditApp"
     ],
     "properties": {
-      "subreddits": {
-        "type": "string",
-        "title": "Subreddits to watch",
-        "shareable": true,
-        "description": "Comma-separated subreddit names. Not a secret and not owner-specific, so it travels with a share."
-      },
       "redditApp": {
         "type": "string",
         "title": "Reddit app credential",
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "Credential for a self-serve Reddit OAuth app you register yourself. Reddit has no platform-wide provider in this operator, so there is no Connect button."
+        "description": "The Reddit account connected through Integrations. App credentials and the required truthful User-Agent stay on the host.",
+        "oauth": {
+          "provider": "reddit",
+          "scopes": ["identity", "read", "history", "privatemessages", "submit", "edit"]
+        }
       }
     }
   },
@@ -78,7 +76,7 @@
               "properties": {
                 "key": {
                   "type": "string",
-                  "pattern": "^ext:reddit:(post|comment)$"
+                  "pattern": "^ext:reddit:(post|reply|mention)$"
                 },
                 "source": {
                   "type": "string",
@@ -88,7 +86,8 @@
                   "type": "string",
                   "enum": [
                     "post",
-                    "comment"
+                    "reply",
+                    "mention"
                   ]
                 },
                 "sourceId": {
@@ -149,7 +148,8 @@
         "id": "reddit-post",
         "source": {
           "kind": "external",
-          "sourceKind": "reddit"
+          "sourceKind": "reddit",
+          "oauthField": "redditApp"
         },
         "target": "record-reddit-event",
         "eventPattern": "ext:reddit:post",
@@ -172,13 +172,14 @@
         }
       },
       {
-        "id": "reddit-comment",
+        "id": "reddit-reply",
         "source": {
           "kind": "external",
-          "sourceKind": "reddit"
+          "sourceKind": "reddit",
+          "oauthField": "redditApp"
         },
         "target": "record-reddit-event",
-        "eventPattern": "ext:reddit:comment",
+        "eventPattern": "ext:reddit:reply",
         "filter": {
           "all": [
             {
@@ -196,6 +197,14 @@
         "mapping": {
           "mode": "payload-context"
         }
+      }
+      ,{
+        "id": "reddit-mention",
+        "source": { "kind": "external", "sourceKind": "reddit", "oauthField": "redditApp" },
+        "target": "record-reddit-event",
+        "eventPattern": "ext:reddit:mention",
+        "filter": { "all": [{ "id": { "exists": true } }, { "text": { "exists": true } }] },
+        "mapping": { "mode": "payload-context" }
       }
     ],
     "edges": []

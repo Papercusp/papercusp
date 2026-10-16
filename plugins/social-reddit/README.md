@@ -1,6 +1,6 @@
 # Reddit — platform trigger pack
 
-Watches posts and comments in the subreddits you name.
+Watches the connected account's comment replies, mentions and submissions.
 
 Installing this pack wires the Reddit connection once — credential, identifier
 and every event Reddit emits — instead of binding each event by hand.
@@ -10,7 +10,8 @@ and every event Reddit emits — instead of binding each event by hand.
 | binding | fires on |
 |---|---|
 | `reddit-post` | `ext:reddit:post` |
-| `reddit-comment` | `ext:reddit:comment` |
+| `reddit-reply` | `ext:reddit:reply` |
+| `reddit-mention` | `ext:reddit:mention` |
 
 Each event is its OWN binding so you can arm just the ones you want — mentions
 without posts, comments without uploads — from the triggers admin without
@@ -27,13 +28,15 @@ fails if this manifest drifts from it.
 
 ## Connection
 
-**No Connect button, deliberately.** Reddit uses a self-serve app you register yourself; this operator has no Reddit provider. You supply `redditApp` directly; it is stored encrypted.
+Install the `reddit` provider and connect your account through Integrations. Register
+your Reddit app and save its client ID, secret and truthful application User-Agent
+on the host. Select that connection as `redditApp`; the pack never holds app secrets.
+Reddit may require API access approval. This pack does not scan arbitrary subreddits.
 
 ## Share semantics
 
 Per-field, per the `configSchema` convention:
 
-- `subreddits` — `shareable: true`. Comma-separated subreddit names. Not a secret and not owner-specific, so it travels with a share.
 - `redditApp` — `secret: true`, `snapshotPolicy: "strip"`, `shareable: false`.
 
 ⚠ These flags are a **declaration**, and today only the plugin-sdk validator
