@@ -131,6 +131,33 @@ function policyIdentity(policy) {
   return `${schemaName}.${tableName}.${policyName}`;
 }
 
+/**
+ * A migration-only database can have a current ledger while lacking policies
+ * installed by runtime bootstrap. Compare against the existing mirror before
+ * introspection can erase that evidence. Intentional removals are exact,
+ * qualified identities, never a blanket permission to drop policies.
+ *
+ * @param {{ source: string, policies: Array<Record<string, unknown>>, allowedRemovals?: string[] }} input
+ * @returns {string[]}
+ */
+export function findMissingPgPolicies({ source, policies, allowedRemovals = [] }) {
+  const catalog = new Set(policies.map(policyIdentity).filter(Boolean));
+  const allowed = new Set(allowedRemovals);
+  const missing = new Set();
+  const tables = [...source.matchAll(
+    /^export const [A-Za-z_$][\w$]* = ([A-Za-z_$][\w$]*)\.table\("([^"]+)", \{/gm,
+  )];
+  for (let index = 0; index < tables.length; index++) {
+    const table = tables[index];
+    const block = source.slice(table.index, tables[index + 1]?.index ?? source.length);
+    for (const policy of block.matchAll(/pgPolicy\(\s*(["'])(.*?)\1\s*,\s*\{/g)) {
+      const identity = `${camelToSnake(table[1])}.${table[2]}.${policy[2]}`;
+      if (!catalog.has(identity) && !allowed.has(identity)) missing.add(identity);
+    }
+  }
+  return [...missing].sort();
+}
+
 function rewritePolicyObject(objectSource, policy) {
   const fields = splitObjectFields(objectSource, 0, objectSource.length - 1);
   const desired = {

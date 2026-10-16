@@ -4,6 +4,8 @@
  * live `papercusp` database. Run after any new `.sql` migration in ./sql/.
  *
  * Usage: node libs/papercusp/libs/db/scripts/pull-schema.mjs
+ * Intentional policy removal: append --allow-policy-removal=schema.table.policy
+ * for each reviewed removal. Missing runtime policies otherwise refuse the pull.
  *
  * After running:
  *   1. Inspect the diff in src/schema/generated.ts
@@ -73,7 +75,7 @@ import {
   sortPgCoreImportSpecifiers,
 } from '../src/schema/schema-declaration-order.mjs';
 import { repairCheckPrefixes, repairNotValidChecks } from '../src/schema/schema-checks.mjs';
-import { repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
+import { findMissingPgPolicies, repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
 import {
   MIGRATION_FINGERPRINT_SQL,
   describeCatalogDrift,
@@ -244,6 +246,55 @@ function refuseOnCatalogDrift(stage) {
   return true;
 }
 
+// The migration ledger alone cannot prove runtime bootstrap ran. Read policy
+// identities before drizzle-kit writes its intermediate files, retaining the
+// old mirror as the witness when the target is a fresh migration-only DB.
+const policyQuery = [
+  "SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.schemaname, q.tablename, q.policyname), '[]'::json)",
+  'FROM (',
+  '  SELECT schemaname, tablename, policyname, qual, with_check',
+  '  FROM pg_policies',
+  "  WHERE schemaname IN ('harness_shared','papercusp_shared')",
+  ') q;',
+].join(' ');
+function readPolicyCatalog() {
+  const result = spawnSync('psql', [dbUrl, '-tA', '-c', policyQuery], { encoding: 'utf8' });
+  if (result.error != null || result.status !== 0) {
+    console.error('failed to read authoritative pg_policy metadata:', result.stderr || result.error?.message);
+    process.exitCode = 1;
+    return null;
+  }
+  try {
+    const rows = JSON.parse(result.stdout.trim());
+    if (!Array.isArray(rows)) throw new Error('expected a policy array');
+    return rows;
+  } catch (error) {
+    console.error('authoritative pg_policy metadata was not a JSON array:', error.message);
+    process.exitCode = 1;
+    return null;
+  }
+}
+const previousMirror = join(SCHEMA_DIR, 'generated.ts');
+if (existsSync(previousMirror)) {
+  const policies = readPolicyCatalog();
+  if (policies == null) return;
+  const missingPolicies = findMissingPgPolicies({
+    source: readFileSync(previousMirror, 'utf8'),
+    policies,
+    allowedRemovals: process.argv.slice(2)
+      .filter((arg) => arg.startsWith('--allow-policy-removal='))
+      .map((arg) => arg.slice('--allow-policy-removal='.length)),
+  });
+  if (missingPolicies.length > 0) {
+    console.error(`\n==> REFUSING TO PULL: target lacks ${missingPolicies.length} policy/policies from the existing mirror (${redactAdminUrl(dbUrl)}).`);
+    console.error(missingPolicies.map((identity) => `  - ${identity}`).join('\n'));
+    console.error('Use the canonical runtime-initialized database. For an intentional removal, name each reviewed identity with --allow-policy-removal=schema.table.policy.');
+    console.error('    generated.ts and generated-relations.ts are UNCHANGED.');
+    process.exitCode = 1;
+    return;
+  }
+}
+
 // Prefer the locally-installed drizzle-kit. `npx -y drizzle-kit@^0.31.10`
 // refetches a fresh, isolated copy into the npx cache, which then can't
 // resolve `drizzle-orm` under pnpm's symlinked node_modules layout
@@ -337,31 +388,8 @@ if (strippedScratchTables.length > 0) {
 // or moving USING / WITH CHECK expressions between sibling policies on the
 // same table. Match by schema + table + policy name, never by the order
 // drizzle-kit happened to emit its entries.
-const policyQuery = [
-  "SELECT COALESCE(json_agg(row_to_json(q) ORDER BY q.schemaname, q.tablename, q.policyname), '[]'::json)",
-  'FROM (',
-  '  SELECT schemaname, tablename, policyname, qual, with_check',
-  '  FROM pg_policies',
-  "  WHERE schemaname IN ('harness_shared','papercusp_shared')",
-  ') q;',
-].join(' ');
-const policyResult = spawnSync('psql', [dbUrl, '-tA', '-c', policyQuery], { encoding: 'utf8' });
-if (policyResult.status !== 0) {
-  console.error('failed to read authoritative pg_policy metadata:', policyResult.stderr);
-  process.exitCode = 1;
-  return;
-}
-let policyRows;
-try {
-  policyRows = JSON.parse(policyResult.stdout.trim() || '[]');
-} catch (error) {
-  console.error(
-    'authoritative pg_policy metadata was not valid JSON:',
-    error instanceof Error ? error.message : String(error),
-  );
-  process.exitCode = 1;
-  return;
-}
+const policyRows = readPolicyCatalog();
+if (policyRows == null) return;
 const policyFix = repairPgPolicyPredicates({ source: schema, policies: policyRows });
 if (policyFix.unresolved.length > 0) {
   if (refuseOnCatalogDrift('at the pg_policies check')) return;
