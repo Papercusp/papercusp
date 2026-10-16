@@ -10623,6 +10623,9 @@ export const rubricAmendReceiptsInHarnessShared = harnessShared.table("rubric_am
 	error: text(),
 	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+	executorHost: text("executor_host"),
+	executorPid: integer("executor_pid"),
+	executorProcessId: text("executor_process_id"),
 }, (table) => [
 	index("rubric_amend_receipts_finished_idx").using("btree", table.finishedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(state <> 'running'::text)`),
 	primaryKey({ columns: [table.idempotencyKey, table.rubricRef, table.workspaceId], name: "rubric_amend_receipts_pkey"}),
