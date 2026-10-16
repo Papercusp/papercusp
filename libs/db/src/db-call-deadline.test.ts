@@ -9,6 +9,7 @@
  * `withDbCallDeadline` is a pure in-memory promise race with no I/O, so it is
  * exercised directly here with fake timers — deterministic, no real waiting.
  */
+import { inspect } from 'node:util';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   withDbCallDeadline,
@@ -160,10 +161,13 @@ describe('withAcquisitionDeadline ticket diagnostics', () => {
       requestId,
       operation: 'mcp.nativeSessionVerifier',
     }));
-    const result = withAcquisitionDeadline(
-      () => new Promise<never>(() => {}),
-      { ms: 1_000, label: 'native-session-verifier', pool: 'org-admin' },
-    );
+    function startPendingAcquisition() {
+      return withAcquisitionDeadline(
+        () => new Promise<never>(() => {}),
+        { ms: 1_000, label: 'native-session-verifier', pool: 'org-admin' },
+      );
+    }
+    const result = startPendingAcquisition();
     const assertion = result.catch(error => error as DbCallDeadlineError);
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -180,6 +184,13 @@ describe('withAcquisitionDeadline ticket diagnostics', () => {
         operation: 'mcp.nativeSessionVerifier',
       }],
     });
+    // This is how hono-host's fatal console.error renders the Error. Keeping
+    // structured fields alone loses nested tickets to `[Object]`, and a stack
+    // created by the timer alone cannot identify the acquisition's caller.
+    const fatalLog = inspect(error);
+    expect(fatalLog).toContain(requestId);
+    expect(fatalLog).toContain('mcp.nativeSessionVerifier');
+    expect(fatalLog).toContain('startPendingAcquisition');
   });
 
   it('aborts a pending acquisition promptly, marks it expired, and clears its deadline timer', async () => {

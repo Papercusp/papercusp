@@ -2029,7 +2029,7 @@ export class DbCallDeadlineError extends Error {
   readonly retryable: boolean;
   /** Bounded local view of active tickets captured before the timed-out ticket is released. */
   readonly acquisitionTickets: AcquireTicketSnapshot | null;
-  constructor(label: string, deadlineMs: number, elapsedMs: number, pool?: string) {
+  constructor(label: string, deadlineMs: number, elapsedMs: number, pool?: string, origin?: Error) {
     const acquisitionTickets = pool ? acquireTicketSnapshot(pool) : null;
     const measured = pool ? describeAcquirePressure(pool) : null;
     // A decisive measurement has already answered "which cause"; re-printing the
@@ -2050,7 +2050,12 @@ export class DbCallDeadlineError extends Error {
         (measured
           ? `${measured.text} `
           : `No acquire measurements were available for this call, so both causes are still open. `) +
-        tail,
+        tail +
+        // Node's default Error inspection collapses this nested ticket array
+        // to [Object]. Keep the already bounded, sanitized identifiers in the
+        // message too so a fatal console.error preserves the failing caller.
+        (acquisitionTickets ? `\nAcquisition tickets: ${JSON.stringify(acquisitionTickets)}` : ''),
+      origin ? { cause: origin } : undefined,
     );
     this.name = 'DbCallDeadlineError';
     this.label = label;
@@ -2209,6 +2214,10 @@ export function withAcquisitionDeadline<T>(
     signal?.reason ?? Object.assign(new Error('database acquisition aborted'), { name: 'AbortError' });
   if (signal?.aborted) return Promise.reject(abortError());
 
+  // A deadline Error is created in the timer, whose stack cannot name the
+  // caller that began acquisition. Retain that stack as its cause; no query
+  // text or connection credentials are captured.
+  const origin = new Error('Database acquisition initiated here');
   const ms = opts.ms ?? DEFAULT_TX_ACQUIRE_DEADLINE_MS;
   const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2268,7 +2277,7 @@ export function withAcquisitionDeadline<T>(
       clearDeadlineTimer();
       // Constructed while this ticket is still WAITING, on purpose: the snapshot
       // in the message is the state at the moment of the breach.
-      reject(new DbCallDeadlineError(opts.label, ms, Date.now() - startedAt, opts.pool));
+      reject(new DbCallDeadlineError(opts.label, ms, Date.now() - startedAt, opts.pool, origin));
     }, ms);
     // Never hold the process open on this timer alone.
     timer.unref?.();
