@@ -218,10 +218,12 @@ async function invoke(request, host) {
   const config = configOf(request.config); const args = request.args || {};
   if (request.capability === 'social.reply') {
     if (args.target?.platform && args.target.platform !== 'instagram') throw fault('transient', 'wrong_platform_target');
-    if (args.target?.hidden === true) throw fault('transient', 'hidden_comment');
+    const stored = args.target && 'externalId' in args.target;
+    if (stored && (!object(args.target.payload) || typeof args.target.externalId !== 'string')) throw fault('transient', 'invalid_stored_target');
     // The host passes the stored canonical payload; callers cannot supply these
     // vendor selectors. Mentions have a different write edge from owned comments.
-    const payload = args.payload;
+    const payload = stored ? args.target.payload : args.payload;
+    if ((stored ? payload.hidden : args.target?.hidden) === true) throw fault('transient', 'hidden_comment');
     if (payload?.kind === 'mention') {
       if (payload.platform !== 'instagram' || !['comment', 'caption'].includes(payload.mentionKind)
         || !/^\d+$/.test(str(payload.mediaId))
@@ -233,7 +235,9 @@ async function invoke(request, host) {
       if (!str(body.id)) throw fault('transient', 'write_unconfirmed_no_server_id');
       return { externalId: body.id };
     }
-    const target = targetId(str(args.target?.topLevelCommentId) || str(args.target?.objectId) || str(args.target?.externalId) || str(args.ref?.externalId));
+    // Instagram silently re-parents nested replies. Select the top-level
+    // comment explicitly, using the parent stored at ingestion when present.
+    const target = targetId(stored ? str(payload.replyToId) || args.target.externalId : str(args.target?.topLevelCommentId) || str(args.target?.objectId) || str(args.ref?.externalId));
     if (!target || !str(args.text).trim()) throw fault('transient', 'invalid_reply');
     const body = await graph(host, request.source, urlFor(`${target}/replies`), 'POST', { message: args.text });
     if (!str(body.id)) throw fault('transient', 'write_unconfirmed_no_server_id');

@@ -115,8 +115,14 @@ async function syncPage(request, host) {
 }
 async function invoke(request, host) {
   if (request.capability !== 'social.reply') throw fault('transient', 'capability_unsupported');
-  configOf(request.config); const a = request.args || {}; const t = a.target || {};
+  configOf(request.config); const a = request.args || {}; let t = a.target || {};
   if (t.platform && t.platform !== 'youtube') throw fault('transient', 'wrong_platform_target');
+  if ('externalId' in t) {
+    if (!object(t.payload) || typeof t.externalId !== 'string') throw fault('transient', 'invalid_stored_target');
+    // YouTube is two-level: replying to a reply addresses its top-level parent.
+    // Neither a video id nor a thread id is a comments.insert parent selector.
+    t = { parentCommentId: string(t.payload.replyToId) || t.externalId, videoId: string(t.payload.videoId), canReply: t.payload.canReply };
+  }
   if (!string(t.parentCommentId) || t.canReply === false) throw fault('auth', 'reply_not_permitted');
   if (typeof a.text !== 'string' || !a.text.trim()) throw fault('transient', 'text_required');
   if (a.visibility !== undefined && a.visibility !== 'public') throw fault('transient', 'visibility_unsupported');

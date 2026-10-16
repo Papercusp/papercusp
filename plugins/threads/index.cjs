@@ -104,10 +104,13 @@ async function invoke(request, host) {
     if (a.destination !== c.userId) throw fault('transient', 'destination_mismatch');
   } else {
     if (a.target?.platform && a.target.platform !== 'threads') throw fault('transient', 'wrong_platform_target');
-    // The host derives this coordinate from the stored root, rather than a
-    // caller's claimed approval. No keyword-search or mention privilege is requested.
-    if (a.target?.rootPostOwnerId !== c.userId) throw fault('auth', 'reply_root_not_owned');
-    params.reply_to_id = targetId(a.target?.replyToId);
+    const stored = a.target && 'externalId' in a.target;
+    if (stored && (!obj(a.target.payload) || typeof a.target.externalId !== 'string')) throw fault('transient', 'invalid_stored_target');
+    // Threads addresses the exact nested reply, unlike Instagram's top-level
+    // comment edge. Root ownership comes from ingestion, never caller approval.
+    const owner = stored ? a.target.payload.subjectOwnerId : a.target?.rootPostOwnerId;
+    if (owner !== c.userId) throw fault('auth', 'reply_root_not_owned');
+    params.reply_to_id = targetId(stored ? a.target.externalId || str(a.target.payload.id) : a.target?.replyToId);
   }
   if (a.media !== undefined && (!Array.isArray(a.media) || a.media.length > 1)) throw fault('transient', 'carousel_unsupported');
   if (a.media?.length) {
