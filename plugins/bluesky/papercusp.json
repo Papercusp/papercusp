@@ -18,7 +18,7 @@
         "url": "https://bsky.social/xrpc/com.atproto.server.createSession",
         "refreshUrl": "https://bsky.social/xrpc/com.atproto.server.refreshSession",
         "parameters": { "identifier": "identifier", "password": "app_password" },
-        "hosts": ["bsky.social"], "accessTokenField": "accessJwt", "refreshTokenField": "refreshJwt", "maxAgeSeconds": 3600,
+        "hosts": ["bsky.social"], "accessTokenField": "accessJwt", "refreshTokenField": "refreshJwt", "activeField": "active", "maxAgeSeconds": 3600,
         "identity": { "idField": "did", "displayNameField": "handle", "credentialKey": "identifier" }
       }
     },
