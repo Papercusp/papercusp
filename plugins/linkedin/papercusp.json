@@ -16,7 +16,7 @@
         "social.delete": "2026-10-16"
       }
     },
-    "id": "linkedin", "contractVersion": 1, "displayName": "LinkedIn", "datatypes": ["social-post"],
+    "id": "linkedin", "contractVersion": 1, "displayName": "LinkedIn", "datatypes": ["social-post"], "sync": false,
     "capabilities": ["social.post", "social.delete"], "egressHosts": ["api.linkedin.com", "www.linkedin.com"],
     "oauth": {
       "authorizeUrl": "https://www.linkedin.com/oauth/v2/authorization", "tokenUrl": "https://www.linkedin.com/oauth/v2/accessToken",
