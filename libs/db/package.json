@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./connection": "./src/connection.ts",
+    "./operator-db-env": "./src/operator-db-env.ts",
     "./acquire-registry": "./src/acquire-registry.ts",
     "./tenant-context": "./src/tenant-context.ts",
     "./production-database-policy": "./src/production-database-policy.ts"
