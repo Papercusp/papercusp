@@ -1,0 +1,47 @@
+{
+  "kind": "plugin",
+  "name": "threads",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Threads provider package for paged conversation reads and host-gated text publishing.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "threads",
+    "contractVersion": 1,
+    "displayName": "Threads",
+    "datatypes": ["social-post"],
+    "capabilities": ["social.post", "social.reply"],
+    "egressHosts": ["graph.threads.net", "www.threads.net"],
+    "oauth": {
+      "authorizeUrl": "https://www.threads.net/oauth/authorize",
+      "tokenUrl": "https://graph.threads.net/oauth/access_token",
+      "clientRegistrationRef": "threads",
+      "refreshPolicy": "reauthorize",
+      "scopes": ["threads_basic", "threads_content_publish", "threads_manage_replies", "threads_read_replies"],
+      "identity": { "url": "https://graph.threads.net/v1.0/me?fields=id,username", "idField": "id", "displayNameField": "username" }
+    },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "setup": {
+      "appRegistration": {
+        "createUrl": "https://developers.facebook.com/apps/",
+        "docsUrl": "https://developers.facebook.com/docs/threads/",
+        "copyHint": "Create a Threads app, configure the OAuth callback, and request the declared Threads scopes."
+      }
+    },
+    "configSchema": {
+      "type": "object",
+      "required": ["userId"],
+      "properties": {
+        "userId": { "type": "string", "title": "Threads user id", "pattern": "^[0-9]+$" },
+        "watchWindow": { "type": "integer", "minimum": 1, "maximum": 25, "default": 25 },
+        "maxPagesPerMedia": { "type": "integer", "minimum": 1, "maximum": 50, "default": 50 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
