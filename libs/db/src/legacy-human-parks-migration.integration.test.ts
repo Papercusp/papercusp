@@ -261,13 +261,15 @@ describe('migration 864 — guarded execution', () => {
       SELECT idea_id, routed_ref, created_by
         FROM harness_shared.scout_routed_ideas
        WHERE idea_id IN ('REVIEW-001', 'agent-review:REVIEW-001', 'REVIEW-002', 'REVIEW-003')
-       ORDER BY idea_id
+       -- Pin the byte ordering: private native PG uses locale C while Docker
+       -- may use a language collation that sorts lowercase before uppercase.
+       ORDER BY idea_id COLLATE "C"
     `) as Array<{ idea_id: string; routed_ref: string; created_by: string }>;
     expect(ledger).toEqual([
-      { idea_id: 'agent-review:REVIEW-001', routed_ref: 'wi:REVIEW-001', created_by: 'system:legacy-agent-review' },
       { idea_id: 'REVIEW-001', routed_ref: 'wi:OTHER', created_by: 'collision-author' },
       { idea_id: 'REVIEW-002', routed_ref: 'wi:REVIEW-002', created_by: 'ledger-author-2' },
       { idea_id: 'REVIEW-003', routed_ref: 'wi:REVIEW-003', created_by: 'creator-3' },
+      { idea_id: 'agent-review:REVIEW-001', routed_ref: 'wi:REVIEW-001', created_by: 'system:legacy-agent-review' },
     ]);
   });
 

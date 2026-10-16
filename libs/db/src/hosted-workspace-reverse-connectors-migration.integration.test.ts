@@ -15,8 +15,11 @@ beforeAll(async()=>{
   db=await createFreshTestDb({prefix:'hostedconnector1009'}); sql=postgres(db.url,{max:1,onnotice:()=>{}});
   await sql.unsafe(`
     CREATE SCHEMA papercusp_auth; CREATE SCHEMA harness_shared;
-    DO $$ DECLARE r text; BEGIN FOREACH r IN ARRAY ARRAY['hosted_owner','hosted_service','hosted_app','harness_app','harness_zero','harness_admin'] LOOP IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=r) THEN EXECUTE format('CREATE ROLE %I NOLOGIN',r); END IF; END LOOP; END $$;
-    GRANT hosted_owner,hosted_service,hosted_app,harness_app,harness_zero,harness_admin TO CURRENT_USER;
+    DO $$ DECLARE r text; BEGIN FOREACH r IN ARRAY ARRAY['hosted_owner','hosted_service','hosted_app','harness_app','harness_zero','harness_admin'] LOOP
+      IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=r) THEN EXECUTE format('CREATE ROLE %I NOLOGIN',r); END IF;
+      -- The private-PG admin can itself be one of these roles.
+      IF r <> current_user THEN EXECUTE format('GRANT %I TO %I',r,current_user); END IF;
+    END LOOP; END $$;
     CREATE TABLE harness_shared.workspace_hosts(workspace_id text NOT NULL,id text NOT NULL,PRIMARY KEY(workspace_id,id));
     CREATE TABLE harness_shared.customer_workspaces(workspace_id text NOT NULL,id text NOT NULL,organization_id text NOT NULL,workspace_host_id text NOT NULL,PRIMARY KEY(workspace_id,id),UNIQUE(workspace_id,organization_id,id),FOREIGN KEY(workspace_id,workspace_host_id) REFERENCES harness_shared.workspace_hosts(workspace_id,id));
   `);

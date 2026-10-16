@@ -39,7 +39,8 @@ function createProviderDaemon(adapter, send, options = {}) {
   };
   const replyError = (id, error) => {
     const e = error;
-    const data = providerSyncErrorOf(error) ?? e?.data;
+    const classified = providerSyncErrorOf(error);
+    const data = classified ? { ...e?.data && typeof e.data === "object" && !Array.isArray(e.data) ? e.data : {}, ...classified } : e?.data;
     if (!closed) send({ jsonrpc: "2.0", id, error: {
       code: typeof e?.code === "number" ? e.code : -32e3,
       message: String(e?.message ?? error),

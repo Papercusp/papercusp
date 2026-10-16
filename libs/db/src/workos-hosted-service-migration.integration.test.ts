@@ -40,10 +40,18 @@ async function provisionRoles(): Promise<void> {
           );
         END IF;
       END LOOP;
-      EXECUTE format(
-        'GRANT hosted_owner, hosted_app, hosted_service, harness_admin, harness_app, harness_zero TO %I',
-        current_user
-      );
+      -- A private test PG normally connects as harness_admin. PostgreSQL
+      -- rejects a role granting itself, so skip that one target while
+      -- still granting every other fixture role to the current admin.
+      FOREACH target_role IN ARRAY ARRAY[
+        'hosted_owner', 'hosted_app', 'hosted_service',
+        'harness_admin', 'harness_app', 'harness_zero'
+      ]
+      LOOP
+        IF target_role <> current_user THEN
+          EXECUTE format('GRANT %I TO %I', target_role, current_user);
+        END IF;
+      END LOOP;
     END
     $$;
   `);

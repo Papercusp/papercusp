@@ -3,18 +3,21 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres, { type Sql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { startDedicatedTestPg } from '@papercusp/test-config/pg';
+import { startDedicatedNativePg } from '@papercusp/test-config/pg';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const migrationPath = path.join(HERE, '..', 'sql', '1437-reassert-pg-read-all-stats-harness-admin.sql');
 const draftPath = `${migrationPath}.DRAFT`;
 const migration = readFileSync(existsSync(migrationPath) ? migrationPath : draftPath, 'utf8');
 
-let pg: Awaited<ReturnType<typeof startDedicatedTestPg>> | undefined;
+let pg: Awaited<ReturnType<typeof startDedicatedNativePg>> | undefined;
 let sql: Sql | undefined;
 
 beforeAll(async () => {
-  pg = await startDedicatedTestPg();
+  // Role membership is cluster-wide, so this suite needs its own cluster.
+  // Use the maintained native fixture: allocating a Docker container is an
+  // unrelated, unbounded-before-readiness dependency for this single GRANT.
+  pg = await startDedicatedNativePg();
   sql = postgres(pg.getConnectionUri(), { max: 1, onnotice: () => {} });
   await sql.unsafe('CREATE ROLE harness_admin NOLOGIN');
 }, 120_000);

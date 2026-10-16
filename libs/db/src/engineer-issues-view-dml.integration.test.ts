@@ -14,7 +14,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 
@@ -90,6 +90,7 @@ async function provision(url: string): Promise<void> {
 
 let db: MigratedTestDb;
 let sql: Sql;
+let legacyIdentityFixtureOpen = false;
 
 beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'eidml', provision });
@@ -101,7 +102,27 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
 });
 
+afterEach(async () => {
+  if (legacyIdentityFixtureOpen) {
+    try {
+      await sql.unsafe('ROLLBACK');
+      const [identity] = await sql<{ restored: boolean }[]>`
+        SELECT to_regclass('harness_shared.work_items_workspace_feature_id_uq') IS NOT NULL AS restored`;
+      expect(identity.restored, 'historical fixture must restore the current identity index').toBe(true);
+    } finally {
+      legacyIdentityFixtureOpen = false;
+    }
+  }
+});
+
 async function seedDuplicateIssueRows(issueId: string): Promise<void> {
+  // Migration 1444 now forbids same-workspace twins. These regression cases
+  // exercise the compatibility view against historical pre-1444 data. Rewind
+  // only that index inside this private fixture transaction; afterEach restores
+  // both the index and data, including when an assertion fails.
+  await sql.unsafe('BEGIN');
+  legacyIdentityFixtureOpen = true;
+  await sql.unsafe('DROP INDEX harness_shared.work_items_workspace_feature_id_uq');
   await sql`
     INSERT INTO harness_shared.work_items
       (workspace_id, harness_slug, feature_id, title, summary, status,
@@ -116,6 +137,19 @@ async function seedDuplicateIssueRows(issueId: string): Promise<void> {
 }
 
 describe('engineer_issues view DML duplicate-id targeting', () => {
+  it('keeps the current workspace identity constraint outside the historical fixture', async () => {
+    const issueId = 'EI-900000';
+    await sql`
+      INSERT INTO harness_shared.work_items
+        (workspace_id, harness_slug, feature_id, title, status, item_kind, origin, created_ts, updated_ts)
+      VALUES ('ws1', 'operator:ws1', ${issueId}, 'resident', 'open', 'bug', 'local', 1, 1)`;
+    await expect(sql`
+      INSERT INTO harness_shared.work_items
+        (workspace_id, harness_slug, feature_id, title, status, item_kind, origin, created_ts, updated_ts)
+      VALUES ('ws1', '', ${issueId}, 'twin', 'open', 'bug', 'remote', 1, 1)`
+    ).rejects.toMatchObject({ code: '23505', constraint_name: 'work_items_workspace_feature_id_uq' });
+  });
+
   it('updates duplicate logical issue ids without pkey collision, row collapse, or remote mutation', async () => {
     const issueId = 'EI-900001';
     await seedDuplicateIssueRows(issueId);
