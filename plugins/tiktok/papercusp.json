@@ -1,0 +1,29 @@
+{
+  "kind": "plugin", "name": "tiktok", "version": "0.1.0", "papercusp": "^0.1.0",
+  "description": "Read-only TikTok Display API provider. Recorded-fake verification; live verification pending.",
+  "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [], "tools": [],
+  "provider": {
+    "id": "tiktok", "contractVersion": 1, "displayName": "TikTok", "datatypes": ["social-post"], "capabilities": [],
+    "egressHosts": ["open.tiktokapis.com", "www.tiktok.com"],
+    "oauth": {
+      "authorizeUrl": "https://www.tiktok.com/v2/auth/authorize/", "tokenUrl": "https://open.tiktokapis.com/v2/oauth/token/",
+      "scopes": ["user.info.basic", "video.list"], "scopeSeparator": ",", "clientIdParameter": "client_key", "clientRegistrationRef": "tiktok",
+      "identity": { "url": "https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name", "idField": "data.user.open_id", "displayNameField": "data.user.display_name" }
+    },
+    "setup": { "appRegistration": {
+      "createUrl": "https://developers.tiktok.com/apps/", "docsUrl": "https://developers.tiktok.com/doc/display-api-get-started/",
+      "copyHint": "Register Login Kit and Display API, configure the OAuth callback, and request user.info.basic and video.list. Content Posting scopes are not needed."
+    } },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "configSchema": {
+      "type": "object", "required": ["openId"],
+      "properties": {
+        "openId": { "type": "string", "minLength": 1, "title": "Connected TikTok open id" },
+        "maxCount": { "type": "integer", "minimum": 1, "maximum": 20, "default": 20 },
+        "maxPages": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+      }, "additionalProperties": false
+    }
+  }
+}
