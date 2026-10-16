@@ -211,7 +211,11 @@ async function invoke(request, host) {
     if (args.destination !== c.pageId) throw fault('transient', 'destination_mismatch');
     path = `${c.pageId}/feed`;
   } else {
-    const target = str(args.target?.objectId) || str(args.target?.externalId) || str(args.ref?.externalId);
+    const t = args.target;
+    if (t?.platform && t.platform !== 'facebook-pages') throw fault('transient', 'wrong_platform_target');
+    if (t && 'externalId' in t && (!object(t.payload) || typeof t.externalId !== 'string')) throw fault('transient', 'invalid_stored_target');
+    if (t?.payload?.canComment === false || t?.canComment === false) throw fault('auth', 'cannot_comment');
+    const target = t && 'externalId' in t ? t.externalId : str(t?.objectId) || str(args.ref?.externalId);
     path = `${id(target)}/comments`;
   }
   const body = await graph(host, request.source, urlFor(path), 'POST', { message: args.text, fields: WRITE_FIELDS });

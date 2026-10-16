@@ -96,7 +96,11 @@ async function syncPage(request: ProviderSyncRequest, host: ProviderHost) {
     catchUp: state.since ? { path: 'backfill' as const, reason: 'no-replay-supported' as const } : { path: 'cold-start' as const } };
 }
 function target(args: Record<string, unknown>, config: Config) {
-  const value = args.target;
+  let value = args.target;
+  if (object(value) && 'externalId' in value) {
+    if (!object(value.payload) || typeof value.externalId !== 'string') throw fault('transient', 'invalid_stored_target');
+    value = { platform: value.platform, inReplyToId: text(value.payload.statusId) || value.externalId, instanceHost: value.payload.instanceHost };
+  }
   if (!object(value) || value.platform !== 'mastodon' || !token(value.inReplyToId)) throw fault('transient', 'invalid_target');
   const host = text(value.instanceHost);
   let origin: string; try { origin = new URL(host.includes('://') ? host : `https://${host}`).origin; } catch { throw fault('auth', 'instance_mismatch'); }

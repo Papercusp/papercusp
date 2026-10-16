@@ -144,7 +144,10 @@ async function invoke(request, host) {
   if (request.capability === 'social.post') {
     if (a.destination !== c.userId) throw fault('transient', 'destination_mismatch');
   } else {
-    const target = a.target?.objectId || a.target?.externalId || a.ref?.externalId;
+    const t = a.target;
+    if (t?.platform && t.platform !== 'x-twitter') throw fault('transient', 'wrong_platform_target');
+    if (t && 'externalId' in t && (!object(t.payload) || typeof t.externalId !== 'string')) throw fault('transient', 'invalid_stored_target');
+    const target = t && 'externalId' in t ? t.externalId : t?.objectId || a.ref?.externalId;
     if (!validId(target)) throw fault('transient', 'invalid_reply_id');
     body.reply = { in_reply_to_tweet_id: target };
   }

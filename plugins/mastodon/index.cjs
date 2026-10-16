@@ -1,4 +1,3 @@
-// Generated from adapter.ts by @papercusp/plugin-sdk/scripts/build-provider-daemons.mjs. Do not edit.
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -252,7 +251,11 @@ async function syncPage(request, host) {
   };
 }
 function target(args, config) {
-  const value = args.target;
+  let value = args.target;
+  if (object(value) && "externalId" in value) {
+    if (!object(value.payload) || typeof value.externalId !== "string") throw fault("transient", "invalid_stored_target");
+    value = { platform: value.platform, inReplyToId: text(value.payload.statusId) || value.externalId, instanceHost: value.payload.instanceHost };
+  }
   if (!object(value) || value.platform !== "mastodon" || !token(value.inReplyToId)) throw fault("transient", "invalid_target");
   const host = text(value.instanceHost);
   let origin;

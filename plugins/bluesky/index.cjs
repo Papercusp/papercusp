@@ -103,12 +103,22 @@ async function syncPage(request, host) {
   return { records, nextCursor: JSON.stringify(s), hasMore: s.phase < 2,
     catchUp: request.cursor ? { path: 'backfill', reason: 'no-replay-supported' } : { path: 'cold-start' }, ...(lossRisk ? { lossRisk } : {}) };
 }
+function targetOf(target) {
+  if (target?.platform !== 'bluesky') throw fault('transient', 'wrong_target');
+  if (!('externalId' in target)) return target;
+  if (!object(target.payload) || typeof target.externalId !== 'string') throw fault('transient', 'invalid_stored_target');
+  const p = target.payload;
+  const parentUri = str(p.parentUri) || str(p.uri) || target.externalId;
+  const parentCid = str(p.parentCid) || str(p.cid);
+  if (!!str(p.rootUri) !== !!str(p.rootCid)) throw fault('transient', 'invalid_strong_ref');
+  return { parentUri, parentCid, rootUri: str(p.rootUri) || parentUri, rootCid: str(p.rootCid) || parentCid };
+}
 async function invoke(request, host) {
   const c = configOf(request.config); const a = request.args || {};
   if (!manifest.provider.capabilities.includes(request.capability)) throw fault('transient', 'unsupported_capability');
   if (request.capability === 'social.delete') {
-    if (a.target?.platform !== 'bluesky') throw fault('transient', 'wrong_target');
-    const target = strongRef({ uri: a.target.parentUri, cid: a.target.parentCid }); const ref = recordRef(target.uri);
+    const t = targetOf(a.target);
+    const target = strongRef({ uri: t.parentUri, cid: t.parentCid }); const ref = recordRef(target.uri);
     if (ref.repo !== c.accountId) throw fault('auth', 'cannot_delete_another_account');
     try { await xrpc(host, request.source, 'com.atproto.repo.deleteRecord', null, { ...ref, swapRecord: target.cid }); return { deleted: true }; }
     catch (e) { if (e.xrpc === 'InvalidSwap') return { deleted: false, detail: 'The exact record version is absent or changed.' }; throw e; }
@@ -119,8 +129,8 @@ async function invoke(request, host) {
   if (a.media?.length) throw fault('transient', 'media_unsupported');
   let reply;
   if (request.capability === 'social.reply') {
-    if (a.target?.platform !== 'bluesky') throw fault('transient', 'wrong_target');
-    reply = { root: strongRef({ uri: a.target.rootUri, cid: a.target.rootCid }), parent: strongRef({ uri: a.target.parentUri, cid: a.target.parentCid }) };
+    const t = targetOf(a.target);
+    reply = { root: strongRef({ uri: t.rootUri, cid: t.rootCid }), parent: strongRef({ uri: t.parentUri, cid: t.parentCid }) };
   }
   const rkey = `pc${createHash('sha256').update(JSON.stringify([request.source, a.idempotencyKey, a.text, reply || null])).digest('hex')}`;
   const record = { $type: COLLECTION, text: a.text, createdAt: a.createdAt || new Date().toISOString(), ...(reply ? { reply } : {}) };

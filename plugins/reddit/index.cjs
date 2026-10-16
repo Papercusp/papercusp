@@ -108,8 +108,14 @@ async function syncPage(input, host) {
   return { records, nextCursor: JSON.stringify(state), hasMore: state.phase < 3, catchUp };
 }
 function targetOf(target) {
-  if (target?.platform !== 'reddit' || !/^t[13]_[a-z0-9]+$/i.test(str(target.parentFullname))) throw fault('transient', 'invalid_content_target');
-  return target.parentFullname;
+  if (target?.platform !== 'reddit') throw fault('transient', 'invalid_content_target');
+  let fullname = target.parentFullname;
+  if ('externalId' in target) {
+    if (!object(target.payload) || typeof target.externalId !== 'string') throw fault('transient', 'invalid_stored_target');
+    fullname = str(target.payload.parentFullname) || str(target.payload.fullname) || target.externalId;
+  }
+  if (!/^t[13]_[a-z0-9]+$/i.test(str(fullname))) throw fault('transient', 'invalid_content_target');
+  return fullname;
 }
 async function invoke(input, host) {
   if (!manifest.provider.capabilities.includes(input.capability)) throw fault('transient', 'capability_unsupported');
