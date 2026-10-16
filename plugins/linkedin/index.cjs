@@ -10,6 +10,7 @@ function member(config) {
 }
 async function syncPage(request) {
   member(request.config);
+  if (request.cursor !== null && request.cursor !== undefined) throw fault('cursor-expired', 'cursor_unrecognised');
   // r_member_social is restricted to approved developers. An ordinary Share
   // on LinkedIn grant cannot read posts; do not invent a polling endpoint.
   return { records: [], nextCursor: null, hasMore: false, catchUp: { path: 'cold-start' } };
