@@ -16,6 +16,8 @@
     {
       "provider": "google",
       "scopes": [
+        "openid",
+        "profile",
         "https://www.googleapis.com/auth/youtube.readonly",
         "https://www.googleapis.com/auth/youtube.force-ssl"
       ],
@@ -33,7 +35,7 @@
         "type": "string",
         "title": "YouTube channel id",
         "shareable": true,
-        "description": "The channel to watch, e.g. `UC…`. Public, so it travels with a share."
+        "description": "The channel to watch, e.g. `UC\u2026`. Public, so it travels with a share."
       },
       "googleWorkspace": {
         "type": "string",
@@ -41,10 +43,12 @@
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "OAuth credential for the YouTube Data API, on the same Google connection as the Gmail and Calendar lanes — a scope addition, never a second credential path.",
+        "description": "Select the account connected through Integrations. App credentials and tokens remain on the host.",
         "oauth": {
           "provider": "google",
           "scopes": [
+            "openid",
+            "profile",
             "https://www.googleapis.com/auth/youtube.readonly",
             "https://www.googleapis.com/auth/youtube.force-ssl"
           ]

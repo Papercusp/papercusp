@@ -4,7 +4,7 @@
   "name": "@papercupai/social-tiktok",
   "version": "0.1.0",
   "papercusp": "^0.1.0",
-  "description": "TikTok platform trigger pack: Watches a creator's public videos for new uploads. Records each one and publishes nothing — TikTok exposes no comment surface to read or answer.",
+  "description": "TikTok platform trigger pack: Watches a creator's public videos for new uploads. Records each one and publishes nothing \u2014 TikTok exposes no comment surface to read or answer.",
   "author": "Papercusp",
   "publisher": "@papercupai",
   "license": "MIT",
@@ -31,7 +31,14 @@
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "A TikTok user access token carrying the `user.info.basic` and `video.list` scopes. Deliberately NOT an OAuth-connect field: no registered provider's allowed scopes cover TikTok's, so declaring one would fail at consent time rather than at build time."
+        "description": "Select the account connected through Integrations. App credentials and tokens remain on the host.",
+        "oauth": {
+          "provider": "tiktok",
+          "scopes": [
+            "user.info.basic",
+            "video.list"
+          ]
+        }
       }
     }
   },
@@ -148,7 +155,8 @@
         "id": "tiktok-post",
         "source": {
           "kind": "external",
-          "sourceKind": "tiktok"
+          "sourceKind": "tiktok",
+          "oauthField": "tiktokToken"
         },
         "target": "record-tiktok-event",
         "eventPattern": "ext:tiktok:post",
@@ -168,5 +176,15 @@
     ],
     "edges": []
   },
-  "icon": "Video"
+  "icon": "Video",
+  "oauth": [
+    {
+      "provider": "tiktok",
+      "scopes": [
+        "user.info.basic",
+        "video.list"
+      ],
+      "fieldName": "tiktokToken"
+    }
+  ]
 }

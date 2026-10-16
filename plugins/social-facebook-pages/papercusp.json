@@ -44,7 +44,7 @@
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "OAuth credential for the Page. Requires Meta app review before the scopes are granted.",
+        "description": "Select the account connected through Integrations. App credentials and tokens remain on the host.",
         "oauth": {
           "provider": "facebook",
           "scopes": [

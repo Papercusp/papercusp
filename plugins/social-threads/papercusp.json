@@ -31,7 +31,16 @@
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "A Threads access token. Deliberately NOT an OAuth-connect field: Threads authorizes against graph.threads.net under a SEPARATE app id, and those endpoints are not yet verified here."
+        "description": "Select the account connected through Integrations. App credentials and tokens remain on the host.",
+        "oauth": {
+          "provider": "threads",
+          "scopes": [
+            "threads_basic",
+            "threads_content_publish",
+            "threads_manage_replies",
+            "threads_read_replies"
+          ]
+        }
       }
     }
   },
@@ -149,7 +158,8 @@
         "id": "threads-post",
         "source": {
           "kind": "external",
-          "sourceKind": "threads"
+          "sourceKind": "threads",
+          "oauthField": "threadsToken"
         },
         "target": "record-threads-event",
         "eventPattern": "ext:threads:post",
@@ -175,7 +185,8 @@
         "id": "threads-reply",
         "source": {
           "kind": "external",
-          "sourceKind": "threads"
+          "sourceKind": "threads",
+          "oauthField": "threadsToken"
         },
         "target": "record-threads-event",
         "eventPattern": "ext:threads:reply",
@@ -200,5 +211,17 @@
     ],
     "edges": []
   },
-  "icon": "AtSign"
+  "icon": "AtSign",
+  "oauth": [
+    {
+      "provider": "threads",
+      "scopes": [
+        "threads_basic",
+        "threads_content_publish",
+        "threads_manage_replies",
+        "threads_read_replies"
+      ],
+      "fieldName": "threadsToken"
+    }
+  ]
 }

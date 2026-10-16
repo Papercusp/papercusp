@@ -33,6 +33,11 @@
       }
     }
   },
+  "oauth": [{
+    "provider": "reddit",
+    "fieldName": "redditApp",
+    "scopes": ["identity", "read", "history", "privatemessages", "submit", "edit"]
+  }],
   "triggerPack": {
     "inputs": {
       "type": "object",
@@ -197,8 +202,8 @@
         "mapping": {
           "mode": "payload-context"
         }
-      }
-      ,{
+      },
+      {
         "id": "reddit-mention",
         "source": { "kind": "external", "sourceKind": "reddit", "oauthField": "redditApp" },
         "target": "record-reddit-event",

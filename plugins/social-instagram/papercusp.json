@@ -20,7 +20,8 @@
         "instagram_content_publish",
         "instagram_manage_comments",
         "pages_show_list",
-        "pages_read_engagement"
+        "pages_read_engagement",
+        "pages_manage_metadata"
       ],
       "fieldName": "facebookInstagram"
     }
@@ -44,7 +45,7 @@
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "OAuth credential for the Instagram professional account, authorized through Facebook Login. Requires Meta app review.",
+        "description": "Select the account connected through Integrations. App credentials and tokens remain on the host.",
         "oauth": {
           "provider": "facebook",
           "scopes": [
@@ -52,7 +53,8 @@
             "instagram_content_publish",
             "instagram_manage_comments",
             "pages_show_list",
-            "pages_read_engagement"
+            "pages_read_engagement",
+            "pages_manage_metadata"
           ]
         }
       }
@@ -180,11 +182,21 @@
         "eventPattern": "ext:instagram:mention",
         "filter": {
           "all": [
-            { "id": { "exists": true } },
-            { "text": { "exists": true } }
+            {
+              "id": {
+                "exists": true
+              }
+            },
+            {
+              "text": {
+                "exists": true
+              }
+            }
           ]
         },
-        "mapping": { "mode": "payload-context" }
+        "mapping": {
+          "mode": "payload-context"
+        }
       },
       {
         "id": "instagram-comment",

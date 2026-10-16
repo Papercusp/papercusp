@@ -31,7 +31,16 @@
         "secret": true,
         "shareable": false,
         "snapshotPolicy": "strip",
-        "description": "A token issued by THIS instance. Mastodon registers an OAuth client per instance, so no platform-wide provider can mint it."
+        "description": "Select the account connected through Integrations. App credentials and tokens remain on the host.",
+        "oauth": {
+          "provider": "mastodon",
+          "scopes": [
+            "read:accounts",
+            "read:statuses",
+            "read:notifications",
+            "write:statuses"
+          ]
+        }
       }
     }
   },
@@ -150,7 +159,8 @@
         "id": "mastodon-post",
         "source": {
           "kind": "external",
-          "sourceKind": "mastodon"
+          "sourceKind": "mastodon",
+          "oauthField": "accessToken"
         },
         "target": "record-mastodon-event",
         "eventPattern": "ext:mastodon:post",
@@ -176,7 +186,8 @@
         "id": "mastodon-reply",
         "source": {
           "kind": "external",
-          "sourceKind": "mastodon"
+          "sourceKind": "mastodon",
+          "oauthField": "accessToken"
         },
         "target": "record-mastodon-event",
         "eventPattern": "ext:mastodon:reply",
@@ -202,7 +213,8 @@
         "id": "mastodon-mention",
         "source": {
           "kind": "external",
-          "sourceKind": "mastodon"
+          "sourceKind": "mastodon",
+          "oauthField": "accessToken"
         },
         "target": "record-mastodon-event",
         "eventPattern": "ext:mastodon:mention",
@@ -227,5 +239,17 @@
     ],
     "edges": []
   },
-  "icon": "Globe"
+  "icon": "Globe",
+  "oauth": [
+    {
+      "provider": "mastodon",
+      "scopes": [
+        "read:accounts",
+        "read:statuses",
+        "read:notifications",
+        "write:statuses"
+      ],
+      "fieldName": "accessToken"
+    }
+  ]
 }
