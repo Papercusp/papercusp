@@ -1,3 +1,4 @@
+// Generated from adapter.ts by @papercusp/plugin-sdk/scripts/build-provider-daemons.mjs. Do not edit.
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -81,6 +82,19 @@ var papercusp_default = {
   capabilities: [],
   tools: [],
   provider: {
+    verification: {
+      verifiedAt: "2026-10-16",
+      sources: [
+        "https://docs.joinmastodon.org/methods/timelines/#home",
+        "https://docs.joinmastodon.org/methods/notifications/#get",
+        "https://docs.joinmastodon.org/methods/statuses/"
+      ],
+      capabilities: {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16",
+        "social.delete": "2026-10-16"
+      }
+    },
     id: "mastodon",
     contractVersion: 1,
     displayName: "Mastodon",

@@ -11,6 +11,19 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://docs.joinmastodon.org/methods/timelines/#home",
+        "https://docs.joinmastodon.org/methods/notifications/#get",
+        "https://docs.joinmastodon.org/methods/statuses/"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16",
+        "social.delete": "2026-10-16"
+      }
+    },
     "id": "mastodon", "contractVersion": 1, "displayName": "Mastodon",
     "datatypes": ["social-post"],
     "capabilities": ["social.post", "social.reply", "social.delete"],

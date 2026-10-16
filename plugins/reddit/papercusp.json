@@ -5,6 +5,19 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://github.com/reddit-archive/reddit/wiki/OAuth2",
+        "https://github.com/reddit-archive/reddit/wiki/API",
+        "https://www.reddit.com/dev/api/"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16",
+        "social.delete": "2026-10-16"
+      }
+    },
     "id": "reddit", "contractVersion": 1, "displayName": "Reddit",
     "datatypes": ["social-post"], "capabilities": ["social.post", "social.reply", "social.delete"],
     "egressHosts": ["www.reddit.com", "oauth.reddit.com"],

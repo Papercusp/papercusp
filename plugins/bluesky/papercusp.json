@@ -5,6 +5,18 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://github.com/bluesky-social/atproto/tree/main/lexicons/app/bsky",
+        "https://github.com/bluesky-social/atproto/tree/main/lexicons/com/atproto/repo"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16",
+        "social.delete": "2026-10-16"
+      }
+    },
     "id": "bluesky", "contractVersion": 1, "displayName": "Bluesky",
     "datatypes": ["social-post"], "capabilities": ["social.post", "social.reply", "social.delete"],
     "egressHosts": ["bsky.social"],

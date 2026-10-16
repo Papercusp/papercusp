@@ -5,6 +5,15 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://developers.tiktok.com/doc/tiktok-api-v2-video-list",
+        "https://developers.tiktok.com/doc/login-kit-web/",
+        "https://developers.tiktok.com/doc/oauth-user-access-token-management/"
+      ],
+      "capabilities": {}
+    },
     "id": "tiktok", "contractVersion": 1, "displayName": "TikTok", "datatypes": ["social-post"], "capabilities": [],
     "egressHosts": ["open.tiktokapis.com", "www.tiktok.com"],
     "oauth": {

@@ -11,6 +11,20 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-15",
+      "sources": [
+        "https://api.x.com/2/openapi.json",
+        "https://docs.x.com/x-api/posts/search/integrate/operators",
+        "https://docs.x.com/fundamentals/authentication/oauth-2-0/authorization-code"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-15",
+        "social.reply": "2026-10-15",
+        "social.delete": "2026-10-15"
+      },
+      "blockedOn": "Avi must acknowledge the X login and set the approved $25 monthly spending limit in the X console before any API call, including OAuth identity lookup (D-006 / P-029)."
+    },
     "id": "x-twitter",
     "contractVersion": 1,
     "displayName": "X",

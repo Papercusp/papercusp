@@ -11,6 +11,19 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://developers.facebook.com/docs/pages-api/posts/",
+        "https://developers.facebook.com/docs/graph-api/reference/page/feed/",
+        "https://developers.facebook.com/docs/graph-api/reference/object/comments/"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16",
+        "social.delete": "2026-10-16"
+      }
+    },
     "id": "facebook-pages",
     "contractVersion": 1,
     "displayName": "Facebook Pages",

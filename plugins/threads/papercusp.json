@@ -11,6 +11,18 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://developers.facebook.com/docs/threads/posts/",
+        "https://developers.facebook.com/docs/threads/troubleshooting/",
+        "https://developers.facebook.com/docs/threads/retrieve-and-manage-replies/replies-and-conversations/"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16"
+      }
+    },
     "id": "threads",
     "contractVersion": 1,
     "displayName": "Threads",

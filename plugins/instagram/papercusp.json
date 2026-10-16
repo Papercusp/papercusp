@@ -12,6 +12,21 @@
   "capabilities": [],
   "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/igmedia.py",
+        "https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/igcomment.py",
+        "https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-facebook-login/mentions",
+        "https://developers.facebook.com/documentation/instagram-platform/webhooks"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.reply": "2026-10-16",
+        "social.delete": "2026-10-16",
+        "ingress.normalize": "2026-10-16"
+      }
+    },
     "id": "instagram",
     "contractVersion": 1,
     "displayName": "Instagram",

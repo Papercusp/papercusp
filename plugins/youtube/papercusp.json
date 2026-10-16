@@ -4,6 +4,18 @@
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] }, "capabilities": [], "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://developers.google.com/youtube/v3/docs/activities/list",
+        "https://developers.google.com/youtube/v3/docs/commentThreads/list",
+        "https://developers.google.com/youtube/v3/docs/comments/list",
+        "https://developers.google.com/youtube/v3/docs/comments/insert"
+      ],
+      "capabilities": {
+        "social.reply": "2026-10-16"
+      }
+    },
     "id": "youtube", "contractVersion": 1, "displayName": "YouTube", "datatypes": ["social-post"], "capabilities": ["social.reply"],
     "egressHosts": ["www.googleapis.com", "accounts.google.com", "oauth2.googleapis.com", "openidconnect.googleapis.com"],
     "oauth": {

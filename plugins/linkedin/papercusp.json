@@ -5,6 +5,17 @@
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
+    "verification": {
+      "verifiedAt": "2026-10-16",
+      "sources": [
+        "https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin",
+        "https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api"
+      ],
+      "capabilities": {
+        "social.post": "2026-10-16",
+        "social.delete": "2026-10-16"
+      }
+    },
     "id": "linkedin", "contractVersion": 1, "displayName": "LinkedIn", "datatypes": ["social-post"],
     "capabilities": ["social.post", "social.delete"], "egressHosts": ["api.linkedin.com", "www.linkedin.com"],
     "oauth": {
