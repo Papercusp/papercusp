@@ -62,7 +62,8 @@ installation, and replays recover the recorded ticket instead of filing again.
     "requiredScope": [
       "plan-run"
     ],
-    "evidencePlane": "tree"
+    "evidencePlane": "tree",
+    "requiredTestLayers": ["integration"]
   },
   "verification": {
     "method": "Trace one reaction, one form report and one thread mention through their trigger runs to the recorded ticketFiling outcome.",
