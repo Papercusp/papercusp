@@ -4,7 +4,7 @@ const manifest = require('./papercusp.json');
 const API = 'https://graph.threads.net/v1.0';
 const FIELDS = 'id,text,username,permalink,timestamp,media_type,root_post,replied_to,is_reply,is_reply_owned_by_me';
 
-function fault(kind, message, extra) { return Object.assign(new Error(`threads:${message}`), { kind }, extra || {}); }
+function fault(kind, message, extra) { return Object.assign(new Error(`threads:${message}`), { kind }, extra || {}, extra ? { data: extra } : {}); }
 const str = (v) => typeof v === 'string' ? v : '';
 const obj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const instant = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));

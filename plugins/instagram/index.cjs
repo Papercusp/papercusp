@@ -4,7 +4,7 @@ const manifest = require('./papercusp.json');
 const API = 'https://graph.facebook.com/v26.0';
 const COMMENT_FIELDS = 'id,timestamp,text,username,like_count,hidden,parent_id,replies{id,timestamp,text,username,parent_id}';
 
-function fault(kind, message, extra) { return Object.assign(new Error(`instagram:${message}`), { kind }, extra || {}); }
+function fault(kind, message, extra) { return Object.assign(new Error(`instagram:${message}`), { kind }, extra || {}, extra ? { data: extra } : {}); }
 const str = (v) => typeof v === 'string' ? v : '';
 const object = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const instant = (v) => typeof v === 'string' && Number.isFinite(Date.parse(v));

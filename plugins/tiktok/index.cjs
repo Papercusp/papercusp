@@ -39,14 +39,14 @@ function normalize(video, owner) {
 async function syncPage(request, host) {
   const c = configOf(request.config); const s = decode(request.cursor, c);
   const response = await host.fetch({ source: request.source, request: { url: ENDPOINT, method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ max_count: c.maxCount, ...(s.after === null ? {} : { cursor: s.after }) }) } });
-  let body; try { body = JSON.parse(response.body); } catch { throw fault('transient', 'malformed_response'); }
+  let body; try { body = JSON.parse(response.body); } catch { body = null; }
   const code = body?.error?.code;
   if ([401, 403].includes(response.status) || ['access_token_invalid', 'scope_not_authorized'].includes(code)) throw fault('auth', 'grant_refused');
   if (response.status === 429 || code === 'rate_limit_exceeded') {
     const retry = Number(response.headers?.['retry-after']);
     throw fault('rate-limited', 'throttled', Number.isFinite(retry) && retry > 0 ? { retryAfterSeconds: Math.ceil(retry) } : {});
   }
-  if (response.status < 200 || response.status >= 300 || code !== 'ok') throw fault('transient', 'video_list_failed');
+  if (!body || response.status < 200 || response.status >= 300 || code !== 'ok') throw fault('transient', 'video_list_failed');
   const data = body.data;
   if (!object(data) || !Array.isArray(data.videos) || typeof data.has_more !== 'boolean') throw fault('transient', 'malformed_collection');
   const records = []; const emitted = new Set(s.emitted); let crossed = false;

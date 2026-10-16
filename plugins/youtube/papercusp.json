@@ -1,0 +1,29 @@
+{
+  "kind": "plugin", "name": "youtube", "version": "0.1.0", "papercusp": "^0.1.0",
+  "description": "YouTube channel activities, comments and paged replies through host-held Google OAuth. Live verification pending.",
+  "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] }, "capabilities": [], "tools": [],
+  "provider": {
+    "id": "youtube", "contractVersion": 1, "displayName": "YouTube", "datatypes": ["social-post"], "capabilities": ["social.reply"],
+    "egressHosts": ["www.googleapis.com", "accounts.google.com", "oauth2.googleapis.com", "openidconnect.googleapis.com"],
+    "oauth": {
+      "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent&include_granted_scopes=true", "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": ["openid", "profile", "https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/youtube.force-ssl"],
+      "clientRegistrationRef": "google", "credentialGroup": "google", "pkce": true,
+      "identity": { "url": "https://openidconnect.googleapis.com/v1/userinfo", "idField": "sub", "displayNameField": "name" }
+    },
+    "setup": { "appRegistration": {
+      "createUrl": "https://console.cloud.google.com/apis/credentials", "docsUrl": "https://developers.google.com/youtube/v3/guides/auth/server-side-web-apps",
+      "copyHint": "Enable YouTube Data API v3 on the Google app, configure its OAuth callback and consent scopes, and add test users while the app is in testing."
+    } },
+    "defaultDestinations": { "social-post": ["document", "event"] },
+    "configSchema": {
+      "type": "object", "required": ["channelId"],
+      "properties": {
+        "channelId": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$", "title": "Channel id" },
+        "maxPages": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 20 },
+        "maxReplyPages": { "type": "integer", "minimum": 1, "maximum": 1000, "default": 20 }
+      }, "additionalProperties": false
+    }
+  }
+}

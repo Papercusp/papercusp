@@ -1,0 +1,24 @@
+{
+  "kind": "plugin", "name": "linkedin", "version": "0.1.0", "papercusp": "^0.1.0",
+  "description": "LinkedIn personal-profile text posts and deletion through host-held OAuth. Live verification pending.",
+  "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [], "tools": [],
+  "provider": {
+    "id": "linkedin", "contractVersion": 1, "displayName": "LinkedIn", "datatypes": ["social-post"],
+    "capabilities": ["social.post", "social.delete"], "egressHosts": ["api.linkedin.com", "www.linkedin.com"],
+    "oauth": {
+      "authorizeUrl": "https://www.linkedin.com/oauth/v2/authorization", "tokenUrl": "https://www.linkedin.com/oauth/v2/accessToken",
+      "scopes": ["openid", "profile", "w_member_social"], "clientRegistrationRef": "linkedin", "refreshPolicy": "reauthorize",
+      "identity": { "url": "https://api.linkedin.com/v2/userinfo", "idField": "sub", "displayNameField": "name" }
+    },
+    "setup": { "appRegistration": {
+      "createUrl": "https://www.linkedin.com/developers/apps", "docsUrl": "https://learn.microsoft.com/en-us/linkedin/consumer/integrations/self-serve/share-on-linkedin",
+      "copyHint": "Create an app with Sign In with LinkedIn using OpenID Connect and Share on LinkedIn. Add the OAuth callback. Organization and Community Management partner scopes are not requested."
+    } },
+    "configSchema": {
+      "type": "object", "required": ["memberId"],
+      "properties": { "memberId": { "type": "string", "minLength": 1, "title": "Connected member id (userinfo sub)" } }, "additionalProperties": false
+    }
+  }
+}
