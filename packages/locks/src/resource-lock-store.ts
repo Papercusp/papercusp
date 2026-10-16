@@ -595,6 +595,10 @@ export async function tryReleaseResource(
   /** Holds matching this release that expired before the call could release
    * them. Captured before the expiry sweep removes the rows. */
   expired: ExpiredResourceLock[];
+  /** Live resources held by this owner whose names start with the requested
+   * resource. Returned only when the exact selector released nothing, so the
+   * tool can turn a silent no-op into an actionable resource_not_held error. */
+  heldResourceSuggestions?: string[];
   /** owner ids who were waiting on each freed exclusive resource — the
    *  targeted back-up broadcast audience (A4). Cleared as part of this read. */
   waiters: Record<string, string[]>;
@@ -652,6 +656,21 @@ export async function tryReleaseResource(
     throw new Error('tryReleaseResource requires lockId or resource');
   }
 
+  let heldResourceSuggestions: string[] = [];
+  if (deleted.length === 0 && expiredRows.length === 0 && resource) {
+    const rows = await tx<Array<{ resource: string }>>`
+      SELECT DISTINCT resource
+        FROM agent_resource_locks
+       WHERE coordination_domain = ${cd}
+         AND owner = ${owner}
+         AND expires_ts > clock_timestamp()
+         AND left(resource, char_length(${resource})) = ${resource}
+       ORDER BY resource ASC
+       LIMIT 10
+    `;
+    heldResourceSuggestions = rows.map((row) => row.resource);
+  }
+
   await promoteResourceExclusiveQueue(tx, cd);
   // Resources whose EXCLUSIVE hold was just released — the back-up broadcast
   // audience (P-010). Distinct; empty when only shared rows were released.
@@ -670,7 +689,14 @@ export async function tryReleaseResource(
     mode: row.mode,
     expiredAt: row.expires_ts,
   }));
-  return { released: deleted.length, releasedModes: deleted.map((d) => d.mode), exclusiveResources, expired, waiters };
+  return {
+    released: deleted.length,
+    releasedModes: deleted.map((d) => d.mode),
+    exclusiveResources,
+    expired,
+    heldResourceSuggestions,
+    waiters,
+  };
 }
 
 /**
