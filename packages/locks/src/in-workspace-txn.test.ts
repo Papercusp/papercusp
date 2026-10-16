@@ -6,13 +6,18 @@ const mocks = vi.hoisted(() => ({
   getTxPool: vi.fn(),
   startBackgroundJanitor: vi.fn(),
   txnTimeouts: vi.fn(),
+  beginAcquireDiagnostic: vi.fn(),
 }));
 
-vi.mock('./su-lock-store', () => ({
-  ensureBootstrap: mocks.ensureBootstrap,
-  getTxPool: mocks.getTxPool,
-  SU_LOCKS_FEATURE_KEY: 1,
-}));
+vi.mock('./su-lock-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./su-lock-store')>();
+  return {
+    ...actual,
+    ensureBootstrap: mocks.ensureBootstrap,
+    getTxPool: mocks.getTxPool,
+    SU_LOCKS_FEATURE_KEY: 1,
+  };
+});
 
 vi.mock('./workspace-listener', () => ({
   startBackgroundJanitor: mocks.startBackgroundJanitor,
@@ -20,6 +25,7 @@ vi.mock('./workspace-listener', () => ({
 
 vi.mock('./config', () => ({
   txnTimeouts: mocks.txnTimeouts,
+  beginAcquireDiagnostic: mocks.beginAcquireDiagnostic,
 }));
 
 import { inWorkspaceTxn } from './in-workspace-txn';
@@ -41,6 +47,7 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
     mocks.ensureBootstrap.mockReset().mockResolvedValue(undefined);
     mocks.getTxPool.mockReset();
     mocks.startBackgroundJanitor.mockReset();
+    mocks.beginAcquireDiagnostic.mockReset().mockReturnValue(null);
     mocks.txnTimeouts.mockReset().mockReturnValue({
       lockTimeoutMs: 5_000,
       statementTimeoutMs: 5_000,
@@ -86,6 +93,21 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
         onPhase: () => { throw new Error('diagnostic observer failed'); },
       }),
     ).resolves.toBe('still-commits');
+  });
+
+  it('registers and settles the dedicated SU transaction acquisition', async () => {
+    const { sql } = fakePool();
+    mocks.getTxPool.mockReturnValue(sql);
+    const ticket = { acquired: vi.fn(), release: vi.fn() };
+    mocks.beginAcquireDiagnostic.mockReturnValue(ticket);
+
+    await expect(
+      inWorkspaceTxn('diagnostic-test', 'owner', async () => 'instrumented'),
+    ).resolves.toBe('instrumented');
+
+    expect(mocks.beginAcquireDiagnostic).toHaveBeenCalledWith('su-lock-tx');
+    expect(ticket.acquired).toHaveBeenCalledTimes(1);
+    expect(ticket.release).toHaveBeenCalledTimes(1);
   });
 
   it('reports settlement and total timing when the callback rejects', async () => {
