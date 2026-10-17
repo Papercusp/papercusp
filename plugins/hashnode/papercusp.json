@@ -1,0 +1,27 @@
+{
+  "kind": "plugin", "name": "hashnode", "version": "0.1.0", "papercusp": "^0.1.0",
+  "description": "Cross-post Markdown to Hashnode as a draft or published post with a papercusp.com canonical URL. Fixture-verified; not live-verified.",
+  "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [], "tools": [],
+  "provider": {
+    "id": "hashnode", "contractVersion": 1, "displayName": "Hashnode", "datatypes": ["blog-post"], "sync": false,
+    "capabilities": ["blog.post"], "egressHosts": ["gql.hashnode.com"],
+    "verification": {
+      "verifiedAt": "2026-10-17", "capabilities": { "blog.post": "2026-10-17" },
+      "sources": [
+        "https://github.com/Hashnode/gql-skill/blob/291402fbfd8bab56c4d87754a6a590f724822d78/skills/gql-api/references/schema.graphql",
+        "https://github.com/Hashnode/gql-skill/blob/291402fbfd8bab56c4d87754a6a590f724822d78/skills/gql-api/references/auth-and-roles.md",
+        "https://github.com/Hashnode/gql-skill/blob/291402fbfd8bab56c4d87754a6a590f724822d78/skills/gql-api/references/mutations.md"
+      ]
+    },
+    "setup": { "credentials": [{
+      "key": "api_key", "label": "Hashnode personal access token", "hosts": ["gql.hashnode.com"],
+      "help": "Create a personal access token in Hashnode account settings. API drafts and publication require a Pro publication; publishing also requires an author or editor role.",
+      "helpUrl": "https://hashnode.com/settings/developer"
+    }] },
+    "configSchema": { "type": "object", "required": ["publicationId"], "properties": {
+      "publicationId": { "type": "string", "pattern": "^[a-fA-F0-9]{24}$", "title": "Hashnode publication ID" }
+    }, "additionalProperties": false }
+  }
+}
