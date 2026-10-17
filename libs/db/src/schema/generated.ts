@@ -281,6 +281,7 @@ export const agentActivityInHarnessShared = harnessShared.table("agent_activity"
 	index("agent_activity_owner_id_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	index("agent_activity_owner_lifecycle_idx").using("btree", table.ownerId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(kind = 'lifecycle'::text)`),
 	index("agent_activity_session_id_idx").using("btree", table.sessionId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("agent_activity_workspace_created_historical_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("agent_activity_workspace_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
 ]);
 
@@ -11385,6 +11386,8 @@ export const sessionTurnsInHarnessShared = harnessShared.table("session_turns", 
 	index("session_turns_ts_desc_idx").using("btree", table.ts.desc().nullsLast().op("timestamptz_ops")),
 	index("session_turns_tsv_idx").using("gin", table.textTsv.asc().nullsLast().op("tsvector_ops")),
 	index("session_turns_unchunked_idx").using("btree", table.ingestedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((length(text) > 2000) AND (chunked_at IS NULL))`),
+	index("session_turns_workspace_ingested_historical_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ingestedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`((owner IS NOT NULL) AND (session_id IS NOT NULL) AND (ts IS NULL))`),
+	index("session_turns_workspace_ts_historical_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`((owner IS NOT NULL) AND (session_id IS NOT NULL) AND (ts IS NOT NULL))`),
 	primaryKey({ columns: [table.sessionId, table.sourceKind, table.turnIdx, table.workspaceId], name: "session_turns_pkey"}),
 ]);
 
@@ -12082,6 +12085,35 @@ export const testCaseRunsInHarnessShared = harnessShared.table("test_case_runs",
 	check("test_case_runs_status_check", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text])`),
 ]);
 
+export const testDowngradesInHarnessShared = harnessShared.table("test_downgrades", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	testFile: text("test_file").notNull(),
+	testCase: text("test_case").default('').notNull(),
+	reason: text().notNull(),
+	owner: text().notNull(),
+	bugId: text("bug_id").notNull(),
+	author: text().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	criticalArea: text("critical_area"),
+	riskAcknowledgement: text("risk_acknowledgement"),
+	ownerNotifiedAt: timestamp("owner_notified_at", { withTimezone: true, mode: 'string' }),
+	revokedAt: timestamp("revoked_at", { withTimezone: true, mode: 'string' }),
+	revokedBy: text("revoked_by"),
+	revokeReason: text("revoke_reason"),
+}, (table) => [
+	uniqueIndex("test_downgrades_active_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.testFile.asc().nullsLast().op("text_ops"), table.testCase.asc().nullsLast().op("text_ops")).where(sql`(revoked_at IS NULL)`),
+	index("test_downgrades_created_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
+	check("test_downgrades_author_check", sql`length(btrim(author)) > 0`),
+	check("test_downgrades_bug_id_check", sql`length(btrim(bug_id)) > 0`),
+	check("test_downgrades_check", sql`(critical_area IS NULL) OR (length(btrim(COALESCE(risk_acknowledgement, ''::text))) > 0)`),
+	check("test_downgrades_check1", sql`(revoked_at IS NULL) OR (length(btrim(COALESCE(revoked_by, ''::text))) > 0)`),
+	check("test_downgrades_owner_check", sql`length(btrim(owner)) > 0`),
+	check("test_downgrades_reason_check", sql`length(btrim(reason)) > 0`),
+	check("test_downgrades_test_file_check", sql`length(btrim(test_file)) > 0`),
+]);
+
 export const testExecutedSourcesInHarnessShared = harnessShared.table("test_executed_sources", {
 	workspaceName: text("workspace_name").notNull(),
 	testFile: text("test_file").notNull(),
@@ -12318,6 +12350,7 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_serving_host_idx").using("btree", table.servingHost.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(serving_host IS NOT NULL)`),
 	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
 	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")),
+	index("tool_invocations_workspace_invoked_historical_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.coordOwnerId.asc().nullsLast()).where(sql`(coord_owner_id IS NOT NULL)`),
 	pgPolicy("tool_invocations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
