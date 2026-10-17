@@ -4,6 +4,8 @@ Installs as a sandboxed daemon using the shared provider SDK. Settings → Integ
 
 `blog.post` accepts `{title, markdown, canonicalUrl, published?, tags?}`. It creates a draft by default using `createDraft`; explicit boolean `published:true` uses `publishPost`. Both send `originalArticleURL` pointing to HTTPS `papercusp.com`. The publication always comes from persisted source configuration. Titles are limited to 128 characters, Markdown to 80,000 bytes and tags to 15 distinct lowercase slugs; the complete JSON request must fit the vendor's 100 KB ceiling.
 
+Agents call `blog:post` with `providerId:"hashnode"`, the connected `sourceId`, these content fields, and trusted `addressee` provenance. The call cannot override the source's publication. Drafts are stored at Hashnode. Public publication also requires the existing `papercusp-social-auto-publish` owner setting; when it is off, the tool returns `withheld` with the resolved destination. Personal access and disclosure checks apply to both drafts and publication.
+
 Hashnode's current API requires an active **Pro publication** for draft and publication mutations, and an appropriate author/editor role for direct publication. Missing credentials, permission or Pro access are surfaced without retrying. This package does not purchase or upgrade a plan. It declares no read/update/delete or contributor-review capability.
 
 Returns `{externalId, published, canonicalUrl, url?}`. Draft creation returns its real ID without inventing a public URL. Transport failures, server errors, partial GraphQL data/errors or malformed success responses remain ambiguous; reconcile them before another create. No retries or host quota policy live in the package.
