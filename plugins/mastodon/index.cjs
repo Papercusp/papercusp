@@ -82,6 +82,14 @@ var papercusp_default = {
   capabilities: [],
   tools: [],
   provider: {
+    rateBudget: {
+      verifiedAt: "2026-08-23",
+      sources: [
+        "https://docs.joinmastodon.org/methods/streaming/",
+        "https://docs.joinmastodon.org/methods/statuses/"
+      ],
+      notes: "Not specified on the streaming page; rate limits are documented separately and are per-instance."
+    },
     verification: {
       verifiedAt: "2026-10-16",
       sources: [
