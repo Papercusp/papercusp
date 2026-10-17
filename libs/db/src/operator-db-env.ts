@@ -1,8 +1,17 @@
 /** Shared operator database pins, without importing SQL clients or ORM schemas. */
-import { createRequire } from 'node:module';
-let requireNode: ReturnType<typeof createRequire> | undefined;
-const nodeRequire = (id: string): unknown =>
-  (requireNode ??= createRequire(import.meta.url))(id);
+// Keep this source safe for the hosted Portal's non-ESM Next instrumentation
+// chunk. Webpack rewrites static `node:module`/`createRequire` usage in that
+// chunk, while a runtime `process.getBuiltinModule` lookup remains intact.
+type BuiltinModuleGetter = (id: string) => unknown;
+
+function nodeRequire(id: string): unknown {
+  const proc = (globalThis as { process?: { getBuiltinModule?: unknown } }).process;
+  const getter = proc?.getBuiltinModule;
+  if (typeof getter !== 'function') {
+    throw new Error(`db_builtin_module_unavailable: process.getBuiltinModule(${id}) requires Node >= 22.3`);
+  }
+  return (getter as BuiltinModuleGetter).call(proc, id);
+}
 
 type OperatorDbEnv = Partial<Record<'HARNESS_ADMIN_DATABASE_URL' | 'HARNESS_DATABASE_URL' | 'DATABASE_URL', string>>;
 let _operatorDbEnvLocalCache: { loaded: boolean; values: OperatorDbEnv } = { loaded: false, values: {} };
@@ -18,9 +27,11 @@ function findOperatorEnvLocalPath(): string | null {
   try {
     const fs = nodeRequire('node:fs') as typeof import('node:fs');
     const path = nodeRequire('node:path') as typeof import('node:path');
-    const { fileURLToPath } = nodeRequire('node:url') as typeof import('node:url');
     const starts: string[] = [];
-    try { starts.push(path.dirname(fileURLToPath(import.meta.url))); } catch { /* non-file URL */ }
+    try {
+      const entry = process.argv[1];
+      if (typeof entry === 'string' && entry.length > 0) starts.push(path.dirname(path.resolve(entry)));
+    } catch { /* unavailable in edge runtimes */ }
     try { starts.push(process.cwd()); } catch { /* unavailable in edge runtimes */ }
 
     const visited = new Set<string>();
