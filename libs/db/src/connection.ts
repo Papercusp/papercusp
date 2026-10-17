@@ -24,7 +24,6 @@
  * Connection URL:
  *   $HARNESS_DATABASE_URL  (defaults to harness_app role on localhost)
  */
-import { createRequire } from 'node:module';
 import postgres, { type Sql } from 'postgres';
 import { readOperatorDbEnvLocal, resetOperatorDbEnvLocalCacheForTests } from './operator-db-env';
 import { pinModuleState } from '@papercusp/module-singleton';
@@ -66,22 +65,22 @@ export function setDiscoveryIdentityObserver(observer: typeof discoveryIdentityT
   discoveryIdentityTelemetry.observeFallback = observer;
 }
 
-// This package is `"type": "module"`, so ESM has no ambient `require`.
-// `createRequire` gives us a synchronous loader for the lazy node-builtin
-// reads below (kept lazy so the module can be imported without touching
-// the filesystem in a no-fs environment).
-//
-// LAZY CREATION (not just lazy USE): calling `createRequire(import.meta.url)` at
-// MODULE SCOPE crashes any non-node consumer of this module. The operator SPA
-// pulls connection.ts in via the route tree and externalizes `node:module` for the
-// browser (→ `createRequire` is undefined), so an EAGER top-level call threw at
-// module eval — "createRequire is not a function" — and blanked the ENTIRE desktop
-// app on load. Defer the createRequire to first use so importing this module is
-// browser-safe; the node-builtin reads below only ever run server-side. (Mirrors
-// the same lazy pattern in resource-profile/src/index.ts.)
-let _nodeRequire: ReturnType<typeof createRequire> | undefined;
-const nodeRequire = (id: string): unknown =>
-  (_nodeRequire ??= createRequire(import.meta.url))(id);
+// Resolve Node built-ins lazily through the process API. A static `node:module`
+// import or `createRequire(...)` call is rewritten by webpack when this shared
+// runtime enters the Portal's non-ESM instrumentation chunk; the emitted code
+// then fails before the first request. `process.getBuiltinModule` is a runtime
+// property, so webpack leaves the browser-safe import graph untouched. Node
+// 22.3+ provides the API used by the supported server runtimes.
+type BuiltinModuleGetter = (id: string) => unknown;
+
+function nodeRequire(id: string): unknown {
+  const proc = (globalThis as { process?: { getBuiltinModule?: unknown } }).process;
+  const getter = proc?.getBuiltinModule;
+  if (typeof getter !== 'function') {
+    throw new Error(`db_builtin_module_unavailable: process.getBuiltinModule(${id}) requires Node >= 22.3`);
+  }
+  return (getter as BuiltinModuleGetter).call(proc, id);
+}
 import * as generatedSchema from './schema/generated';
 import * as generatedRelations from './schema/generated-relations';
 // EI-9265 / EI-13076 / EI-18698602043482898: the bigint-as-number type shape
