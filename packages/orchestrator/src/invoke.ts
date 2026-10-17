@@ -1010,8 +1010,8 @@ export const BEE_ALLOWED_TOOLS: readonly string[] = [
  * D-001 lane) and NEVER edits code (no `capability:*` — its envelope denies
  * fs-write/bash). Everything else here is a READ used to judge system health.
  *
- * Kept deliberately small: an UNSCOPED (null) surface loaded the full ~550-tool /
- * ~141k-token catalog onto the overwatch's sonnet ~200k window, so every fire died
+ * Kept deliberately small: an UNSCOPED (null) surface loaded the full tool
+ * catalog (~141k tokens) onto the overwatch's sonnet ~200k window, so every fire died
  * with "Prompt is too long" and fell back to the synth-floor scorecard — never a
  * real 14-criterion scorecard (autonomous-loop-full-flow-reliability-2026-06-29).
  * Mirrors QUEEN_/BEE_MCP_TOOL_NAMES; wired at the spawn chokepoint (`mcpToolNames`).
@@ -1056,7 +1056,7 @@ export const OVERWATCH_MCP_TOOL_NAMES: readonly string[] = [
  * Role-scoped MCP catalogs for headless invoke() children. Pipeline `worker`
  * and fleet `cup` are the same implementation role at different orchestration
  * tiers; both need the compact bee kit. Leaving worker unscoped loaded the full
- * ~550-tool catalog and made OMP reject a haiku canary at 615k prompt tokens.
+ * tool catalog and made OMP reject a haiku canary at 615k prompt tokens.
  */
 export function invokeMcpToolNamesForRole(role: string): readonly string[] | null {
   if (role === 'mug') return QUEEN_MCP_TOOL_NAMES;
@@ -1069,7 +1069,7 @@ export function invokeMcpToolNamesForRole(role: string): readonly string[] | nul
  * The UNIVERSAL core MCP tool set — the small, always-advertised catalog for omp
  * (and any small-context client) so the bootstrap + coordination + work spine is
  * callable WITHOUT the discovery/search dance. ~19 tools / ~7k tokens vs the full
- * ~551-tool / ~141k-token superuser surface (which a 32k local model cannot load
+ * superuser tool surface, ~141k tokens (which a 32k local model cannot load
  * — tool-discovery-for-weak-models-plan-2026-06-30 WS1). Everything else is
  * reachable via `tools:find` (intent search); for omp, then activated by exact
  * name via its native `search_tool_bm25`.

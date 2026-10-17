@@ -1755,7 +1755,7 @@ test('invokeMcpToolNamesForRole — pipeline worker uses the bounded bee kit', (
 
 test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-loop-full-flow-reliability: unscoped null → "Prompt is too long")', () => {
   // The overwatch launch MUST be scoped: an unscoped (null) mcpToolNames loaded the full
-  // ~550-tool / ~141k-token surface onto its sonnet ~200k window, so the agent died
+  // tool catalog (~141k tokens) onto its sonnet ~200k window, so the agent died
   // "Prompt is too long" on EVERY fire and never emitted a real 14-criterion scorecard.
   // Its three write verbs + its own wake must be present…
   for (const w of ['coord:send', 'coord:escalate', 'improvements:capture', 'kettle:declare-wake']) {
@@ -1777,7 +1777,7 @@ test('OVERWATCH_MCP_TOOL_NAMES — scoped read-heavy supervisor kit (autonomous-
   for (const n of OVERWATCH_MCP_TOOL_NAMES) {
     assert.match(n, /^[a-z_]+:[a-z0-9_-]+$/, `${n} must be a colon-form MCP tool name`);
   }
-  assert.ok(OVERWATCH_MCP_TOOL_NAMES.length <= 45, 'overwatch kit stays small (well under the full ~550 surface)');
+  assert.ok(OVERWATCH_MCP_TOOL_NAMES.length <= 45, 'overwatch kit stays small (well under the full tool surface)');
 });
 
 test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-weak-models WS1)', () => {

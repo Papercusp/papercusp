@@ -2,7 +2,7 @@
  * Native client tool-search lockout for agent sessions (owner request,
  * 2026-09-11).
  *
- * Papercusp owns a tool-discovery pair — `tools:find` (search the ~550-tool
+ * Papercusp owns a tool-discovery pair — `tools:find` (search the full tool
  * catalog by intent) and `tools:invoke` (call any catalog tool by name). Every
  * CLIENT also ships its own: claude-code's `ToolSearch`, omp's
  * `search_tool_bm25`. Routing discovery through the client's version is
