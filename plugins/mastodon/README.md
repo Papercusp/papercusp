@@ -17,6 +17,8 @@ maps to Mastodon's `private`. Deletion reads ownership first: another account's
 status is an auth failure; an absent status returns `deleted:false`. Media uploads
 are not supported.
 
+Verification uses recorded HTTP fakes and the SDK conformance kit. Live verification pending.
+
 The maintained TypeScript source reuses the existing HTML converter. Rebuild the
 installable bundle and stdio launcher from the repository root:
 

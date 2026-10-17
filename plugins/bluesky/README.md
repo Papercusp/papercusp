@@ -17,6 +17,8 @@ the package never retries an unconfirmed write. Delete uses the exact record CID
 as `swapRecord`, refuses another account's URI and reports `deleted:false` on
 `InvalidSwap`. No live-account verification has been performed.
 
+Verification uses recorded HTTP fakes and the SDK conformance kit. Live verification pending.
+
 Primary lexicons reviewed 2026-10-16: bluesky-social/atproto's
 com.atproto.server.{createSession,refreshSession} and com.atproto.repo procedures;
 bluesky-social/social-app's app.bsky.notification.listNotifications,
