@@ -69,9 +69,12 @@ function nextStart(paging, author, start) {
   if (next.length !== 1 || typeof next[0].href !== 'string') throw fault('cursor-expired', 'pagination_unrecognised');
   let url;
   try { url = new URL(next[0].href, API); } catch { throw fault('cursor-expired', 'pagination_unrecognised'); }
+  // Bind pagination to the requested collection; only its numeric offset is
+  // retained. The next request is rebuilt from API and never follows this URL.
+  const resource = new URL(API);
   const p = url.searchParams;
   const offset = p.get('start');
-  if (url.origin !== 'https://api.linkedin.com' || url.pathname !== '/rest/posts' || url.username || url.password || url.hash
+  if (url.origin !== resource.origin || url.pathname !== resource.pathname || url.username || url.password || url.hash
     || p.get('q') !== 'author' || p.get('author') !== author || p.get('sortBy') !== 'LAST_MODIFIED'
     || p.get('count') !== '100' || !offset || !/^[0-9]+$/.test(offset)
     || !Number.isSafeInteger(Number(offset)) || Number(offset) <= start || Number(offset) > 1000000
