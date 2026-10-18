@@ -1220,8 +1220,9 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   // forbids). await = register the sleep; catalog = "what CAN I wait on" (the
   // check-before-polling step the persona mandates); cancel = retract a registered
   // await before it fires; emit = the counterpart a leader/peer fires. events:cancel
-  // is seeded as the correction half of events:await (EI-21345492095209440), while
-  // status stays reachable via tools:find/invoke. events:emit cut 2026-07-19: 29 calls/14d while SEEDED (true
+  // is seeded as the correction half of events:await (EI-21345492095209440), and
+  // events:status is seeded so trimmed workers can inspect active waits and wake
+  // deliveries during recovery (EI-26236732620541471). events:emit cut 2026-07-19: 29 calls/14d while SEEDED (true
   // rarity, not a discoverability artifact — members await; leaders/peers emit, and
   // the system fires most emits from lifecycle events) and no fallback-reach demand;
   // reachable via tools:find/invoke, natural member of a future leader-overlay seed.
@@ -1233,6 +1234,7 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'events:await',
   'events:catalog',
   'events:cancel',
+  'events:status',
   // Session hygiene — EI-6770: without this in the spine, an agent nearing its
   // compaction limit has no way to compact cleanly and self-halts instead
   // ("no compaction tool available") mid-task, losing in-flight work.

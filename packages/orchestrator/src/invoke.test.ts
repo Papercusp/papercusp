@@ -1884,6 +1884,10 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // shared release-gate sleep primitive named by checkpoint-run/trace. Dynamic
   // activation cannot guarantee a same-turn Codex wrapper, so it is seeded from
   // launch.
+  // Then +1 → 50: events:status (EI-26236732620541471) is the recovery read paired
+  // with the seeded events:await/catalog/cancel lifecycle. A trimmed Codex session
+  // must be able to inspect its active await and wake-delivery state without a
+  // tools:find/tools:invoke detour.
   // ⚠ AND THE FINDING THAT OUTRANKS THE COUNT: measured 2026-09-05 by a real tools/list
   // call, the 47-entry spine was ALREADY 345,140 B (337 KB) and the Claude seed 395,879 B
   // (387 KB) against D-001's 256 KB wire ceiling — 32% and 51% over, crossed silently
@@ -1892,7 +1896,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // Do not read a passing ratchet as a seed within budget: it cannot see bytes, and the
   // bytes live in schemas (coord:send 39,067 B; work_items:complete 35,093;
   // work_items:checkpoint 31,000), not in the length of this list.
-  assert.ok(CORE_MCP_TOOL_NAMES.length <= 49, 'core stays small');
+  assert.ok(CORE_MCP_TOOL_NAMES.length <= 50, 'core stays small');
   // (EI-7797: recipes:run was ALSO cut from the core spine in the same 2026-07-05
   // rebalance — recipes:search already returns the run pointer, and the run itself
   // routes via tools:invoke. Still present in the bee/queen kits, checked below.)
@@ -1911,7 +1915,7 @@ test('CORE_MCP_TOOL_NAMES — universal small-context spine (tool-discovery-for-
   // fleet-member-dx P-008 (EI-9012/EI-9034): the bench-wait verbs must be directly
   // reachable — "don't poll, await the key" is a persona mandate, and a seeded session
   // whose client-side search misses a deferred verb concludes it doesn't exist.
-  for (const required of ['events:await', 'events:catalog', 'events:cancel']) {
+  for (const required of ['events:await', 'events:catalog', 'events:cancel', 'events:status']) {
     assert.ok(CORE_MCP_TOOL_NAMES.includes(required), `${required} belongs in the universal core (fleet-member-dx P-008 bench-wait)`);
   }
   assert.ok(CORE_MCP_TOOL_NAMES.includes('checkpoint:await'), 'checkpoint:await belongs in the universal core so trimmed Codex sessions have a direct wait wrapper from launch');
