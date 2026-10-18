@@ -193,6 +193,7 @@ export type {
 // BLOCK tier + heuristic WARN tier, D-009 as amended), and the interactive su's composed source.
 export {
   composeStack,
+  renderOnlyStack,
   orderStackDocuments,
   renderKernelSeal,
   isIdentityLayer,
@@ -212,7 +213,7 @@ export type {
   StackActivationRevision,
   StackMutationActivation,
 } from './stack-mutation.js';
-export type { StackDocument, ComposedStack, ComposedStackEntry, ComposeStackOptions } from './render-stack.js';
+export type { StackDocument, ComposedStack, ComposedStackEntry, ComposeStackOptions, RenderOnlyStack } from './render-stack.js';
 export {
   lintStackLayers,
   lintStackDocuments,

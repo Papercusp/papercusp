@@ -207,3 +207,67 @@ export function composeStack(docs: readonly StackDocument[], opts: ComposeStackO
   const order: ComposedStackEntry[] = ordered.map((d, position) => ({ id: d.id, layer: d.layer, ...(d.slot ? { slot: d.slot } : {}), position }));
   return { text: `${blocksOut.join('\n\n')}\n`, order, seal, findings };
 }
+
+/** The result of {@link renderOnlyStack}: the rendered prose, its order, and the lint findings. */
+export interface RenderOnlyStack {
+  text: string;
+  /** The documents in the order they were rendered. */
+  order: ComposedStackEntry[];
+  /** Lint findings over the documents (never contains a `block` unless `opts.throwOnBlock === false`). */
+  findings: IdentityLintFinding[];
+}
+
+/**
+ * The RENDER-ONLY CONSUMER (`identity-system-everything-migration-2026-10-18`
+ * P-011 / R-8).
+ *
+ * Some prompts are not agent launches. A Scout lens ideator is one structured
+ * LLM call whose system prompt carries a lens stance: it wears no kernel, runs no
+ * tools and has no dispatch seat. Its prose should still live in identity
+ * documents, so the identity system owns the text (one home, installed
+ * overrides, the same lint) rather than a TypeScript constant. This function is
+ * how such a consumer renders that prose.
+ *
+ * It differs from {@link composeStack} in three ways, and matches it otherwise:
+ * - only identity-layer documents are accepted. A `kernel` or `instance`
+ *   document is refused, because a render-only consumer has no kernel to seal
+ *   below and no launch for an instance override to apply to;
+ * - a document that declares grants is refused, because this consumer has no
+ *   dispatch seat to enforce them, so the grant would be a claim with nothing
+ *   behind it;
+ * - no seal is rendered.
+ * Ordering, the prose lint (a `block` finding throws by default) and the byte
+ * shape (trimmed documents joined by one blank line, one trailing newline) are
+ * the same as `composeStack`. An all-empty render is refused, since it would
+ * silently send the consumer a prompt with its identity text missing.
+ */
+export function renderOnlyStack(docs: readonly StackDocument[], opts: ComposeStackOptions = {}): RenderOnlyStack {
+  if (docs.length === 0) throw new Error('render-only stack refused: no documents to render');
+  for (const d of docs) {
+    if (RESERVED_LAYERS.has(d.layer)) {
+      throw new Error(
+        `render-only stack refused: document "${d.id}" is on the reserved "${d.layer}" layer — a render-only consumer carries no kernel and no instance override`,
+      );
+    }
+    const granted = [...(d.grants?.requires ?? []), ...(d.grants?.optional ?? [])];
+    if (granted.length) {
+      throw new Error(
+        `render-only stack refused: document "${d.id}" declares grants (${granted.join(', ')}) — a render-only consumer has no dispatch seat to enforce them`,
+      );
+    }
+  }
+  const ordered = orderStackDocuments(docs);
+  const findings = opts.skipLint ? [] : lintStackDocuments(ordered, opts.lint);
+  const blocks = findings.filter((f) => f.tier === 'block');
+  if (blocks.length && opts.throwOnBlock !== false) {
+    throw new Error(
+      `render-only stack refused (${blocks.length} block finding${blocks.length === 1 ? '' : 's'}): ${blocks.map((f) => `${f.code} [${f.documentId}]: ${f.message}`).join('; ')}`,
+    );
+  }
+  const blocksOut = ordered.map((d) => d.text.trim()).filter((t) => t.length > 0);
+  if (blocksOut.length === 0) {
+    throw new Error(`render-only stack refused: every document is empty (${ordered.map((d) => `"${d.id}"`).join(', ')})`);
+  }
+  const order: ComposedStackEntry[] = ordered.map((d, position) => ({ id: d.id, layer: d.layer, ...(d.slot ? { slot: d.slot } : {}), position }));
+  return { text: `${blocksOut.join('\n\n')}\n`, order, findings };
+}
