@@ -8,7 +8,7 @@
 -- verdict; the existing evidence surfaces stay where they are.
 --
 --   duplicate_of      feature_id of the canonical row in the same workspace.
---   duplicate_source  which writer set it: create-exact | admission-promoter
+--   duplicate_source  which writer set it: create-match | admission-promoter
 --                     | fold | agent.
 --
 -- Additive only (expand). NULL on every existing row = "not a duplicate", so
@@ -56,7 +56,7 @@ ALTER TABLE harness_shared.work_items
   ADD CONSTRAINT work_items_duplicate_source_check
   CHECK (
     duplicate_source IS NULL
-    OR duplicate_source IN ('create-exact', 'admission-promoter', 'fold', 'agent')
+    OR duplicate_source IN ('create-match', 'admission-promoter', 'fold', 'agent')
   );
 
 ALTER TABLE harness_shared.work_items
@@ -198,7 +198,7 @@ $mig1534_check$;
 COMMENT ON COLUMN harness_shared.work_items.duplicate_of IS
   'feature_id of the canonical work item this row duplicates (same workspace). Read by the admission predicate: a row with any non-null duplicate_of is never claimable. bug-inflow-one-problem-one-row-2026-10-18#D-001.';
 COMMENT ON COLUMN harness_shared.work_items.duplicate_source IS
-  'Writer that set duplicate_of: create-exact | admission-promoter | fold | agent.';
+  'Writer that set duplicate_of: create-match | admission-promoter | fold | agent.';
 COMMENT ON COLUMN harness_shared.work_items.duplicate_confidence IS
   'Writer match score in [0,1] for the duplicate_of verdict (1 = exact structural key). NULL when duplicate_of is NULL.';
 COMMENT ON COLUMN harness_shared.work_items.duplicate_evidence IS
