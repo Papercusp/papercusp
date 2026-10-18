@@ -13,6 +13,19 @@
 --
 -- Additive only (expand). NULL on every existing row = "not a duplicate", so
 -- the currently deployed release is unaffected.
+--
+-- LOCK ORDER. This migration takes ACCESS EXCLUSIVE on work_items (ALTER) and
+-- then on three views that read it (CREATE OR REPLACE VIEW below). Readers lock
+-- a view BEFORE its base table, so table-then-view here is the view<->table
+-- inversion deadlock measured on migration 721. Same fix as 721/1110: take every
+-- lock up front, views first, then the base table. (A BEGIN/ROLLBACK dry-run of
+-- the previous draft without this stalled ~20s and failed at the view EXECUTE;
+-- its error text was not captured, so deadlock is the inferred cause.)
+
+LOCK TABLE harness_shared.engineer_issues IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.harness_features_consolidated IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.work_items_claimable IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE harness_shared.work_items IN ACCESS EXCLUSIVE MODE;
 
 ALTER TABLE harness_shared.work_items
   ADD COLUMN IF NOT EXISTS duplicate_of text NULL,
@@ -64,6 +77,11 @@ BEGIN
         RAISE EXCEPTION '1534: could not locate FROM harness_shared.work_items in view %', v;
       END IF;
       IF v = 'work_items_claimable' THEN
+        -- Appending is correct only while the view's final WHERE is a pure
+        -- top-level AND chain with no trailing ORDER BY/LIMIT. Checked against
+        -- the live definition 2026-10-18: 4 top-level ANDs, no top-level OR.
+        -- The integration test pins the behaviour (a duplicate row is absent
+        -- from work_items_claimable; its non-duplicate twin is present).
         d := rtrim(d, E'; \n') || ' AND duplicate_of IS NULL';
       END IF;
       EXECUTE format('CREATE OR REPLACE VIEW harness_shared.%I AS %s', v, d);
