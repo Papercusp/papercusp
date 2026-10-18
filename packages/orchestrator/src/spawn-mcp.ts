@@ -27,6 +27,7 @@ import { AGENT_SESSION_CONTEXT_TIER } from './agent-session-context-tier';
 import {
   codexGatewayConfigToml,
   codexManagedFeaturesToml,
+  publishCodexConfig,
   tomlEscape,
   type CodexGatewayConfigOpts,
 } from './codex-gateway-config';
@@ -638,8 +639,7 @@ export async function writeSignedSpawnCodexHome(
     gatewayOn: routeMode !== 'default' && !!gatewayEnv.PAPERCUSP_CODEX_GATEWAY,
     contextConfig: opts.contextConfig,
   });
-  writeFileSync(join(codexHome, 'config.toml'), toml, 'utf8');
-  try { chmodSync(join(codexHome, 'config.toml'), 0o600); } catch { /* best-effort */ }
+  publishCodexConfig(join(codexHome, 'config.toml'), toml);
 
   return {
     codexHome,

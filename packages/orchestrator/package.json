@@ -146,6 +146,7 @@
     "typecheck": "node ../../../../scripts/lint-tsc-orchestrator.mjs"
   },
   "dependencies": {
+    "@iarna/toml": "^2.2.5",
     "@papercusp/file-claim": "*",
     "@papercusp/model-pricing": "*",
     "@papercusp/locks": "*",

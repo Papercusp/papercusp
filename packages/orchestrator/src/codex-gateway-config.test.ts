@@ -1,5 +1,54 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { codexGatewayConfigToml, codexManagedFeaturesToml } from './codex-gateway-config';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { closeSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { codexGatewayConfigToml, codexManagedFeaturesToml, publishCodexConfig } from './codex-gateway-config';
+
+const publicationFault = vi.hoisted(() => ({ partialWrite: false }));
+vi.mock('node:fs', async (importActual) => {
+  const actual = await importActual<typeof import('node:fs')>();
+  return { ...actual, writeFileSync: (...args: Parameters<typeof actual.writeFileSync>) => {
+    if (publicationFault.partialWrite) {
+      actual.writeFileSync(args[0], String(args[1]).slice(0, 5), args[2]);
+      throw new Error('injected partial config write');
+    }
+    return actual.writeFileSync(...args);
+  } };
+});
+
+describe('publishCodexConfig', () => {
+  it('publishes a private replacement without changing bytes held by an existing reader', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-config-publication-'));
+    const path = join(dir, 'config.toml');
+    writeFileSync(path, 'model = "prior"\n', { mode: 0o644 });
+    const reader = openSync(path, 'r');
+    try {
+      publishCodexConfig(path, 'model = "next"\n');
+      expect(readFileSync(reader, 'utf8')).toBe('model = "prior"\n');
+      expect(readFileSync(path, 'utf8')).toBe('model = "next"\n');
+      if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
+      expect(readdirSync(dir)).toEqual(['config.toml']);
+    } finally { closeSync(reader); rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('rejects malformed output and cleans an interrupted staging write while preserving the live config', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-config-publication-'));
+    const path = join(dir, 'config.toml');
+    const prior = 'model = "prior"\n';
+    writeFileSync(path, prior);
+    try {
+      expect(() => publishCodexConfig(path, prior + '%3Fleftover')).toThrow();
+      expect(readFileSync(path, 'utf8')).toBe(prior);
+      publicationFault.partialWrite = true;
+      expect(() => publishCodexConfig(path, 'model = "next"\n')).toThrow('injected partial config write');
+      expect(readFileSync(path, 'utf8')).toBe(prior);
+      expect(readdirSync(dir)).toEqual(['config.toml']);
+    } finally {
+      publicationFault.partialWrite = false;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 const originalPort = process.env.PAPERCUSP_GATEWAY_PORT;
 

@@ -55,3 +55,5 @@ transition, named stop condition, and bounded budget satisfy the contract above.
 
 <!-- PAPERCUSP-SU:COMPACTION -->
 
+<!-- PAPERCUSP-SU:SHARED-BASE-NOTES -->
+

@@ -27,6 +27,25 @@
  * and diagnostics locate/replace the managed blocks by them — keep them byte-stable.
  */
 
+import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { parse as parseToml } from '@iarna/toml';
+
+/** Publish one complete, valid private config. Never truncate the live file:
+ * an interrupted write must leave either the prior document or the new one.
+ * All managed home writers share this same-filesystem rename boundary. */
+export function publishCodexConfig(configPath: string, text: string): void {
+  parseToml(text);
+  const staging = mkdtempSync(join(dirname(configPath), '.config-toml-'));
+  try {
+    const stagedConfig = join(staging, 'config.toml');
+    writeFileSync(stagedConfig, text, { mode: 0o600 });
+    renameSync(stagedConfig, configPath);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 /**
  * The one provider id every managed codex config names. Exported because it is
  * not just a config-writing detail: codex stamps it into each rollout's

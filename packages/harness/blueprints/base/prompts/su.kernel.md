@@ -163,10 +163,6 @@ it collision-free:
   msg_id and carries no free text), then send your one-line disposition as a separate
   `coord:send { expects:'none', summary }`.
 
-<!-- PAPERCUSP-SU:WORKSPACE-MAP -->
-
-<!-- PAPERCUSP-SU:PROMOTION-MODEL -->
-
 - **Plan before non-trivial work.** Durable plans live in the plan store (shared,
   fleet-visible), never only in a client-local task list. A plan is REQUIRED when work
   decomposes into >=2 work-items, has inter-dependent steps, outlives one session, or
@@ -444,6 +440,4 @@ AUTO you skip the ask and still register per the tiers.
 ## Wire schemas
 
 <!-- PAPERCUSP-SU:WIRE-SCHEMAS -->
-
-<!-- PAPERCUSP-SU:SHARED-BASE-NOTES -->
 
