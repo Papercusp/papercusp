@@ -96,6 +96,8 @@ export type ResourceAcquireResult =
        *  is effective NOW (status 'held'); 0 for shared and for a 'draining'
        *  exclusive (its fence is minted by the cascade on the flip to 'held'). */
       fence_seq: number;
+      /** True when a shared acquire refreshed the caller's existing lease. */
+      reused?: boolean;
     }
   | {
       ok: false;
@@ -112,10 +114,11 @@ export type ResourceAcquireResult =
       queue_position?: number;
     };
 
-/** jsonb returned by resource_acquire_shared (sql/030). jsonb carries
- *  timestamptz as an ISO string, so callers convert expires_ts to a Date. */
+/** jsonb returned by resource_acquire_shared (sql/030, extended by sql/034).
+ *  jsonb carries timestamptz as an ISO string, so callers convert expires_ts
+ *  to a Date. */
 export type SharedAcquireRpcResult =
-  | { ok: true; lock_id: string; expires_ts: string }
+  | { ok: true; lock_id: string; expires_ts: string; reused: boolean }
   | { ok: false; reason: 'unknown_resource' | 'exclusive_pending' | 'at_capacity' | 'held_exclusive' };
 
 async function readLiveExclusiveQueue(
@@ -425,6 +428,7 @@ export async function tryAcquireResource(
       expires_ts: new Date(result.expires_ts),
       shared_holders: holders.filter((h) => h.mode === 'shared'),
       fence_seq: 0, // fencing is exclusive-only (correctness-class); shared is efficiency-class.
+      reused: result.reused === true,
     };
   }
 
