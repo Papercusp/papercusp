@@ -2143,7 +2143,7 @@ export async function retryOnRetryableDbDeadline<T>(
  */
 export function withDbCallDeadline<T>(
   promise: Promise<T>,
-  opts: { ms?: number; label: string },
+  opts: { ms?: number; label: string; pool?: string },
 ): Promise<T> {
   const ms = opts.ms ?? DEFAULT_DB_CALL_DEADLINE_MS;
   const label = opts.label;
@@ -2151,7 +2151,7 @@ export function withDbCallDeadline<T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      reject(new DbCallDeadlineError(label, ms, Date.now() - startedAt));
+      reject(new DbCallDeadlineError(label, ms, Date.now() - startedAt, opts.pool));
     }, ms);
     // Never hold the process open on this timer alone.
     timer.unref?.();
