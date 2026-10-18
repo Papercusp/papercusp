@@ -92,26 +92,26 @@ CREATE INDEX IF NOT EXISTS work_items_duplicate_of_idx
 -- already has a row"; whether the canonical is still open does not matter). The
 -- view's existing WHERE is wrapped in parentheses before the gate is appended,
 -- so the result is correct even if that WHERE later gains a top-level OR.
+--
+-- The two patches are decided INDEPENDENTLY, each from its own evidence: the
+-- column append from whether the view already exposes duplicate_of, the gate
+-- from whether work_items_claimable's text already carries it. A view can
+-- expose the column without the gate: work_items_claimable is `SELECT wi.*`
+-- (migration 1301), so re-creating it on a table that already has the column
+-- picks the column up with no gate. Keying the gate on column presence would
+-- skip it there and leave duplicates claimable.
 DO $mig1534_views$
 DECLARE
   v            text;
   def          text;
   patched      text;
+  has_cols     boolean;
+  needs_gate   boolean;
   from_anchor  CONSTANT text := E'\n   FROM harness_shared.work_items';
   where_anchor CONSTANT text := E'\n  WHERE ';
   hits         integer;
 BEGIN
   FOREACH v IN ARRAY ARRAY['engineer_issues', 'harness_features_consolidated', 'work_items_claimable'] LOOP
-    IF EXISTS (
-      SELECT 1 FROM information_schema.columns
-       WHERE table_schema = 'harness_shared'
-         AND table_name = v
-         AND column_name = 'duplicate_of'
-    ) THEN
-      RAISE NOTICE '1534: % already exposes duplicate_of; view no-op', v;
-      CONTINUE;
-    END IF;
-
     SELECT pg_get_viewdef(c.oid)
       INTO def
       FROM pg_class c
@@ -124,16 +124,32 @@ BEGIN
       RAISE EXCEPTION '1534: harness_shared.% view not found', v;
     END IF;
 
-    hits := (length(def) - length(replace(def, from_anchor, ''))) / length(from_anchor);
-    IF hits <> 1 THEN
-      RAISE EXCEPTION
-        '1534: expected exactly one top-level work_items FROM anchor in %, found %; re-derive the view patch instead of forcing it',
-        v, hits;
+    has_cols := EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'harness_shared'
+         AND table_name = v
+         AND column_name = 'duplicate_of'
+    );
+    needs_gate := v = 'work_items_claimable' AND position('duplicate_of IS NULL' IN def) = 0;
+
+    IF has_cols AND NOT needs_gate THEN
+      RAISE NOTICE '1534: % already exposes duplicate_of (and any gate it needs); view no-op', v;
+      CONTINUE;
     END IF;
 
-    patched := replace(def, from_anchor, E',\n    duplicate_of,\n    duplicate_source' || from_anchor);
+    patched := def;
 
-    IF v = 'work_items_claimable' THEN
+    IF NOT has_cols THEN
+      hits := (length(def) - length(replace(def, from_anchor, ''))) / length(from_anchor);
+      IF hits <> 1 THEN
+        RAISE EXCEPTION
+          '1534: expected exactly one top-level work_items FROM anchor in %, found %; re-derive the view patch instead of forcing it',
+          v, hits;
+      END IF;
+      patched := replace(def, from_anchor, E',\n    duplicate_of,\n    duplicate_source' || from_anchor);
+    END IF;
+
+    IF needs_gate THEN
       hits := (length(patched) - length(replace(patched, where_anchor, ''))) / length(where_anchor);
       IF hits <> 1 THEN
         RAISE EXCEPTION
