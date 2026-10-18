@@ -89,10 +89,17 @@ describe('core spine — every seeded write verb has its correction verb seeded 
     // named by checkpoint-run/trace; justified on the twin assertion in invoke.test.ts,
     // which was walked without this one — the gate went red on 2026-09-23, WI-10002544).
     // It is a read/wait verb with no write half, so it adds no EI-10946 asymmetry.
-    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(49);
+    // 49 -> 50 on 2026-10-18: events:status (EI-26236732620541471) is the
+    // recovery read for the seeded events:await lifecycle and must be callable
+    // directly from a trimmed Codex/SU launch.
+    expect(CORE_MCP_TOOL_NAMES.length).toBeLessThanOrEqual(50);
   });
 
   it('has no duplicate entries (a hand-maintained list that has been edited many times)', () => {
     expect(CORE_MCP_TOOL_NAMES.length).toBe(new Set(CORE_MCP_TOOL_NAMES).size);
+  });
+
+  it('seeds events:status with the await lifecycle for recovery reads', () => {
+    expect(CORE_MCP_TOOL_NAMES).toContain('events:status');
   });
 });
