@@ -736,6 +736,7 @@ export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage
 	priceTableVersion: text("price_table_version"),
 }, (table) => [
 	index("agent_usage_samples_harness_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops"), table.costUsd.asc().nullsLast()).where(sql`(harness_slug IS NOT NULL)`),
+	index("agent_usage_samples_pending_response_account_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.id.desc().nullsFirst().op("int8_ops")).where(sql`((source = 'interactive'::text) AND (account_id IS NULL) AND ((usage_provenance ->> 'providerResponseId'::text) IS NOT NULL))`),
 	index("agent_usage_samples_price_version_idx").using("btree", table.priceTableVersion.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(cost_source IS DISTINCT FROM 'provider'::text)`),
 	index("agent_usage_samples_ws_account_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.accountId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")).where(sql`(account_id IS NOT NULL)`),
 	index("agent_usage_samples_ws_bucket_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.bucketKey.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("int8_ops")),
@@ -4850,8 +4851,10 @@ export const gatewayRequestOutcomesInHarnessShared = harnessShared.table("gatewa
 	recordedAtMs: bigint("recorded_at_ms", { mode: "number" }).notNull(),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	retentionExpiresAtMs: bigint("retention_expires_at_ms", { mode: "number" }).notNull(),
+	providerResponseId: text("provider_response_id"),
 }, (table) => [
 	index("gateway_request_outcomes_owner_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops"), table.requestTimestampMs.asc().nullsLast().op("int8_ops"), table.requestOrdinal.asc().nullsLast().op("int8_ops")),
+	index("gateway_request_outcomes_response_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.providerResponseId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops")).where(sql`(provider_response_id IS NOT NULL)`),
 	index("gateway_request_outcomes_retention_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.retentionExpiresAtMs.asc().nullsLast().op("int8_ops")),
 	primaryKey({ columns: [table.gatewayProcessInstanceId, table.requestOrdinal], name: "gateway_request_outcomes_pkey"}),
 	unique("gateway_request_outcomes_workspace_id_request_id_key").on(table.requestId, table.workspaceId),
@@ -4864,6 +4867,7 @@ export const gatewayRequestOutcomesInHarnessShared = harnessShared.table("gatewa
 	check("gateway_request_outcomes_outcome_class_check", sql`outcome_class = ANY (ARRAY['ok'::text, 'client-error'::text, 'upstream-429'::text, 'upstream-error'::text, 'shed'::text, 'cancelled'::text, 'gateway-error'::text, 'unclassified'::text])`),
 	check("gateway_request_outcomes_protocol_check", sql`protocol = ANY (ARRAY['anthropic-messages'::text, 'openai-responses'::text, 'unknown'::text])`),
 	check("gateway_request_outcomes_provider_check", sql`provider = ANY (ARRAY['claude'::text, 'codex'::text, 'local'::text])`),
+	check("gateway_request_outcomes_provider_response_id_check", sql`(provider_response_id IS NULL) OR (((length(provider_response_id) >= 1) AND (length(provider_response_id) <= 512)) AND (btrim(provider_response_id) = provider_response_id))`),
 	check("gateway_request_outcomes_recorded_at_ms_check", sql`recorded_at_ms >= 0`),
 	check("gateway_request_outcomes_request_ordinal_check", sql`request_ordinal > 0`),
 	check("gateway_request_outcomes_request_timestamp_ms_check", sql`request_timestamp_ms >= 0`),
