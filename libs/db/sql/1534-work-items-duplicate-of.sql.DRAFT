@@ -1,0 +1,78 @@
+-- 1534: typed duplicate-of verdict on work items
+-- (bug-inflow-one-problem-one-row-2026-10-18#D-001, WI-6554700010017181).
+--
+-- Owner directive #1990: a duplicate is a FIELD the duplicate (admission) gate
+-- checks, not a comment. Until now a duplicate verdict lived only in
+-- coord_links (rel 'duplicates') and payload.dedupCandidates, neither of which
+-- the claimable predicate reads. These two columns are the single authoritative
+-- verdict; the existing evidence surfaces stay where they are.
+--
+--   duplicate_of      feature_id of the canonical row in the same workspace.
+--   duplicate_source  which writer set it: create-exact | admission-promoter
+--                     | fold | agent.
+--
+-- Additive only (expand). NULL on every existing row = "not a duplicate", so
+-- the currently deployed release is unaffected.
+
+ALTER TABLE harness_shared.work_items
+  ADD COLUMN IF NOT EXISTS duplicate_of text NULL,
+  ADD COLUMN IF NOT EXISTS duplicate_source text NULL;
+
+ALTER TABLE harness_shared.work_items
+  DROP CONSTRAINT IF EXISTS work_items_duplicate_source_check;
+-- FORWARD-COMPAT: the deployed release never writes duplicate_source, so a CHECK on a brand-new nullable column cannot reject any of its writes.
+ALTER TABLE harness_shared.work_items
+  ADD CONSTRAINT work_items_duplicate_source_check
+  CHECK (
+    duplicate_source IS NULL
+    OR duplicate_source IN ('create-exact', 'admission-promoter', 'fold', 'agent')
+  );
+
+ALTER TABLE harness_shared.work_items
+  DROP CONSTRAINT IF EXISTS work_items_duplicate_of_not_self;
+-- FORWARD-COMPAT: the deployed release never writes duplicate_of, so this CHECK cannot reject any of its writes.
+ALTER TABLE harness_shared.work_items
+  ADD CONSTRAINT work_items_duplicate_of_not_self
+  CHECK (duplicate_of IS NULL OR duplicate_of <> feature_id);
+
+-- The claimable predicate filters on duplicate_of IS NULL for open rows; the
+-- fold and the canonical-occurrence count look rows up by their canonical.
+CREATE INDEX IF NOT EXISTS work_items_duplicate_of_idx
+  ON harness_shared.work_items (workspace_id, duplicate_of)
+  WHERE duplicate_of IS NOT NULL;
+
+-- The admission predicate (work-items-admission.ts admittedWhereSql) runs over
+-- the base table AND the engineer_issues / harness_features_consolidated views,
+-- and work_items_claimable is the SQL claimable floor. All three list their
+-- columns explicitly, so each is re-created from its OWN current definition with
+-- the two columns appended (CREATE OR REPLACE VIEW may only add trailing
+-- columns, which keeps every dependent view valid). work_items_claimable also
+-- gains the gate itself: a row carrying a duplicate verdict is never claimable.
+-- Rewriting the live definition rather than restating it means this migration
+-- cannot silently revert a column another migration added to these views.
+DO $dup$
+DECLARE
+  v text;
+  d text;
+BEGIN
+  FOREACH v IN ARRAY ARRAY['engineer_issues', 'harness_features_consolidated', 'work_items_claimable'] LOOP
+    d := pg_get_viewdef(format('harness_shared.%I', v)::regclass, true);
+    IF position('duplicate_of' in d) = 0 THEN
+      d := regexp_replace(d, '\n(\s*)FROM harness_shared\.work_items',
+                          E',\n\\1 duplicate_of,\n\\1 duplicate_source\n\\1FROM harness_shared.work_items');
+      IF position('duplicate_of' in d) = 0 THEN
+        RAISE EXCEPTION '1534: could not locate FROM harness_shared.work_items in view %', v;
+      END IF;
+      IF v = 'work_items_claimable' THEN
+        d := rtrim(d, E'; \n') || ' AND duplicate_of IS NULL';
+      END IF;
+      EXECUTE format('CREATE OR REPLACE VIEW harness_shared.%I AS %s', v, d);
+    END IF;
+  END LOOP;
+END
+$dup$;
+
+COMMENT ON COLUMN harness_shared.work_items.duplicate_of IS
+  'feature_id of the canonical work item this row duplicates (same workspace). Read by the admission predicate: a row whose duplicate_of names a non-terminal item is never claimable. bug-inflow-one-problem-one-row-2026-10-18#D-001.';
+COMMENT ON COLUMN harness_shared.work_items.duplicate_source IS
+  'Writer that set duplicate_of: create-exact | admission-promoter | fold | agent.';
