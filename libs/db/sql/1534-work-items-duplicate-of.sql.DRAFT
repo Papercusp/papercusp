@@ -19,8 +19,8 @@
 -- a view BEFORE its base table, so table-then-view here is the view<->table
 -- inversion deadlock measured on migration 721. Same fix as 721/1110: take every
 -- lock up front, views first, then the base table. (A BEGIN/ROLLBACK dry-run of
--- the previous draft without this stalled ~20s and failed at the view EXECUTE;
--- its error text was not captured, so deadlock is the inferred cause.)
+-- an earlier draft without this stalled ~20s and failed at the view EXECUTE;
+-- its error text was not captured, so lock contention is the inferred cause.)
 
 LOCK TABLE harness_shared.engineer_issues IN ACCESS EXCLUSIVE MODE;
 LOCK TABLE harness_shared.harness_features_consolidated IN ACCESS EXCLUSIVE MODE;
@@ -57,40 +57,115 @@ CREATE INDEX IF NOT EXISTS work_items_duplicate_of_idx
 -- The admission predicate (work-items-admission.ts admittedWhereSql) runs over
 -- the base table AND the engineer_issues / harness_features_consolidated views,
 -- and work_items_claimable is the SQL claimable floor. All three list their
--- columns explicitly, so each is re-created from its OWN current definition with
--- the two columns appended (CREATE OR REPLACE VIEW may only add trailing
--- columns, which keeps every dependent view valid). work_items_claimable also
--- gains the gate itself: a row carrying a duplicate verdict is never claimable.
--- Rewriting the live definition rather than restating it means this migration
--- cannot silently revert a column another migration added to these views.
-DO $dup$
+-- columns explicitly (a `SELECT wi.*` is frozen to the columns that existed when
+-- the view was created), so each is re-created from its OWN current definition
+-- with the two columns appended. CREATE OR REPLACE VIEW may only add trailing
+-- columns, which keeps every dependent view valid. Patching the live definition
+-- rather than restating it means this migration cannot silently revert a column
+-- another migration added to these views.
+--
+-- Same guarded-anchor shape as migration 1110: the top-level FROM line of a
+-- pg_get_viewdef rendering is exactly "\n   FROM harness_shared.work_items"
+-- (three spaces; nested subqueries indent deeper). Anything other than exactly
+-- one occurrence fails loudly instead of patching the wrong clause.
+--
+-- work_items_claimable also gains the gate itself: a row carrying ANY duplicate
+-- verdict is never claimable (D-001: a non-null duplicate_of means "this problem
+-- already has a row"; whether the canonical is still open does not matter). The
+-- view's existing WHERE is wrapped in parentheses before the gate is appended,
+-- so the result is correct even if that WHERE later gains a top-level OR.
+DO $mig1534_views$
 DECLARE
-  v text;
-  d text;
+  v            text;
+  def          text;
+  patched      text;
+  from_anchor  CONSTANT text := E'\n   FROM harness_shared.work_items';
+  where_anchor CONSTANT text := E'\n  WHERE ';
+  hits         integer;
 BEGIN
   FOREACH v IN ARRAY ARRAY['engineer_issues', 'harness_features_consolidated', 'work_items_claimable'] LOOP
-    d := pg_get_viewdef(format('harness_shared.%I', v)::regclass, true);
-    IF position('duplicate_of' in d) = 0 THEN
-      d := regexp_replace(d, '\n(\s*)FROM harness_shared\.work_items',
-                          E',\n\\1 duplicate_of,\n\\1 duplicate_source\n\\1FROM harness_shared.work_items');
-      IF position('duplicate_of' in d) = 0 THEN
-        RAISE EXCEPTION '1534: could not locate FROM harness_shared.work_items in view %', v;
-      END IF;
-      IF v = 'work_items_claimable' THEN
-        -- Appending is correct only while the view's final WHERE is a pure
-        -- top-level AND chain with no trailing ORDER BY/LIMIT. Checked against
-        -- the live definition 2026-10-18: 4 top-level ANDs, no top-level OR.
-        -- The integration test pins the behaviour (a duplicate row is absent
-        -- from work_items_claimable; its non-duplicate twin is present).
-        d := rtrim(d, E'; \n') || ' AND duplicate_of IS NULL';
-      END IF;
-      EXECUTE format('CREATE OR REPLACE VIEW harness_shared.%I AS %s', v, d);
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+       WHERE table_schema = 'harness_shared'
+         AND table_name = v
+         AND column_name = 'duplicate_of'
+    ) THEN
+      RAISE NOTICE '1534: % already exposes duplicate_of; view no-op', v;
+      CONTINUE;
     END IF;
+
+    SELECT pg_get_viewdef(c.oid)
+      INTO def
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'harness_shared'
+       AND c.relname = v
+       AND c.relkind = 'v';
+
+    IF def IS NULL THEN
+      RAISE EXCEPTION '1534: harness_shared.% view not found', v;
+    END IF;
+
+    hits := (length(def) - length(replace(def, from_anchor, ''))) / length(from_anchor);
+    IF hits <> 1 THEN
+      RAISE EXCEPTION
+        '1534: expected exactly one top-level work_items FROM anchor in %, found %; re-derive the view patch instead of forcing it',
+        v, hits;
+    END IF;
+
+    patched := replace(def, from_anchor, E',\n    duplicate_of,\n    duplicate_source' || from_anchor);
+
+    IF v = 'work_items_claimable' THEN
+      hits := (length(patched) - length(replace(patched, where_anchor, ''))) / length(where_anchor);
+      IF hits <> 1 THEN
+        RAISE EXCEPTION
+          '1534: expected exactly one top-level WHERE in work_items_claimable, found %; re-derive the gate patch instead of forcing it',
+          hits;
+      END IF;
+      patched := rtrim(replace(patched, where_anchor, where_anchor || '('), E'; \n')
+                 || ') AND duplicate_of IS NULL';
+    END IF;
+
+    EXECUTE format('CREATE OR REPLACE VIEW harness_shared.%I AS %s', v, patched);
   END LOOP;
 END
-$dup$;
+$mig1534_views$;
+
+-- Post-conditions, so an idempotent re-run verifies the installed state instead
+-- of treating IF NOT EXISTS / the per-view no-op as proof the shape is right.
+DO $mig1534_check$
+DECLARE
+  n integer;
+BEGIN
+  SELECT count(*)::int
+    INTO n
+    FROM information_schema.columns
+   WHERE table_schema = 'harness_shared'
+     AND table_name = 'work_items'
+     AND column_name IN ('duplicate_of', 'duplicate_source')
+     AND data_type = 'text'
+     AND is_nullable = 'YES';
+  IF n <> 2 THEN
+    RAISE EXCEPTION '1534: expected two nullable text duplicate columns on work_items, found %', n;
+  END IF;
+
+  SELECT count(*)::int
+    INTO n
+    FROM information_schema.columns
+   WHERE table_schema = 'harness_shared'
+     AND table_name IN ('engineer_issues', 'harness_features_consolidated', 'work_items_claimable')
+     AND column_name IN ('duplicate_of', 'duplicate_source');
+  IF n <> 6 THEN
+    RAISE EXCEPTION '1534: expected the three work_items views to expose both duplicate columns (6), found %', n;
+  END IF;
+
+  IF position('duplicate_of IS NULL' IN pg_get_viewdef('harness_shared.work_items_claimable'::regclass)) = 0 THEN
+    RAISE EXCEPTION '1534: work_items_claimable does not carry the duplicate_of IS NULL gate';
+  END IF;
+END
+$mig1534_check$;
 
 COMMENT ON COLUMN harness_shared.work_items.duplicate_of IS
-  'feature_id of the canonical work item this row duplicates (same workspace). Read by the admission predicate: a row whose duplicate_of names a non-terminal item is never claimable. bug-inflow-one-problem-one-row-2026-10-18#D-001.';
+  'feature_id of the canonical work item this row duplicates (same workspace). Read by the admission predicate: a row with any non-null duplicate_of is never claimable. bug-inflow-one-problem-one-row-2026-10-18#D-001.';
 COMMENT ON COLUMN harness_shared.work_items.duplicate_source IS
   'Writer that set duplicate_of: create-exact | admission-promoter | fold | agent.';
