@@ -75,7 +75,7 @@ import {
   sortPgCoreImportSpecifiers,
 } from '../src/schema/schema-declaration-order.mjs';
 import { repairCheckPrefixes, repairNotValidChecks } from '../src/schema/schema-checks.mjs';
-import { findMissingPgPolicies, repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
+import { findDroppedPgSchemaObjects, findMissingPgPolicies, findMissingPgSchemaObjects, repairPgPolicyPredicates } from '../src/schema/schema-policies.mjs';
 import {
   MIGRATION_FINGERPRINT_SQL,
   describeCatalogDrift,
@@ -275,6 +275,9 @@ function readPolicyCatalog() {
   }
 }
 const previousMirror = join(SCHEMA_DIR, 'generated.ts');
+const allowedSchemaObjectRemovals = process.argv.slice(2)
+  .filter(arg => arg.startsWith('--allow-schema-object-removal='))
+  .map(arg => arg.slice('--allow-schema-object-removal='.length));
 if (existsSync(previousMirror)) {
   const policies = readPolicyCatalog();
   if (policies == null) return;
@@ -289,6 +292,32 @@ if (existsSync(previousMirror)) {
     console.error(`\n==> REFUSING TO PULL: target lacks ${missingPolicies.length} policy/policies from the existing mirror (${redactAdminUrl(dbUrl)}).`);
     console.error(missingPolicies.map((identity) => `  - ${identity}`).join('\n'));
     console.error('Use the canonical runtime-initialized database. For an intentional removal, name each reviewed identity with --allow-policy-removal=schema.table.policy.');
+    console.error('    generated.ts and generated-relations.ts are UNCHANGED.');
+    process.exitCode = 1;
+    return;
+  }
+  const objectQuery = "SELECT COALESCE(json_agg(q), '[]'::json) FROM (" +
+    "SELECT 'index' AS kind, schemaname AS schema, tablename AS table, indexname AS name FROM pg_indexes " +
+    "WHERE schemaname IN ('harness_shared','papercusp_shared') UNION ALL " +
+    "SELECT 'sequence', schemaname, NULL, sequencename FROM pg_sequences " +
+    "WHERE schemaname IN ('harness_shared','papercusp_shared')) q";
+  const result = spawnSync('psql', [dbUrl, '-tA', '-c', objectQuery], { encoding: 'utf8' });
+  let objects;
+  try {
+    if (result.error || result.status !== 0) throw new Error(result.stderr || result.error?.message || 'catalog query failed');
+    objects = JSON.parse(result.stdout);
+    if (!Array.isArray(objects)) throw new Error('catalog did not return an array');
+  } catch (error) {
+    console.error('==> REFUSING TO PULL: runtime index/sequence catalog is unreadable:', error.message);
+    process.exitCode = 1;
+    return;
+  }
+  const missingObjects = findMissingPgSchemaObjects({ source: readFileSync(previousMirror, 'utf8'),
+    objects, allowedRemovals: allowedSchemaObjectRemovals });
+  if (missingObjects.length) {
+    console.error(`==> REFUSING TO PULL: target lacks ${missingObjects.length} index/sequence object(s) from the existing mirror.`);
+    console.error(missingObjects.map(identity => `  - ${identity}`).join('\n'));
+    console.error('Use a complete runtime catalog; intentional removals require --allow-schema-object-removal=<exact identity>.');
     console.error('    generated.ts and generated-relations.ts are UNCHANGED.');
     process.exitCode = 1;
     return;
@@ -1078,6 +1107,19 @@ if (process.env.PAPERCUSP_SKIP_IDENTITY_KEYED_GATE === '1') {
 // Fix 14: a run that straddled a migration commit mixes two catalog states even
 // when no repair refused, so check the ledger once more before promoting.
 if (refuseOnCatalogDrift('before promotion')) return;
+if (existsSync(previousMirror)) {
+  const droppedObjects = findDroppedPgSchemaObjects({ previous: readFileSync(previousMirror, 'utf8'), next: schema,
+    allowedRemovals: allowedSchemaObjectRemovals });
+  if (droppedObjects.length) {
+    rmSync(schemaPath, { force: true });
+    rmSync(relationsPath, { force: true });
+    console.error('==> REFUSING TO PROMOTE: generator omitted existing index/sequence declarations.');
+    console.error(droppedObjects.map(identity => `  - ${identity}`).join('\n'));
+    console.error('    generated.ts and generated-relations.ts are UNCHANGED.');
+    process.exitCode = 1;
+    return;
+  }
+}
 promoteGeneratedSchemaArtifacts({ schemaPath, relationsPath, schemaDir: SCHEMA_DIR });
 
 console.log('==> done. generated.ts + generated-relations.ts updated.');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findMissingPgPolicies, repairPgPolicyPredicates } from './schema-policies.mjs';
+import { findDroppedPgSchemaObjects, findMissingPgPolicies, findMissingPgSchemaObjects, repairPgPolicyPredicates } from './schema-policies.mjs';
 
 const source = [
   'import { sql, text } from "drizzle-orm";',
@@ -75,6 +75,63 @@ describe('findMissingPgPolicies', () => {
       'harness_shared.other_registry.other_registry_approved_global_read',
       'harness_shared.other_registry.other_registry_workspace_isolation',
     ]);
+  });
+});
+
+describe('schema object preservation', () => {
+  const mirror = [
+    'export const runSeq = harnessShared.sequence("run_seq", {});',
+    'export const documents = harnessShared.table("documents", {',
+    '}, (table) => [',
+    ' index("documents_bm25").using("bm25", table.text),',
+    ' uniqueIndex("documents_external_id").on(table.id),',
+    ']);',
+    'export const other = papercuspShared.table("other", {',
+    '}, (table) => [index("other_idx").on(table.id)]);',
+  ].join('\n');
+  const objects = [
+    { kind: 'sequence', schema: 'harness_shared', table: null, name: 'run_seq' },
+    { kind: 'index', schema: 'harness_shared', table: 'documents', name: 'documents_bm25' },
+    { kind: 'index', schema: 'harness_shared', table: 'documents', name: 'documents_external_id' },
+    { kind: 'index', schema: 'papercusp_shared', table: 'other', name: 'other_idx' },
+  ];
+
+  it('rejects a migration-current target missing a runtime BM25 index', () => {
+    expect(findMissingPgSchemaObjects({ source: mirror, objects: objects.filter(value => value.name !== 'documents_bm25') }))
+      .toEqual(['index:harness_shared.documents.documents_bm25']);
+  });
+
+  it('accepts complete catalogs and additive objects without depending on catalog order', () => {
+    expect(findMissingPgSchemaObjects({ source: mirror, objects: [...objects].reverse().concat([
+      { kind: 'index', schema: 'harness_shared', table: 'documents', name: 'new_idx' },
+    ]) })).toEqual([]);
+  });
+
+  it('requires exact schema, table, kind and object identity', () => {
+    const wrong = objects.map(value => ({ ...value, schema: 'another_schema' }));
+    expect(findMissingPgSchemaObjects({ source: mirror, objects: wrong })).toHaveLength(4);
+    expect(findMissingPgSchemaObjects({ source: mirror, objects: objects.map(value => ({ ...value, table: 'another_table' })) }))
+      .toHaveLength(4);
+  });
+
+  it('requires explicit qualified removals and never treats a wildcard as permission', () => {
+    expect(findMissingPgSchemaObjects({ source: mirror, objects: [], allowedRemovals: ['*'] })).toHaveLength(4);
+    expect(findMissingPgSchemaObjects({ source: mirror, objects: [], allowedRemovals: [
+      'index:harness_shared.documents.documents_bm25', 'index:harness_shared.documents.documents_external_id',
+      'index:papercusp_shared.other.other_idx', 'sequence:harness_shared.run_seq',
+    ] })).toEqual([]);
+  });
+
+  it('blocks a generator that drops an observed sequence before mirror promotion', () => {
+    const next = mirror.replace('export const runSeq = harnessShared.sequence("run_seq", {});', '');
+    expect(findDroppedPgSchemaObjects({ previous: mirror, next })).toEqual(['sequence:harness_shared.run_seq']);
+    expect(findDroppedPgSchemaObjects({ previous: mirror, next, allowedRemovals: ['sequence:harness_shared.run_seq'] })).toEqual([]);
+  });
+
+  it('accepts unchanged or expanded generated mirrors and catches index omissions', () => {
+    expect(findDroppedPgSchemaObjects({ previous: mirror, next: mirror + '\n// additive generation' })).toEqual([]);
+    expect(findDroppedPgSchemaObjects({ previous: mirror, next: mirror.replace(' index("documents_bm25").using("bm25", table.text),', '') }))
+      .toEqual(['index:harness_shared.documents.documents_bm25']);
   });
 });
 

@@ -158,6 +158,43 @@ export function findMissingPgPolicies({ source, policies, allowedRemovals = [] }
   return [...missing].sort();
 }
 
+function declaredPgSchemaObjects(source) {
+  const objects = new Set();
+  const tables = [...source.matchAll(/^export const [A-Za-z_$][\w$]* = ([A-Za-z_$][\w$]*)\.table\("([^"]+)", \{/gm)];
+  for (let index = 0; index < tables.length; index++) {
+    const table = tables[index];
+    const block = source.slice(table.index, tables[index + 1]?.index ?? source.length);
+    for (const match of block.matchAll(/\b(?:index|uniqueIndex)\(\s*(["'])(.*?)\1\s*\)/g)) {
+      objects.add(`index:${camelToSnake(table[1])}.${table[2]}.${match[2]}`);
+    }
+  }
+  for (const match of source.matchAll(/^export const [A-Za-z_$][\w$]* = ([A-Za-z_$][\w$]*)\.sequence\("([^"]+)"/gm)) {
+    objects.add(`sequence:${camelToSnake(match[1])}.${match[2]}`);
+  }
+  return objects;
+}
+
+/** A current migration ledger and policy set do not establish that runtime
+ * indexes exist. Refuse an incomplete target before introspection erases them.
+ * @param {{source:string, objects:Array<{kind:string,schema:string,table?:string|null,name:string}>, allowedRemovals?:string[]}} input
+ * @returns {string[]}
+ */
+export function findMissingPgSchemaObjects({ source, objects, allowedRemovals = [] }) {
+  const catalog = new Set(objects.map(value => `${value.kind}:${value.schema}.${value.table ? `${value.table}.` : ''}${value.name}`));
+  const allowed = new Set(allowedRemovals);
+  return [...declaredPgSchemaObjects(source)].filter(identity => !catalog.has(identity) && !allowed.has(identity)).sort();
+}
+
+/** Backstop generator omissions even when the target catalog was complete.
+ * @param {{previous:string,next:string,allowedRemovals?:string[]}} input
+ * @returns {string[]}
+ */
+export function findDroppedPgSchemaObjects({ previous, next, allowedRemovals = [] }) {
+  const retained = declaredPgSchemaObjects(next);
+  const allowed = new Set(allowedRemovals);
+  return [...declaredPgSchemaObjects(previous)].filter(identity => !retained.has(identity) && !allowed.has(identity)).sort();
+}
+
 function rewritePolicyObject(objectSource, policy) {
   const fields = splitObjectFields(objectSource, 0, objectSource.length - 1);
   const desired = {
