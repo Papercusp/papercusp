@@ -84,6 +84,20 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
     expect(observed.every((timing) => Number.isFinite(timing.durationMs) && timing.durationMs >= 0)).toBe(true);
   });
 
+  it('uses only the shared domain gate for a targeted lease renewal', async () => {
+    const { sql, tx } = fakePool();
+    mocks.getTxPool.mockReturnValue(sql);
+
+    await inWorkspaceTxn('renewal-domain', 'owner', async () => 'renewed', {
+      leaseRenewal: true,
+    });
+
+    const advisory = tx.mock.calls.map(([strings]) => strings.join(' '))
+      .filter((query) => query.includes('pg_advisory'));
+    expect(advisory).toHaveLength(1);
+    expect(advisory[0]).toContain('pg_advisory_xact_lock_shared');
+  });
+
   it('keeps the transaction result when the diagnostic observer throws', async () => {
     const { sql } = fakePool();
     mocks.getTxPool.mockReturnValue(sql);

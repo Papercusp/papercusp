@@ -168,7 +168,7 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
         };
       }
       return { ok: false, expired: true };
-    }, { paths: claim.paths });
+    }, { leaseRenewal: true });
   }
 
   async reap(owner: string): Promise<number> {

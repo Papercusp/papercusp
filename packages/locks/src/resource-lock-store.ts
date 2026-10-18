@@ -742,8 +742,8 @@ export async function tryHeartbeatResource(
   ttlSec: number,
 ): Promise<{ expires_ts: Date | null; extended: boolean }> {
   await tx`SET LOCAL statement_timeout = '500ms'`;
-  await sweepResourceExpired(tx, coordinationDomain);
-  await promoteResourceExclusiveQueue(tx, coordinationDomain);
+  // As with file leases, renew only this live owner's rows. Expiry cleanup
+  // and queue promotion belong to the janitor and acquire/release operations.
 
   const ttlText = `${ttlSec} seconds`;
   const rows = await tx<Array<{ expires_ts: Date }>>`

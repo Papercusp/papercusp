@@ -1200,12 +1200,9 @@ export async function tryHeartbeat(
   ttlSec: number,
 ): Promise<HeartbeatResult> {
   await tx`SET LOCAL statement_timeout = '500ms'`;
-  // Sweep this workspace's expired rows; fire the cascade if anything
-  // was freed (a waiter behind a now-swept lock should wake).
-  const swept = await sweepWorkspaceExpired(tx, coordinationDomain);
-  if (swept) {
-    await tx`SELECT grant_cascade(${coordinationDomain}, clock_timestamp())`;
-  }
+  // Renewal must not depend on deleting unrelated expired rows or granting
+  // their waiters. The existing background janitor and acquire/release paths
+  // own that housekeeping. The expiry predicate below prevents resurrection.
   const ttlText = `${ttlSec} seconds`;
   // Owner check (bug #17): like release, require owner match so a
   // leaked lock_id can't be used to extend someone else's TTL.

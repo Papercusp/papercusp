@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readQueue, resolveLocksSqlDir, tryAcquire } from './su-lock-store';
+import { readQueue, resolveLocksSqlDir, tryAcquire, tryHeartbeat } from './su-lock-store';
+import { tryHeartbeatResource } from './resource-lock-store';
 
 const roots: string[] = [];
 
@@ -154,6 +155,27 @@ describe('tryAcquire', () => {
     });
     expect(statements.some((statement) => statement.includes('FROM agent_lock_waiters w'))).toBe(true);
     expect(statements.some((statement) => statement.includes('SELECT path, owner, owner_label, intent, expires_ts FROM agent_file_locks'))).toBe(true);
+  });
+});
+
+describe.each([
+  ['file', tryHeartbeat],
+  ['resource', tryHeartbeatResource],
+] as const)('%s lease renewal', (_kind, heartbeat) => {
+  it('renews the requested lease without depending on unrelated expiry housekeeping', async () => {
+    const expires = new Date('2030-01-01T00:00:00Z');
+    const tx = (async (strings: TemplateStringsArray) => {
+      const query = strings.join(' ').trim();
+      // An unrelated expired row may be held by another transaction. Renewing
+      // our lease must never require deleting that row or promoting its queue.
+      if (/DELETE|grant_cascade|promote_resource/i.test(query)) {
+        throw Object.assign(new Error('unrelated expired row locked'), { code: '57014' });
+      }
+      return query.startsWith('UPDATE') ? [{ expires_ts: expires }] : [];
+    }) as unknown as Parameters<typeof tryHeartbeat>[0];
+
+    await expect(heartbeat(tx, 'domain', 'owner', 'lock-id', 120))
+      .resolves.toEqual({ extended: true, expires_ts: expires });
   });
 });
 

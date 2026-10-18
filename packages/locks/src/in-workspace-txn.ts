@@ -73,6 +73,13 @@ function isTestEnv(): boolean {
 
 export interface WorkspaceTxnOptions {
   /**
+   * TTL-only renewal of existing rows. Use the shared domain gate without
+   * path locks: the conditional UPDATE serializes on its own rows and cannot
+   * insert, delete, change ownership, or resurrect an expired lease. Global
+   * housekeeping still excludes renewals. Never use for acquire/release work.
+   */
+  leaseRenewal?: boolean;
+  /**
    * Canonical file-lock paths touched by this transaction. When present,
    * acquire the shared workspace gate, shared advisory locks for each strict
    * ancestor, and one exclusive advisory lock per requested path, all in
@@ -175,9 +182,10 @@ async function acquireAdvisoryScope(
   tx: Sql,
   coordinationDomain: string,
   paths: readonly string[] | undefined,
+  leaseRenewal = false,
 ): Promise<void> {
   const scopedPaths = uniqueSortedPaths(paths);
-  if (scopedPaths.length === 0) {
+  if (!leaseRenewal && scopedPaths.length === 0) {
     // Preserve the original key for global operations and rolling
     // compatibility with processes that still use the workspace lock alone.
     await tx`SELECT pg_advisory_xact_lock(
@@ -194,6 +202,7 @@ async function acquireAdvisoryScope(
     ${SU_LOCKS_FEATURE_KEY}::int,
     hashtext(${'su:' + coordinationDomain})
   )`;
+  if (leaseRenewal) return;
 
   // Shared locks on strict ancestors make a subtree/exact-path exclusive lock
   // conflict with descendants, while siblings can share the same directory
@@ -275,7 +284,7 @@ export async function inWorkspaceTxn<T>(
                     set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`,
     );
     await measureAsyncPhase(phaseObserver, 'advisory-scope', () =>
-      acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths),
+      acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths, options.leaseRenewal),
     );
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type
