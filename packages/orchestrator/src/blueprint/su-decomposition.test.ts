@@ -25,6 +25,7 @@ import {
   locateSuTiles,
   renderSuDecompositionMarkdown,
   suPartDocumentDrift,
+  suPartDocumentHome,
   suTilingProblems,
   tilesOfDocument,
 } from './su-decomposition.js';
@@ -184,4 +185,36 @@ test('docs/COMPOSITION_MODEL.md §9 embeds EXACTLY renderSuDecompositionMarkdown
   assert.ok(m, 'the doc carries the SU-DECOMPOSITION:BEGIN/END markers');
   assert.equal(m![1], renderSuDecompositionMarkdown(), 'the embedded decomposition drifted from su-decomposition.ts — re-paste renderSuDecompositionMarkdown() between the markers (npm run gen:su-decomposition does it)');
   assert.ok(!/\bline \d+\b/i.test(m![1]), 'the pinned prose must not carry line numbers (anchors only)');
+});
+
+test('R-2 (identity-system-everything-migration-2026-10-18 #D-005): the kernel is domain-neutral — instance seams live in su.instance, the practice-notes seam in su.practice, and no identity document carries a seam', () => {
+  const text = su();
+  const seam = (id: string) => `<!-- PAPERCUSP-SU:${id} -->`;
+  const kernel = extractSuPart(text, 'su.kernel');
+  for (const id of ['WORKSPACE-MAP', 'PROMOTION-MODEL', 'SHARED-BASE-NOTES']) {
+    assert.ok(!kernel.includes(seam(id)), `the kernel must not carry the ${id} seam`);
+  }
+  // Positive control: the kernel still carries its own (domain-neutral) seams, so the
+  // negatives above are not passing on an empty or mis-extracted document.
+  for (const id of ['AUTO-MODE', 'RESULT-DOOR', 'COORD-LEGEND', 'WIRE-SCHEMAS']) {
+    assert.ok(kernel.includes(seam(id)), `the kernel keeps its ${id} seam`);
+  }
+  const instance = extractSuPart(text, 'su.instance');
+  for (const id of ['WORKSPACE-MAP', 'PROMOTION-MODEL', 'PROJECT-GUIDE']) {
+    assert.ok(instance.includes(seam(id)), `su.instance carries the ${id} seam`);
+  }
+  const practice = extractSuPart(text, 'su.practice');
+  for (const id of ['COMPACTION', 'SHARED-BASE-NOTES']) {
+    assert.ok(practice.includes(seam(id)), `su.practice carries the ${id} seam`);
+  }
+  // identity-lint's generated-marker rule: a splice seam never lives in an identity
+  // document (a standalone wearer would ship the literal marker and lose the text).
+  for (const doc of SU_PART_DOCUMENTS.filter((d) => suPartDocumentHome(d) === 'identity')) {
+    assert.ok(!extractSuPart(text, doc.id).includes('<!-- PAPERCUSP-SU:'), `${doc.id} is an identity document and carries no splice seam`);
+  }
+  // The checked-in kernel document matches (it is what the stack composer reads).
+  const onDisk = readFileSync(join(HARNESS_PKG, SU_PART_DOCUMENTS.find((d) => d.id === 'su.kernel')!.path), 'utf8');
+  for (const id of ['WORKSPACE-MAP', 'PROMOTION-MODEL', 'SHARED-BASE-NOTES']) {
+    assert.ok(!onDisk.includes(seam(id)), `checked-in su.kernel.md must not carry the ${id} seam (run npm run gen:su-decomposition)`);
+  }
 });

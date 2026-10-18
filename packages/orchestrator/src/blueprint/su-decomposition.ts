@@ -189,17 +189,19 @@ export const SU_TILES: readonly SuTile[] = [
   },
   {
     anchor: '<!-- PAPERCUSP-SU:WORKSPACE-MAP -->',
-    part: 'kernel',
+    part: 'instance',
     seam: 'WORKSPACE-MAP',
     label: 'workspace-map splice seam',
-    rationale: 'The map is derived from the live workspace-path contract; the marker is kernel addressing, never copied domain prose.',
+    rationale:
+      'The map is derived from THIS workspace’s live path contract — instance data, so the domain-neutral kernel must not carry it (identity-system-everything-migration-2026-10-18 R-2, #D-005). It lands in the base-homed instance document, not the papercusp-engineer identity: identity-lint’s generated-marker rule keeps splice seams out of identity documents, so a standalone wearer never ships a literal marker.',
   },
   {
     anchor: '<!-- PAPERCUSP-SU:PROMOTION-MODEL -->',
-    part: 'kernel',
+    part: 'instance',
     seam: 'PROMOTION-MODEL',
-    label: 'promotion-model splice seam',
-    rationale: 'The promotion section is derived from release configuration; its seam stays in the kernel so the domain identity remains marker-free when used as a standalone system-prompt overlay.',
+    label: 'promotion-model splice seam (+ the engineer-profile deploy-pipeline note)',
+    rationale:
+      'The promotion section is derived from THIS workspace’s release configuration, and the engineer-profile deploy-pipeline note renders with it — both instance data, out of the kernel (R-2, #D-005). Instance, not the papercusp-engineer identity, for the same generated-marker reason as WORKSPACE-MAP.',
   },
   {
     anchor: '## Engineering discipline',
@@ -418,10 +420,11 @@ export const SU_TILES: readonly SuTile[] = [
   },
   {
     anchor: '<!-- PAPERCUSP-SU:SHARED-BASE-NOTES -->',
-    part: 'kernel',
+    part: 'practice',
     seam: 'SHARED-BASE-NOTES',
-    label: 'shared base notes splice seam',
-    rationale: 'The explicit anchor for the shared deploy/wait/wake/coupling/state protocol bundle; it replaces the silent append fallback.',
+    label: 'shared practice notes splice seam (wait-loop · peer-wake · coupling · read-the-cell)',
+    rationale:
+      'The explicit anchor for the domain-neutral wait/wake/coupling/state practice bundle; it replaces the silent append fallback. Practice, not kernel (R-2, #D-005): these are how-to-work habits layered on the kernel, and the deploy-pipeline note that used to ride here now renders with PROMOTION-MODEL in the instance layer.',
   },
   {
     anchor: '<!-- PAPERCUSP-SU:PROJECT-GUIDE -->',
