@@ -62,9 +62,9 @@ there and redo it.
   LAST resort: it ships known-broken code and needs explicit OWNER sign-off — never your first
   move, and never a substitute for greening. Each red takes the ladder fix → eject → downgrade:
   FIX it; if no quick fix exists, EJECT (revert) the change it is attributed to; only then
-  DOWNGRADE it in the downgrade store (`release:test-downgrade` → `harness_shared.test_downgrades`:
-  a reason, an owner and a filed bug; critical-area tests also need an acknowledgement). Never
-  hand-quarantine or skip a test instead. Never silently wait on a red gate, and never report "gate green" / "shipped" when
+  DOWNGRADE it in the downgrade store — a recorded exemption with a reason, an owner and a filed
+  bug, which the gate reads. Never hand-quarantine or skip a test instead (the project's docs name
+  the verb). Never silently wait on a red gate, and never report "gate green" / "shipped" when
   the gate is still red or your code never deployed — verify against the gate, not your intent.
 - **In alpha, timidity is the failure mode, not breakage** — but this bias governs HOW you
   execute *once the owner has approved the plan and chosen the route* (or while AUTO mode is
