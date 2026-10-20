@@ -5783,6 +5783,8 @@ origin: scout
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	acceptanceBarVerifiedRevision: bigint("acceptance_bar_verified_revision", { mode: "number" }),
 	nowNote: jsonb("now_note"),
+	verificationProfile: text("verification_profile"),
+	verificationProfileSource: text("verification_profile_source"),
 }, (table) => [
 	index("harness_plans_acceptance_bar_unseeded").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`((acceptance_bar_epoch IS NOT NULL) AND (acceptance_bar_set_hash IS NULL))`),
 	index("harness_plans_bm25").using("bm25", sql`(((COALESCE(title, ''::text) || ' '::text) || COALESCE(content, ''::text)))`).with({text_config: "english",compaction: "manual"}),
@@ -5806,6 +5808,8 @@ origin: scout
 	check("harness_plans_properties_object", sql`jsonb_typeof(properties) = 'object'::text`),
 	check("harness_plans_property_schema_object", sql`jsonb_typeof(property_schema) = 'object'::text`),
 	check("harness_plans_status_check", sql`(status IS NULL) OR (status = ANY (ARRAY['draft'::text, 'ready'::text, 'active'::text, 'awaiting-acceptance'::text, 'shipped'::text, 'superseded'::text]))`),
+	check("harness_plans_verification_profile_check", sql`(verification_profile IS NULL) OR (verification_profile = ANY (ARRAY['coding'::text, 'general'::text]))`),
+	check("harness_plans_verification_profile_source_check", sql`(verification_profile_source IS NULL) OR (verification_profile_source = ANY (ARRAY['declared'::text, 'harness-default'::text, 'backfill'::text]))`),
 	check("harness_plans_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
@@ -9034,6 +9038,7 @@ export const planItemsInHarnessShared = harnessShared.table("plan_items", {
 	decisionRefs: text("decision_refs").array().default([]).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	ownerGateMarker: text("owner_gate_marker"),
+	deliverable: text(),
 }, (table) => [
 	index("plan_items_blocked_by_gin").using("gin", table.blockedBy.asc().nullsLast().op("array_ops")),
 	index("plan_items_plan_seq_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.seq.asc().nullsLast().op("int4_ops")),
@@ -9044,6 +9049,7 @@ export const planItemsInHarnessShared = harnessShared.table("plan_items", {
 			name: "plan_items_plan_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.harnessSlug, table.itemId, table.planSlug, table.workspaceId], name: "plan_items_pkey"}),
+	check("plan_items_deliverable_check", sql`(deliverable IS NULL) OR (deliverable = ANY (ARRAY['code'::text, 'doc'::text, 'decision'::text, 'research'::text, 'operation'::text, 'artifact'::text]))`),
 ]);
 
 export const planRevisionsInHarnessShared = harnessShared.table("plan_revisions", {
