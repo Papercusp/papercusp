@@ -1,0 +1,33 @@
+{
+  "kind": "plugin", "name": "discord", "version": "0.1.0", "papercusp": "^0.1.0",
+  "description": "Post notifications to a Discord channel as your bot, and read your server's public online count for the community badge. Fixture-verified; not live-verified.",
+  "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [], "tools": [],
+  "provider": {
+    "id": "discord", "contractVersion": 1, "displayName": "Discord", "datatypes": ["notification"], "sync": false,
+    "capabilities": ["notify.send", "community.presence"], "egressHosts": ["discord.com"],
+    "verification": {
+      "verifiedAt": "2026-10-20", "capabilities": { "notify.send": "2026-10-20", "community.presence": "2026-10-20" },
+      "sources": [
+        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/resources/message.mdx",
+        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/resources/guild.mdx",
+        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/topics/rate-limits.mdx"
+      ]
+    },
+    "setup": { "credentials": [{
+      "key": "bot_token", "label": "Discord bot token", "hosts": ["discord.com"], "auth": { "header": "authorization", "scheme": "bot" },
+      "help": "Create an application, add a bot, copy its token, and invite the bot to your server with the Send Messages permission. The host stores the token and sends it as Authorization: Bot.",
+      "helpUrl": "https://discord.com/developers/applications"
+    }] },
+    "configSchema": {
+      "type": "object",
+      "properties": {
+        "channelId": { "type": "string", "pattern": "^[0-9]{17,20}$", "title": "Channel ID", "description": "The text channel notifications are posted to." },
+        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$", "title": "Server ID", "description": "Your server. Needed for the online-count badge and for message links." },
+        "inviteUrl": { "type": "string", "maxLength": 200, "title": "Invite link", "description": "An https://discord.gg/… invite shown on the community badge." }
+      },
+      "additionalProperties": false
+    }
+  }
+}
