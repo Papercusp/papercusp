@@ -34,6 +34,7 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { loadObservationPractice } from './observation-practice.js';
 
 // ─── G3: untrusted-peer-content delimiter convention (P-010) ────────────────
 //
@@ -309,93 +310,6 @@ export interface BuildPromptInput {
    */
   featureOrigin?: 'local' | 'remote' | string | null;
 }
-
-/**
- * The friction TRIP-WIRE for the SHARED bee base (self-learning-central P-001/A,
- * D-006). Emitted into `buildPrompt` for every spawned bee — the same shared
- * base that already carries the "Memory discipline" clause — so every
- * operator-launched agent inherits it regardless of role. Near-zero cost on a
- * no-friction turn: the model reads it, sees nothing matching, moves on. It is a
- * trip-wire, NOT a per-turn reflection pass (the reflection STEP fires once at the
- * work-item-completion boundary, off `work_items:complete`).
- *
- * This is the SINGLE source of the one-liner: operator-core's
- * `renderFrictionTripwire()` (the operator-brain base) re-exports THIS constant so
- * the brain + the bee base can't desync. (operator-core depends on
- * @papercusp/orchestrator, not the reverse, so the constant lives here to avoid a
- * cycle.) Markers are summarised inline; the full universal-vs-pipeline split +
- * the completion-boundary reflect step live in operator-core's friction-markers.ts.
- */
-export const FRICTION_TRIPWIRE = [
-  '## Bug + friction trip-wire (self-learning loop)',
-  '',
-  'FILING IS NOT A JUDGMENT CALL. The moment you believe you saw a bug, FILE it — the only',
-  'judgment call is fix-it-now vs leave-it-filed; deciding not to fix it yourself NEVER licenses',
-  'not filing. A "bug" includes SUB-OPTIMAL, not just broken: a false alarm / wrong reading from',
-  'any monitor or tracker (a false alarm is itself a bug in the alarm), degraded latency, a flap',
-  'or error that self-recovered, unresponsiveness under load — this system is meant to stay',
-  'responsive at ANY load, so load-correlated misbehavior is a bug to FILE, not weather to shrug',
-  'off. Banned skip-reasons that are NOT a root cause: "transient", "it recovered on its own",',
-  '"it didn\'t block me", "just load", "not my lane", "the watchdog probably caught it" (a watchdog',
-  'that SHOULD have caught it and did not is a SECOND bug — file both). Dedup is one cheap search;',
-  'a dropped signal is not recoverable.',
-  'Route every noticing to exactly ONE durable record:',
-  '• A suspected BUG → `improvements:capture { kind:"bug", title, body:<evidence> }` — whether the',
-  '  fix is known or NOT (unknown cause: say so in the body; a suspected-but-unproven bug is still',
-  '  filed). If the fix is SMALL + in your current scope you MAY fix it inline instead and record',
-  '  it (the work-item rule) — an inline fix still leaves a ledger record; zero records is never',
-  '  an option.',
-  '• Friction with a SPECIFIC, plausible fix that is OUT of scope / a detour → `improvements:capture',
-  '  { kind:change|feature, title, body:<the fix> }`. It enters the work queue — filing is NOT a',
-  '  commitment to fix it this turn.',
-  '• A NON-bug noticing with no specific fix yet → `improvements:capture { lane:"observation", title }`',
-  '  — a cheap pre-idea Scout reads (do not rabbit-hole off your real task).',
-  'One signal → one record (never two). Bar — applies to FRICTION only, NEVER to a suspected bug:',
-  'a GENUINE, REPEATABLE issue the next agent would hit too, not a self-inflicted slip.',
-  "Don't reflect every turn; just trip on real friction.",
-].join('\n');
-
-/**
- * OBSERVATION_RUBRIC_NUDGE — the "check for a rubric before filing an observation" clause every
- * agent shares (rubric-driven-observations-2026-06-20 P-005 / D-001 / D-003).
- *
- * The HOW-to-grade sibling of FRICTION_TRIPWIRE (both prime `improvements:capture`): when an agent
- * files a turn-end observation, it should FIRST check `rubrics:list` for an ACTIVE rubric covering
- * the characteristic it observed and — if one fits — file a STRUCTURED observation graded against
- * it (rubricRef + per-criterion ratings + mandatory evidence), turning an anecdote into a
- * measurement Scout + the Queen can compare over time. FREE-TEXT stays FIRST-CLASS: a novel finding
- * with no rubric yet is exactly what free-text observations are for, so the nudge augments, never
- * forces. Grading uses an EXISTING active rubric; AUTHORING one is a separate step the Queen
- * ratifies (D-001) — never invented inline here.
- *
- * Field contract (P-001 / D-003, owned by the observation schema): the capture's `observation`
- * object takes `rubricRef: '<rubric_id>'` + `ratings: Record<criterionKey, { rating, evidence }>`
- * — ONE rating per rubric criterion key (a scorecard), rating ∈ healthy|degraded|broken|unknown,
- * evidence non-empty + MANDATORY on every entry (capture rejects an empty-evidence rating).
- * sourceHive auto-derives from ctx, so agents need not pass it. The criterion keys + the per-rubric
- * rating scale come from the rubric itself (`rubrics:get`).
- *
- * Sourced once here (the FRICTION_TRIPWIRE / REUSE_FIRST_NUDGE precedent): injected into the
- * spawned-bee base (buildPromptParts below) + the operator-launched-role base (operator-core's
- * renderObservationRubricNudge) so the two bases can't desync. Non-curator in the spawned base
- * (mirrors the friction trip-wire — curator produces no observations).
- */
-export const OBSERVATION_RUBRIC_NUDGE = [
-  '## Filing an observation? Grade it against a rubric if one fits',
-  '',
-  'When you file a turn-end observation (`improvements:capture { lane: "observation" }`), FIRST',
-  'check `rubrics:list` for an ACTIVE rubric covering the characteristic you observed',
-  '(placement-health, watchdog-determinism, observation-coverage, …). If one fits, file a',
-  'STRUCTURED observation graded against it instead of free-text: set `observation.rubricRef` to',
-  "that rubric's id and `observation.ratings` to a Record keyed by the rubric's criterion keys —",
-  'one `{ rating, evidence }` per criterion you assess, where rating is one of healthy / degraded',
-  '/ broken / unknown and EVIDENCE IS REQUIRED on every rating (name the tool / file / WI / query',
-  '— capture rejects an empty-evidence rating). A structured observation gives Scout and the Queen',
-  'a measurement to compare over time, not an anecdote. If NO active rubric fits what you saw, a',
-  'FREE-TEXT observation stays first-class — rubrics augment, they never replace the novel finding',
-  'that has no standard yet. (Grading uses an EXISTING rubric; proposing a new one is a separate',
-  'step the Queen ratifies, not something you author inline.)',
-].join('\n');
 
 /**
  * YIELD_POLICY — the cooperative-yield behavior every interruptible agent shares
@@ -1406,6 +1320,8 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   // ── CACHEABLE PREAMBLE — ordered by descending stability (P-009) ──────────
   const pre: string[] = [];
   const isQueen = input.role === 'mug';
+  const injectObservationPractice = input.role !== 'curator' && input.role !== 'su';
+  const observationPractice = injectObservationPractice ? loadObservationPractice(input.harnessDir) : null;
 
   // 1. Role prompt file(s) (always — caller asserts they exist), unless
   //    the caller supplied an inline prompt (chunk-loop driver, etc.).
@@ -1519,9 +1435,9 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     near-zero one-liner: trip on real friction, file it via improvements:capture,
   //     do NOT reflect every turn. Curator (no work output) skips it, mirroring the
   //     memory-discipline gate above.
-  if (input.role !== 'curator') {
+  if (injectObservationPractice) {
     pre.push('\n---');
-    pre.push(FRICTION_TRIPWIRE);
+    pre.push(observationPractice!.frictionTripwire);
   }
 
   // 3b-bis. Observation-rubric nudge (rubric-driven-observations P-005, D-001/D-003) — the
@@ -1530,11 +1446,11 @@ export function buildPromptParts(input: BuildPromptInput): PromptParts {
   //     file a STRUCTURED observation (rubricRef + per-criterion ratings + evidence) if an
   //     active rubric fits; free-text stays first-class otherwise. Non-curator (mirrors the
   //     friction gate — curator produces no observations). Sourced from the one
-  //     OBSERVATION_RUBRIC_NUDGE constant so the bee base + operator-launched-role base
+  //     identity-owned observation practice so the bee base + operator-launched-role base
   //     (operator-core renderObservationRubricNudge) can't desync.
-  if (input.role !== 'curator') {
+  if (injectObservationPractice) {
     pre.push('\n---');
-    pre.push(OBSERVATION_RUBRIC_NUDGE);
+    pre.push(observationPractice!.observationRubricNudge);
   }
 
   // 3c. Yield policy (turn-lifecycle-control P-017, D-007/D-009) — the dual of

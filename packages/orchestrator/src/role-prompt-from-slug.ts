@@ -45,9 +45,9 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // reuses the SAME string the spawned-bee base emits.
 // REUSE_FIRST_NUDGE (the soft "extend, don't fork" clause) rides it too — operator-core's
 // renderReuseFirstNudge reuses the SAME string the spawned-bee base emits.
-// OBSERVATION_RUBRIC_NUDGE (the "check rubrics:list before filing an observation; grade
-// structured if one fits" clause) rides it too — operator-core's renderObservationRubricNudge
-// reuses the SAME string the spawned-bee base emits.
+// The identity-owned observation practice loader rides it too — operator-core's
+// renderObservationRubricNudge / renderFrictionTripwire wrappers read the same selected
+// `su.practice.md` sections the spawned-bee base emits.
 // CONCURRENCY_FIRST_NOTE (the "never wait for a 'calm window'; a non-resource block is a BUG to
 // fix, not wait out; massive concurrency is the design" clause) rides it too — operator-core's
 // renderConcurrencyFirstNote reuses the SAME string the spawned-bee base emits.
@@ -72,7 +72,8 @@ import { resolvePromptFile, resolvePromptFiles } from './prompt-resolve';
 // notice the moment you notice it; route signal→improvements:capture / problem→issue / how-it-works→doc"
 // clause, P-017) ride it too — operator-core's renderPlanDisciplineNote / renderObservationCaptureNote
 // reuse the SAME strings the spawned-bee base emits.
-export { FRICTION_TRIPWIRE, YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, WRITE_THROUGH_NOTE, PLAN_DISCIPLINE_NOTE, OBSERVATION_CAPTURE_NOTE, OBSERVATION_RUBRIC_NUDGE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE, COUPLING_NOTE, STATE_PLANE_NOTE, PEER_REPLY_PRIORITY_NOTE } from './prompt-build';
+export { YIELD_POLICY, TESTING_STANDARD, VERIFICATION_STANDARD, ACCOUNT_ROUTING_NOTE, EVIDENCE_DISCIPLINE_NOTE, DEPLOY_PIPELINE_NOTE, REUSE_FIRST_NUDGE, WORK_RECORD_NOTE, WRITE_THROUGH_NOTE, PLAN_DISCIPLINE_NOTE, OBSERVATION_CAPTURE_NOTE, CONCURRENCY_FIRST_NOTE, CODE_RUN_NUDGE, FINISH_THE_ROLLOUT_NOTE, AGENT_ACTIVITY_TRUTH_NOTE, WAIT_LOOP_NOTE, PEER_WAKE_NOTE, COUPLING_NOTE, STATE_PLANE_NOTE, PEER_REPLY_PRIORITY_NOTE } from './prompt-build';
+export { loadObservationPractice } from './observation-practice.js';
 // resolvePromptFile rides the same entry: operator-core's workspace-level
 // (harness-less) role launch resolves the spawn persona directly
 // (hive-agent-tabs P-003) without importing the heavy orchestrator root.
