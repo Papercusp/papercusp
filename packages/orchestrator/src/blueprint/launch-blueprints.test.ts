@@ -113,6 +113,24 @@ test('implement declares its learning-system gym block (FB-23 / P-048): drill-gr
   );
 });
 
+test('judge roles declare the shared domain plus exactly one mission practice identity (R-3)', () => {
+  const missions = [
+    ['gym', 'judge-gym'],
+    ['ensemble-solve', 'judge-ensemble'],
+  ] as const;
+  for (const [blueprintId, practiceId] of missions) {
+    const { blueprint, validation } = loadBuiltinBlueprint(blueprintId);
+    assert.equal(validation.ok, true, `${blueprintId} validation: ${JSON.stringify(validation.errors)}`);
+    const judge = blueprint.roles.find((role) => role.id === 'judge');
+    assert.ok(judge, `${blueprintId} declares a judge role`);
+    assert.deepEqual(
+      judge.stack,
+      [`domain:judge-domain`, `practice:${practiceId}`],
+      `${blueprintId} judge wears one domain and one mission practice`,
+    );
+  }
+});
+
 test('a user fork (extends: deploy) can swap the launched role without code', () => {
   // The forkability the unify plan buys: a fork declares a different role + model.
   const forked = resolveBlueprint({

@@ -1,0 +1,11 @@
+# Mission practice identity for plan acceptance judges.
+id: judge-acceptance
+extends: base
+version: 0.1.0
+visibility: public
+description: >-
+  IDENTITY (abstract — a layer, never runnable alone): the acceptance-grading
+  practice for a judge evaluating a frozen plan rubric.
+
+slots:
+  - slot: practice
