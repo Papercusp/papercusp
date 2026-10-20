@@ -162,6 +162,104 @@
       }
     },
     {
+      "name": "crawl",
+      "description": "Crawl a site from a starting URL and return the content of every page reached, in one call. Starts a Firecrawl crawl job and waits for it (bounded: at most 100 pages, default 10; depth default 2). A crawl that outlives the wait budget is cancelled and its partial pages are returned with incomplete:true. Every page costs a Firecrawl credit — scope with includePaths/excludePaths and a small limit. Requires FIRECRAWL_API_KEY.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "limit": {
+            "type": "number",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Max pages to crawl (each page costs a credit). Clamped to 1..100."
+          },
+          "maxDepth": {
+            "type": "number",
+            "default": 2,
+            "minimum": 0,
+            "maximum": 10,
+            "description": "Max link depth from the starting URL. Clamped to 0..10."
+          },
+          "includePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Regex patterns; only URL paths matching one are crawled (e.g. \"^/docs/.*\")."
+          },
+          "excludePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Regex patterns; URL paths matching one are skipped."
+          },
+          "formats": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "markdown",
+                "html",
+                "rawHtml",
+                "links"
+              ]
+            },
+            "default": [
+              "markdown"
+            ]
+          },
+          "onlyMainContent": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "capabilities": [
+        "tools:firecrawl:crawl",
+        "http:fetch:api.firecrawl.dev",
+        "secrets:read:FIRECRAWL_API_KEY"
+      ],
+      "roles": [
+        "scoper",
+        "architect",
+        "operator"
+      ],
+      "rolesQuota": {
+        "scoper": {
+          "perRun": 2
+        },
+        "architect": {
+          "perRun": 3
+        }
+      },
+      "timeoutSec": 300,
+      "expose": {
+        "http": {
+          "path": "/api/plugins/firecrawl-bridge/crawl",
+          "methods": [
+            "POST"
+          ]
+        },
+        "mcp": {
+          "name": "firecrawl.crawl",
+          "largeOutput": true
+        }
+      },
+      "guidance": {
+        "when": "Pull the content of a whole section of a site (a docs tree, a blog) in one call, when you need the pages themselves and not just their URLs.",
+        "notWhen": "To only list URLs, use `firecrawl.map` (no per-page cost). For one or two known pages, use `firecrawl.scrape` or `fetch_plus.fetch_clean`.",
+        "chaining": "Run `firecrawl.map` first to see the site's shape, then crawl with includePaths and a small limit."
+      }
+    },
+    {
       "name": "map",
       "description": "Discover all URLs reachable from a starting URL — fast, no scraping. Use to plan a crawl or to enumerate a doc-site's pages before fetching specific ones.",
       "inputSchema": {
@@ -230,6 +328,16 @@
         "type": "number",
         "default": 50000,
         "description": "Outputs smaller than this returned inline; larger ones written to .papercusp/scratch/."
+      },
+      "crawlPollIntervalMs": {
+        "type": "number",
+        "default": 2000,
+        "description": "How often crawl polls the Firecrawl crawl job for status."
+      },
+      "crawlMaxWaitSec": {
+        "type": "number",
+        "default": 240,
+        "description": "How long crawl waits for the job before cancelling it and returning partial pages (capped at 280, under the tool's 300s timeout)."
       }
     }
   }

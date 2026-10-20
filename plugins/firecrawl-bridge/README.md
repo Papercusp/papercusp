@@ -2,12 +2,13 @@
 
 Managed [Firecrawl](https://firecrawl.dev) access for heavy research workloads — PDFs, JS-rendered pages, schema-driven extraction, site mapping. Use `fetch-plus` first; reach for this when fetch-plus's Jina Reader isn't enough.
 
-Three functions, all projected on HTTP + MCP:
+Four functions, all projected on HTTP + MCP:
 
 | Tool | Endpoint | Purpose |
 |---|---|---|
 | `firecrawl.scrape` | `/api/plugins/firecrawl-bridge/scrape` | One URL → markdown/html/screenshot/links |
 | `firecrawl.extract` | `/api/plugins/firecrawl-bridge/extract` | URL(s) + JSON schema → structured JSON via LLM extraction |
+| `firecrawl.crawl` | `/api/plugins/firecrawl-bridge/crawl` | Starting URL → content of every page reached (bounded: ≤100 pages, default 10) |
 | `firecrawl.map` | `/api/plugins/firecrawl-bridge/map` | Discover URLs reachable from a starting page |
 
 ## When to use
@@ -16,6 +17,7 @@ Three functions, all projected on HTTP + MCP:
 - **firecrawl scrape**: PDFs, JS-rendered SPAs, screenshots. Use when fetch-plus fails.
 - **firecrawl extract**: structured data extraction with a JSON schema (e.g. "give me an array of `{name, price, url}` from this product listing").
 - **firecrawl map**: enumerate a doc-site's pages before crawling.
+- **firecrawl crawl**: pull the content of a whole site section in one call. It starts a Firecrawl crawl job and waits for it. Every page costs a credit, so the bridge caps a call at 100 pages (default 10) and depth 10 (default 2) regardless of Firecrawl's own 10,000-page default. Scope it with `includePaths` / `excludePaths`. A job still running after `crawlMaxWaitSec` is cancelled remotely (`DELETE /v1/crawl/{id}`) and the pages collected so far come back with `incomplete: true`. Pagination links are only followed on the `apiBase` origin, because they carry the API key.
 
 ## Setup
 
@@ -34,8 +36,9 @@ Free tier handles light use; check [firecrawl.dev/pricing](https://firecrawl.dev
 | scrape | 2/chunk | 10/run | 15/run | 5/run | 10/run |
 | extract | — | 5/run | 10/run | — | — |
 | map | — | 5/run | 5/run | — | — |
+| crawl | — | 2/run | 3/run | — | — |
 
-`extract` and `map` are planning tools — only scoper/architect/operator have access. `scrape` is broadly available since it's the workhorse.
+`extract`, `map` and `crawl` are planning tools — only scoper/architect/operator have access. `scrape` is broadly available since it's the workhorse.
 
 ## Usage
 
@@ -85,7 +88,9 @@ Per-harness settings at `<stateDir>/plugins/@papercupai_firecrawl-bridge/config.
 ```json
 {
   "apiBase": "https://api.firecrawl.dev",
-  "inlineThresholdChars": 50000
+  "inlineThresholdChars": 50000,
+  "crawlPollIntervalMs": 2000,
+  "crawlMaxWaitSec": 240
 }
 ```
 
