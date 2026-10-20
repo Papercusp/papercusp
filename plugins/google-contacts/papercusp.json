@@ -1,0 +1,37 @@
+{
+  "kind": "plugin",
+  "name": "google-contacts",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Google Contacts as a first-party provider: the account's contacts become contact records in the owner's Personal Vault. Shares the one Google grant with Gmail and Calendar (credential group google). Synced by the host's connector driver; the plugin only maps the People API.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "contacts",
+    "contractVersion": 1,
+    "displayName": "Google Contacts",
+    "datatypes": ["contact"],
+    "capabilities": ["contacts.read"],
+    "oauth": {
+      "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+      "tokenUrl": "https://oauth2.googleapis.com/token",
+      "scopes": ["https://www.googleapis.com/auth/contacts.readonly"],
+      "pkce": true,
+      "clientRegistrationRef": "google",
+      "credentialGroup": "google",
+      "personalAccountDomains": ["gmail.com", "googlemail.com"]
+    },
+    "egressHosts": ["people.googleapis.com", "accounts.google.com", "oauth2.googleapis.com"],
+    "defaultDestinations": { "contact": ["document", "event"] },
+    "configSchema": {
+      "type": "object",
+      "properties": {
+        "capabilityEnabled": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

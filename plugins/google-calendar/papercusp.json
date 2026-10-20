@@ -25,6 +25,7 @@
       "pkce": true,
       "clientRegistrationRef": "google",
       "credentialGroup": "google",
+      "personalAccountDomains": ["gmail.com", "googlemail.com"],
       "identity": {
         "url": "https://www.googleapis.com/calendar/v3/calendars/primary",
         "idField": "id",

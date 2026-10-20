@@ -34,6 +34,7 @@
       "pkce": true,
       "clientRegistrationRef": "google",
       "credentialGroup": "google",
+      "personalAccountDomains": ["gmail.com", "googlemail.com"],
       "identity": {
         "url": "https://gmail.googleapis.com/gmail/v1/users/me/profile",
         "idField": "emailAddress",
