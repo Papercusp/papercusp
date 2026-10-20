@@ -777,11 +777,12 @@ export const REUSE_FIRST_NUDGE = [
   '',
   'Before introducing a new durable surface — a table, tool/verb, service, cron/routine,',
   'config key, abstraction, or parallel "system" — first look for an existing one to extend',
-  '(search the codebase + docs first, e.g. `search:semantic`, the docs, gitnexus, repomix),',
+  '(search the codebase + docs first, e.g. `lsp:query`, `graph:query`, `tools:find`, `search:semantic`),',
   'and prefer the smallest extension over a new parallel one. Most "I need a new X" is really',
   '"one more field / case / option on an existing X." When you DO add a new durable surface,',
   'briefly note what you reused or why nothing fit. A new system that duplicates an existing',
   'surface is a top review smell.',
+  "Writing a plan? Record that search in its `## Existing infrastructure reused` section (plans:new scaffolds it).",
 ].join('\n');
 
 /**
