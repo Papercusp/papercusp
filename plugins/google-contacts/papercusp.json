@@ -16,13 +16,14 @@
     "datatypes": ["contact"],
     "capabilities": ["contacts.read"],
     "oauth": {
-      "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+      "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&include_granted_scopes=true&prompt=select_account%20consent",
       "tokenUrl": "https://oauth2.googleapis.com/token",
       "scopes": ["https://www.googleapis.com/auth/contacts.readonly"],
       "pkce": true,
       "clientRegistrationRef": "google",
       "credentialGroup": "google",
-      "personalAccountDomains": ["gmail.com", "googlemail.com"]
+      "personalAccountDomains": ["gmail.com", "googlemail.com"],
+      "legacyCredentialPlugins": ["google-workspace"]
     },
     "egressHosts": ["people.googleapis.com", "accounts.google.com", "oauth2.googleapis.com"],
     "defaultDestinations": { "contact": ["document", "event"] },

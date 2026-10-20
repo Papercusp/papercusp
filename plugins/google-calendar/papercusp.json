@@ -16,7 +16,7 @@
     "datatypes": ["calendar-event"],
     "capabilities": ["calendar.read", "calendar.write", "sync.adopt"],
     "oauth": {
-      "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth",
+      "authorizeUrl": "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&include_granted_scopes=true&prompt=select_account%20consent",
       "tokenUrl": "https://oauth2.googleapis.com/token",
       "scopes": [
         "https://www.googleapis.com/auth/calendar.readonly",
@@ -26,6 +26,7 @@
       "clientRegistrationRef": "google",
       "credentialGroup": "google",
       "personalAccountDomains": ["gmail.com", "googlemail.com"],
+      "legacyCredentialPlugins": ["google-workspace"],
       "identity": {
         "url": "https://www.googleapis.com/calendar/v3/calendars/primary",
         "idField": "id",
