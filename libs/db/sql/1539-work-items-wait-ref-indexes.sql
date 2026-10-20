@@ -15,9 +15,14 @@
 --     rows (1,018 rows carry `claim_hold_release`).
 --
 -- WHAT. Two partial expression indexes the rewritten queries match exactly:
---   * a GIN jsonb_path_ops index on `payload -> 'externalBlockers'`, partial on
---     `payload ? 'externalBlockers'`, serving
---     `payload -> 'externalBlockers' @> '[{"kind":"event","ref":<key>,"status":"active"}]'`;
+--   * a GIN jsonb_path_ops index on `payload -> 'externalBlockers'`, partial on that
+--     expression being NOT NULL, serving
+--     `payload -> 'externalBlockers' @> '[{"kind":"event","ref":<key>,"status":"active"}]'`.
+--     The predicate is deliberately NOT 1475's `payload ? 'externalBlockers'`: the
+--     planner proves `IS NOT NULL` from the strict `@>` alone, so the lookup carries no
+--     `?` clause and 1475's btree (which only filters the same rows) is never a candidate.
+--     Measured: with both indexes usable the planner's costs differed by 1.6 (9.94 vs
+--     11.50) and a fresh database picked the btree;
 --   * a btree on `payload -> 'claim_hold_release' ->> 'trigger'`, partial on
 --     `payload ? 'claim_hold_release'`, serving the trigger equality.
 -- Both partial sets grow only with rows that ever carried a blocker / a durable park,
@@ -28,7 +33,7 @@
 CREATE INDEX IF NOT EXISTS work_items_external_blockers_gin_idx
   ON harness_shared.work_items
   USING gin ((payload -> 'externalBlockers') jsonb_path_ops)
-  WHERE (payload ? 'externalBlockers');
+  WHERE ((payload -> 'externalBlockers') IS NOT NULL);
 
 CREATE INDEX IF NOT EXISTS work_items_claim_hold_release_trigger_idx
   ON harness_shared.work_items
