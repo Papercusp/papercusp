@@ -1,30 +1,49 @@
 {
-  "kind": "plugin", "name": "discord", "version": "0.1.0", "papercusp": "^0.1.0",
-  "description": "Post notifications to a Discord channel as your bot, and read your server's public online count for the community badge. Fixture-verified; not live-verified.",
+  "kind": "plugin", "name": "discord", "version": "0.2.0", "papercusp": "^0.1.0",
+  "description": "Run your bot in your Discord server: read members' messages, reply to them, post notifications, and show the server's public online count. Fixture-verified; not live-verified.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",
   "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
   "capabilities": [], "tools": [],
   "provider": {
-    "id": "discord", "contractVersion": 1, "displayName": "Discord", "datatypes": ["notification"], "sync": false,
-    "capabilities": ["notify.send", "community.presence"], "egressHosts": ["discord.com"],
+    "id": "discord", "contractVersion": 1, "displayName": "Discord", "datatypes": ["notification", "chat-message"], "sync": false,
+    "capabilities": ["notify.send", "community.presence", "ingress.normalize", "chat.reply"], "egressHosts": ["discord.com"],
+    "defaultDestinations": { "chat-message": ["document", "event"] },
     "verification": {
-      "verifiedAt": "2026-10-20", "capabilities": { "notify.send": "2026-10-20", "community.presence": "2026-10-20" },
+      "verifiedAt": "2026-10-20",
+      "capabilities": { "notify.send": "2026-10-20", "community.presence": "2026-10-20", "ingress.normalize": "2026-10-20", "chat.reply": "2026-10-20" },
       "sources": [
         "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/resources/message.mdx",
         "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/resources/guild.mdx",
-        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/topics/rate-limits.mdx"
+        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/topics/rate-limits.mdx",
+        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/events/gateway.mdx",
+        "https://raw.githubusercontent.com/discord/discord-api-docs/main/developers/events/gateway-events.mdx"
       ]
     },
     "setup": { "credentials": [{
       "key": "bot_token", "label": "Discord bot token", "hosts": ["discord.com"], "auth": { "header": "authorization", "scheme": "bot" },
-      "help": "Create an application, add a bot, copy its token, and invite the bot to your server with the Send Messages permission. The host stores the token and sends it as Authorization: Bot.",
+      "help": "Create an application, add a bot, turn on its Message Content intent, copy its token, and invite it to your server with the View Channels, Read Message History and Send Messages permissions. The host stores the token and sends it as Authorization: Bot.",
       "helpUrl": "https://discord.com/developers/applications"
     }] },
+    "ingress": {
+      "socket": {
+        "credential": "bot_token",
+        "open": { "url": "https://discord.com/api/v10/gateway/bot", "method": "GET", "urlField": "url", "query": { "v": "10", "encoding": "json" } },
+        "reconnect": { "field": "op", "values": ["7", "9"] },
+        "session": {
+          "hello": { "match": { "field": "op", "values": ["10"] }, "intervalPath": "d.heartbeat_interval" },
+          "identify": { "frame": { "op": 2, "d": { "token": "{{credential}}", "intents": 37377, "properties": { "os": "linux", "browser": "papercusp", "device": "papercusp" } } } },
+          "heartbeat": { "frame": { "op": 1, "d": "{{sequence}}" }, "requestMatch": { "field": "op", "values": ["1"] } },
+          "sequencePath": "s",
+          "deliver": { "field": "op", "values": ["0"] }
+        }
+      }
+    },
     "configSchema": {
       "type": "object",
       "properties": {
         "channelId": { "type": "string", "pattern": "^[0-9]{17,20}$", "title": "Channel ID", "description": "The text channel notifications are posted to." },
-        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$", "title": "Server ID", "description": "Your server. Needed for the online-count badge and for message links." },
+        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$", "title": "Server ID", "description": "Your server. Needed for the online-count badge and message links; when set, only this server's messages are read (direct messages always are)." },
+        "botUserId": { "type": "string", "pattern": "^[0-9]{17,20}$", "title": "Bot user ID", "description": "Your bot's own user ID, so a message that @mentions it is recorded as a mention." },
         "inviteUrl": { "type": "string", "maxLength": 200, "title": "Invite link", "description": "An https://discord.gg/… invite shown on the community badge." }
       },
       "additionalProperties": false

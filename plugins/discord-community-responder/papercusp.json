@@ -1,0 +1,98 @@
+{
+  "$schema": "https://papercuspai.com/schema/papercusp-plugin.schema.json",
+  "kind": "plugin",
+  "name": "@papercupai/discord-community-responder",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Starter trigger pack: a member @mentioning your Discord bot launches a plan that answers them with a reply to their message.",
+  "author": "Papercusp",
+  "publisher": "@papercupai",
+  "license": "MIT",
+  "versionPin": { "mode": "exact" },
+  "capabilities": [],
+  "triggerPack": {
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "responseGuidance": {
+          "type": "string",
+          "title": "Reply guidance",
+          "default": "Friendly, concise, and specific to the member's question. Point to the docs when they answer it.",
+          "maxLength": 1000
+        }
+      }
+    },
+    "defaultStormPolicy": {
+      "maxRuns": 10,
+      "windowSeconds": 60
+    },
+    "targets": [
+      {
+        "id": "member-reply",
+        "kind": "plan",
+        "path": "plan.md",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["trigger"],
+          "properties": {
+            "trigger": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["key", "source", "event", "sourceId", "externalId", "dedupeKey"],
+              "properties": {
+                "key": { "const": "ext:discord:mention" },
+                "source": { "const": "discord" },
+                "event": { "const": "mention" },
+                "sourceId": { "type": "string", "minLength": 1 },
+                "externalId": { "type": "string", "minLength": 1 },
+                "dedupeKey": { "type": "string", "minLength": 1 },
+                "payload": {
+                  "type": "object",
+                  "datatype": "chat-message",
+                  "additionalProperties": true,
+                  "required": ["id", "channelId", "threadId", "text"],
+                  "properties": {
+                    "id": { "type": "string", "minLength": 1 },
+                    "channelId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+                    "threadId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+                    "text": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            },
+            "responseGuidance": {
+              "type": "string",
+              "maxLength": 1000,
+              "default": "Friendly, concise, and specific to the member's question. Point to the docs when they answer it."
+            }
+          }
+        }
+      }
+    ],
+    "bindings": [
+      {
+        "id": "discord-mention-to-member-reply",
+        "source": {
+          "kind": "external",
+          "sourceKind": "discord"
+        },
+        "target": "member-reply",
+        "eventPattern": "ext:discord:mention",
+        "filter": {
+          "all": [
+            { "channelId": { "exists": true } },
+            { "threadId": { "exists": true } },
+            { "text": { "exists": true } }
+          ]
+        },
+        "mapping": {
+          "mode": "payload-context"
+        }
+      }
+    ],
+    "edges": []
+  },
+  "icon": "MessageSquareReply"
+}
