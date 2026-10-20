@@ -93,9 +93,13 @@ function normalizeContact(person) {
   const phones = values(person.phoneNumbers, 'value');
   const organizations = values(person.organizations, 'name');
   const displayName = values(person.names, 'displayName')[0] || null;
+  // `id` is the canonical `contact` datatype's one required field; the person's resourceName is
+  // its only stable identifier. `resourceName` stays alongside it for the Google-native reader.
   return {
+    id: resourceName,
+    source: 'google-contacts',
     resourceName,
-    displayName,
+    ...(displayName ? { displayName } : {}),
     emails,
     phones,
     organizations,
