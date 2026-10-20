@@ -1,7 +1,7 @@
 /**
  * EI-10946 — THE SPINE MUST NEVER ADVERTISE A CREATE AND HIDE ITS UNDO.
  *
- * The seeded tool surface (`CORE_MCP_TOOL_NAMES`) is a SUBSET of the ~581-tool catalog. A
+ * The seeded tool surface (`CORE_MCP_TOOL_NAMES`) is a SUBSET of the full tool catalog. A
  * trimmed client's tool-search only sees that subset, so a zero-hit search is
  * INDISTINGUISHABLE from "the tool does not exist" — and agents, correctly trusting the
  * system, conclude the capability is absent and build a strictly-worse workaround.
