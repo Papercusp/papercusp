@@ -247,6 +247,17 @@ test('findPriorRunForIdempotency — reconstructs InvokeResult from a prior run 
   assert.equal(r?.durationMs, 42);
 });
 
+test('findPriorRunForIdempotency — an unavailable prior outcome refuses another spawn', async () => {
+  const unavailable = new Error('connection lost while reading prior result');
+  const fakePg = (() => Promise.reject(unavailable)) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
+  await assert.rejects(
+    findPriorRunForIdempotency(fakePg, 'ws', 'h', 'completed-run', 'worker', () => {}),
+    (error: unknown) => error instanceof Error
+      && /idempotency lookup unavailable.*refusing to spawn/.test(error.message)
+      && error.cause === unavailable,
+  );
+});
+
 test('findPriorRunForIdempotency — returns null when no prior run (→ caller spawns)', async () => {
   const fakePg = (() => Promise.resolve([])) as unknown as Parameters<typeof findPriorRunForIdempotency>[0];
   const r = await findPriorRunForIdempotency(fakePg, 'ws', 'h', 'k', 'worker', () => {});

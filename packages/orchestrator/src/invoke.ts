@@ -2658,8 +2658,10 @@ export async function findPriorRunForIdempotency(
     const { readRunOutputPg } = await import('./run-output-pg');
     prior = await readRunOutputPg({ pg, workspaceId, harnessSlug }, runId);
   } catch (err) {
-    log(`  idempotency lookup failed (non-fatal, proceeding to spawn): ${(err as Error).message}`);
-    return null;
+    // An unavailable outcome is not an absent outcome. Let the durable caller
+    // retry the lookup instead of repeating a possibly completed agent run.
+    log(`  idempotency lookup unavailable; refusing to spawn ${runId}: ${(err as Error).message}`);
+    throw new Error(`idempotency lookup unavailable for ${runId}; refusing to spawn`, { cause: err });
   }
   if (!prior) return null;
   // An empty-output prior run is not a meaningful completed run (the agent
