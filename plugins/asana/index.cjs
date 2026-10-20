@@ -734,17 +734,23 @@ async function unsubscribePush(request, host) {
 /** OAuth external.gid is lookup, not an exactly-once POST guarantee. The host
  * commits an attempt first; later invocations use recoveryOnly and never POST.
  * The project is `containerId` (the provider-neutral name the ticket:file tool passes,
- * D-012) or the older `projectGid`; either must be one of the source's configured projects. */
+ * D-012) or the older `projectGid`; either must be one of the source's configured projects.
+ * `assignee: 'self'` assigns the task to the connected account (Asana's `me`), the account whose
+ * tasks sync with selfRoles ['assignee']. The receipt says `assignee: 'self'` only when Asana
+ * reports that assignment, on a create or on a recovered task. */
 async function createTicket(request, host) {
   const args = request.args || {};
   const correlationId = text(args.correlationId);
   const projectGid = text(args.containerId) || text(args.projectGid);
   const title = text(args.title);
+  const assignSelf = args.assignee === 'self';
   if (!correlationId || correlationId.length > 1024) throw new Error('ticket_create_correlation_required');
   if (!projectGid || !projectsOf(request.config).includes(projectGid)) throw new Error('ticket_create_project_out_of_scope');
   if (!title || title.length > 200 || typeof args.body !== 'string' || args.body.length > 30000) throw new Error('ticket_create_content_invalid');
+  if (args.assignee !== undefined && args.assignee !== null && !assignSelf) throw new Error('ticket_create_assignee_invalid');
+  const assigneeField = assignSelf ? ',assignee.gid' : '';
   const found = await rest(host, request.source, 'GET', `/tasks/${encodeURIComponent(`external:${correlationId}`)}`, {
-    query: { opt_fields: 'gid,permalink_url,memberships.project.gid' }, allow: [404],
+    query: { opt_fields: `gid,permalink_url,memberships.project.gid${assigneeField}` }, allow: [404],
   });
   if (found.status !== 404) {
     const task = found.body.data;
@@ -752,16 +758,26 @@ async function createTicket(request, host) {
       || !task.memberships.some((m) => text(m && m.project && m.project.gid) === projectGid)) {
       throw new Error('ticket_create_recovery_scope_invalid');
     }
-    return { externalRef: text(task.gid), url: text(task.permalink_url), recovered: true };
+    const receipt = { externalRef: text(task.gid), url: text(task.permalink_url), recovered: true };
+    if (assignSelf) {
+      const assigneeGid = text(task.assignee && task.assignee.gid);
+      if (assigneeGid && assigneeGid === await selfGid(host, request.source)) receipt.assignee = 'self';
+    }
+    return receipt;
   }
   if (args.recoveryOnly === true) return { pendingReconciliation: true };
+  const data = { name: title, notes: args.body, projects: [projectGid], external: { gid: correlationId } };
+  if (assignSelf) data.assignee = 'me';
   const res = await rest(host, request.source, 'POST', '/tasks', {
-    query: { opt_fields: 'gid,permalink_url' },
-    body: { data: { name: title, notes: args.body, projects: [projectGid], external: { gid: correlationId } } },
+    query: { opt_fields: `gid,permalink_url${assigneeField}` },
+    body: { data },
   });
   const task = res.body.data;
   if (!task || !text(task.gid)) throw new Error('ticket_create_receipt_missing');
-  return { externalRef: text(task.gid), url: text(task.permalink_url), recovered: false };
+  const receipt = { externalRef: text(task.gid), url: text(task.permalink_url), recovered: false };
+  // `me` is the authenticated account by Asana's contract, so a returned assignee confirms it.
+  if (assignSelf && text(task.assignee && task.assignee.gid)) receipt.assignee = 'self';
+  return receipt;
 }
 
 const INVOKERS = {

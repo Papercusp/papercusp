@@ -136,12 +136,17 @@ const ISSUE_UPDATE = `mutation PapercuspIssueTransition($id: String!, $input: Is
 }`;
 
 const ISSUE_CREATE = `mutation PapercuspIssueCreate($input: IssueCreateInput!) {
-  issueCreate(input: $input) { success issue { id identifier url team { id } } }
+  issueCreate(input: $input) { success issue { id identifier url team { id } assignee { id } } }
 }`;
 
 /** The issue with one exact id, archived ones included; an absent id is an empty list, not an error. */
 const ISSUE_BY_ID_QUERY = `query PapercuspIssueById($id: ID!) {
-  issues(first: 1, includeArchived: true, filter: { id: { eq: $id } }) { nodes { id identifier url team { id } } }
+  issues(first: 1, includeArchived: true, filter: { id: { eq: $id } }) { nodes { id identifier url team { id } assignee { id } } }
+}`;
+
+/** The connected account (`viewer`): the user a `ticket.create { assignee: 'self' }` issue is assigned to. */
+const VIEWER_QUERY = `query PapercuspViewer {
+  viewer { id }
 }`;
 
 const TEAMS_QUERY = `query PapercuspTeams($after: String) {
@@ -662,41 +667,61 @@ async function findIssue(host, source, id) {
   return nodes.find((node) => text(node && node.id) === id) || null;
 }
 
-function recoveredIssue(issue, teamId) {
+/** `viewerId` is set only when the caller asked for `assignee: 'self'`; the receipt then confirms it. */
+function recoveredIssue(issue, teamId, viewerId) {
   if (text(issue.team && issue.team.id) !== teamId) throw new Error('ticket_create_recovery_scope_invalid');
-  return { externalRef: text(issue.id), url: text(issue.url), recovered: true };
+  return withSelfAssignee({ externalRef: text(issue.id), url: text(issue.url), recovered: true }, issue, viewerId);
+}
+
+function withSelfAssignee(receipt, issue, viewerId) {
+  if (viewerId && text(issue.assignee && issue.assignee.id) === viewerId) receipt.assignee = 'self';
+  return receipt;
+}
+
+async function viewerIdOf(host, source) {
+  const data = await gql(host, source, VIEWER_QUERY, {});
+  const id = text(data && data.viewer && data.viewer.id);
+  if (!id) throw syncError('transient', 'linear_unexpected_shape:viewer');
+  return id;
 }
 
 /**
- * `ticket.create { containerId, correlationId, title, body, recoveryOnly? }` -> issueCreate in one of
- * the source's configured teams (`containerId` is the team id the ticket:file tool passes, D-012).
- * The issue id is derived from the correlation id, so the host's commit-then-create attempt recovers
- * instead of duplicating: an existing issue is returned (`recovered`), `recoveryOnly` never creates,
- * and a create that fails after Linear accepted it is answered by the issue it made.
+ * `ticket.create { containerId, correlationId, title, body, recoveryOnly?, assignee? }` -> issueCreate
+ * in one of the source's configured teams (`containerId` is the team id the ticket:file tool passes,
+ * D-012). The issue id is derived from the correlation id, so the host's commit-then-create attempt
+ * recovers instead of duplicating: an existing issue is returned (`recovered`), `recoveryOnly` never
+ * creates, and a create that fails after Linear accepted it is answered by the issue it made.
+ * `assignee: 'self'` assigns the issue to the connected account (the viewer); the receipt says
+ * `assignee: 'self'` only when Linear reports that assignee.
  */
 async function createTicket(request, host) {
   const args = request.args || {};
   const correlationId = text(args.correlationId);
   const teamId = text(args.containerId);
   const title = text(args.title);
+  const assignSelf = args.assignee === 'self';
   if (!correlationId || correlationId.length > 1024) throw new Error('ticket_create_correlation_required');
   if (!teamId || !configuredTeams(request.config).includes(teamId)) throw new Error('ticket_create_project_out_of_scope');
   if (!title || title.length > 200 || typeof args.body !== 'string' || args.body.length > 30000) throw new Error('ticket_create_content_invalid');
+  if (args.assignee !== undefined && args.assignee !== null && !assignSelf) throw new Error('ticket_create_assignee_invalid');
+  const viewerId = assignSelf ? await viewerIdOf(host, request.source) : null;
   const id = issueIdFor(correlationId);
   const found = await findIssue(host, request.source, id);
-  if (found) return recoveredIssue(found, teamId);
+  if (found) return recoveredIssue(found, teamId, viewerId);
   if (args.recoveryOnly === true) return { pendingReconciliation: true };
+  const input = { id, teamId, title, description: args.body };
+  if (viewerId) input.assigneeId = viewerId;
   let data;
   try {
-    data = await gql(host, request.source, ISSUE_CREATE, { input: { id, teamId, title, description: args.body } });
+    data = await gql(host, request.source, ISSUE_CREATE, { input });
   } catch (error) {
     const made = await findIssue(host, request.source, id).catch(() => null);
-    if (made) return recoveredIssue(made, teamId);
+    if (made) return recoveredIssue(made, teamId, viewerId);
     throw error;
   }
   const result = data.issueCreate;
   if (!result || result.success !== true || !result.issue || text(result.issue.id) !== id) throw new Error('ticket_create_receipt_missing');
-  return { externalRef: id, url: text(result.issue.url), recovered: false };
+  return withSelfAssignee({ externalRef: id, url: text(result.issue.url), recovered: false }, result.issue, viewerId);
 }
 
 const INVOKERS = {
