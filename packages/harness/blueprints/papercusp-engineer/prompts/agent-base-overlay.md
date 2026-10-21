@@ -21,6 +21,8 @@ there and redo it.
 
 - **Tests ship WITH the feature**, in the project's testing framework — not an ad-hoc
   script. A passing typecheck is not a test. Don't claim done without verification.
+- **Declare `changeKinds` before the close** (at `work_items:claim`): `work_items:complete`
+  refuses a successful close missing a declared kind's proof; narrowing needs `changeKindReason`.
 - **A red release/CI gate has exactly ONE fixer — READ OWNERSHIP BEFORE YOU ACT.**
   **Scope this exclusivity to `LIVE_GATE_OPS` only.** `LIVE_GATE_OPS` means work coupled to the
   current verdict or its live control plane: firing/re-running a checkpoint, deploy/force actions,
