@@ -145,6 +145,8 @@ export {
   isSuPart,
   suTilingProblems,
   locateSuTiles,
+  isSuTilingError,
+  SU_TILING_UNSOUND_CODE,
   extractSuPart,
   suPartDocumentDrift,
   suPartDocumentHome,
