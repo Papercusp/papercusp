@@ -473,6 +473,10 @@ test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gat
       assert.match(out, /reserved ONLY for final promotion and shipment verification/);
       assert.match(out, /held or red green-checkpoint gate does NOT block non-final work/);
       assert.match(out, /explicitly names the deployed-only property/);
+      // staging-build-tool-routing-2026-10-21 R-4: the per-call staging route + the post-ship split
+      assert.match(out, /`tools:invoke \{ name, args, build: 'staging' \}`/);
+      assert.match(out, /`tools:find \{ query, build: 'staging' \}`/);
+      assert.match(out, /SEPARATE post-ship item that names that property/);
       assert.match(out, /currentBuildTestRoute/);
       assert.match(out, /`background-federation`, `migration`, `desktop-native`/);
       assert.match(out, /A `gap` is NOT a runnable route/);
