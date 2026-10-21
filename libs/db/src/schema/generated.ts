@@ -1963,6 +1963,27 @@ export const cloudResourceObligationsInHarnessShared = harnessShared.table("clou
 	check("cloud_resource_obligations_resource_kind_check", sql`(length(btrim(resource_kind)) >= 1) AND (length(btrim(resource_kind)) <= 80)`),
 ]);
 
+export const codeIntelPushSkipsInHarnessShared = harnessShared.table("code_intel_push_skips", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	epoch: integer().default(0).notNull(),
+	turnId: text("turn_id").notNull(),
+	leg: text().notNull(),
+	subject: text().notNull(),
+	chars: integer().notNull(),
+	budgetLeft: integer("budget_left").notNull(),
+	site: text().notNull(),
+	client: text(),
+	skippedAt: timestamp("skipped_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("code_intel_push_skips_leg_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.leg.asc().nullsLast().op("text_ops"), table.skippedAt.asc().nullsLast().op("timestamptz_ops")),
+	unique("code_intel_push_skips_turn_fact_key").on(table.leg, table.ownerId, table.subject, table.turnId, table.workspaceId),
+	pgPolicy("code_intel_push_skips_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("code_intel_push_skips_chars_nonneg", sql`chars >= 0`),
+	check("code_intel_push_skips_site_known", sql`site = ANY (ARRAY['request-budget'::text, 'turn-budget'::text])`),
+]);
+
 export const codeIntelPushesInHarnessShared = harnessShared.table("code_intel_pushes", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -13399,6 +13420,7 @@ END`),
 	index("wi_admission_first_claim_latency_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.admittedAt.asc().nullsLast().op("timestamptz_ops"), table.firstClaimedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(admitted_at IS NOT NULL)`),
 	index("wi_admission_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdTs.asc().nullsLast().op("int8_ops")).where(sql`(admission = 'pending'::text)`),
 	index("work_items_acceptance_drain_plan_idx").using("btree", sql`workspace_id`, sql`((payload ->> 'acceptanceDrainPlan'::text))`).where(sql`((payload ->> 'acceptanceDrainPlan'::text) IS NOT NULL)`),
+	index("work_items_active_dependency_item_ids_idx").using("gin", sql`harness_shared.active_dependency_blocker_item_ids(payload)`).where(sql`(payload ? 'externalBlockers'::text)`),
 	index("work_items_agent_review_claim_next_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureOrder.asc().nullsLast().op("int4_ops"), table.createdTs.asc().nullsLast().op("int8_ops"), table.featureId.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'feature'::text])) AND ((taken_by IS NULL) OR (btrim(taken_by) = ''::text)) AND ((agent_review_projection ->> 'status'::text) = 'pending'::text))`),
 	index("work_items_author_pubkey_local_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.authorPubkey.asc().nullsLast().op("text_ops")).where(sql`((author_pubkey IS NOT NULL) AND (author_pubkey <> ''::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_authority_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.authority.asc().nullsLast().op("text_ops")).where(sql`(authority IS NOT NULL)`),
