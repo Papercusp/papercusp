@@ -12261,9 +12261,10 @@ export const testExecutedSourcesInHarnessShared = harnessShared.table("test_exec
 	opaqueReasons: text("opaque_reasons").array().default([]).notNull(),
 	runContext: text("run_context"),
 	runnerIdentity: text("runner_identity"),
+	recordedGitDir: text("recorded_git_dir"),
 }, (table) => [
 	index("test_executed_sources_newest_idx").using("btree", table.workspaceName.asc().nullsLast().op("text_ops"), table.testFile.asc().nullsLast().op("text_ops"), table.recordedAt.desc().nullsFirst().op("timestamptz_ops")),
-	primaryKey({ columns: [table.recordedSha, table.testFile, table.workspaceName], name: "test_executed_sources_pkey"}),
+	unique("test_executed_sources_proof_key").on(table.recordedGitDir, table.recordedSha, table.runContext, table.testFile, table.workspaceName),
 	check("test_executed_sources_count_matches", sql`module_count = cardinality(executed_modules)`),
 	check("test_executed_sources_sha_shape", sql`recorded_sha ~ '^[0-9a-f]{7,64}$'::text`),
 ]);
