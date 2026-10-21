@@ -27,9 +27,12 @@ import { AGENT_SESSION_CONTEXT_TIER } from './agent-session-context-tier';
 import {
   codexGatewayConfigToml,
   codexManagedFeaturesToml,
+  codexModelCatalogToml,
+  materializeStrippedCodexModelCatalog,
   publishCodexConfig,
   tomlEscape,
   type CodexGatewayConfigOpts,
+  type CodexModelCatalogMaterialized,
 } from './codex-gateway-config';
 import { codexModelConfigToml } from '../../../../../packages/operator-core/lib/model-context-budget.mjs';
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -548,6 +551,9 @@ export interface SpawnCodexConfigOpts extends CodexGatewayConfigOpts {
    * a default on the caller's behalf. */
   model?: string | null;
   contextConfig?: SpawnCodexContextConfig | null;
+  /** Stripped catalog for a NON-gateway spawn home (materializeStrippedCodexModelCatalog).
+   *  Ignored on the gateway route, where the gateway strips the catalog it serves. */
+  modelCatalogPath?: string | null;
 }
 
 export function buildSpawnCodexConfigToml(
@@ -565,6 +571,9 @@ export function buildSpawnCodexConfigToml(
         ]
       : []),
     ...codexModelConfigToml(opts.model),
+    ...(gatewayConfig.root.length === 0 && opts.modelCatalogPath
+      ? codexModelCatalogToml(opts.modelCatalogPath)
+      : []),
     ...gatewayConfig.root,
     ...codexManagedFeaturesToml({ disableMemories: false }),
     '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
@@ -599,6 +608,8 @@ export async function writeSignedSpawnCodexHome(
     gatewayEnv?: Record<string, string | undefined>;
     /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
     pg?: SpawnMcpSigningPg;
+    /** Test seam for the non-gateway stripped-catalog write. */
+    materializeModelCatalog?: (opts: { codexHome: string }) => CodexModelCatalogMaterialized;
   } & SpawnMcpRouteProbeOptions = {},
 ): Promise<SpawnCodexHomeHandle> {
   const gatewayEnv = opts.gatewayEnv ?? process.env;
@@ -628,16 +639,25 @@ export async function writeSignedSpawnCodexHome(
   // codex does NOT env-expand inside config.toml; the URL is fully baked
   // (incl. the sig), so no bearer_token_env_var is needed (unlike the
   // superuser codex-su home, which uses ?superuser=1 + a bearer).
+  // WI-3645: PAPERCUSP_ACCOUNT_ID alone used to be the only "route through the gateway" signal —
+  // an explicit-auto (or an unpinned-after-validation-failure) spawn had no account id and so got
+  // NO gateway config at all, silently falling back to direct ChatGPT egress on the local CLI
+  // credential. PAPERCUSP_CODEX_GATEWAY carries "gateway on" independent of whether a pin resolved.
+  const gatewayOn = routeMode !== 'default' && !!gatewayEnv.PAPERCUSP_CODEX_GATEWAY;
+  // D-005 route 2: a spawn that talks to Codex's own backend reads that backend's catalog, whose
+  // multi_agent fields turn native subagents on whatever [features] says. Point it at a stripped
+  // copy. The gateway route needs no file: the gateway strips the catalog it serves.
+  const gatewayRouted = codexGatewayConfigToml(accountId, { gatewayOn }).root.length > 0;
+  const modelCatalog = gatewayRouted
+    ? null
+    : (opts.materializeModelCatalog ?? materializeStrippedCodexModelCatalog)({ codexHome });
   const toml = buildSpawnCodexConfigToml(mcpUrl, accountId, {
     model: opts.model,
     ownerId: input.clientId || input.spawnId,
     priority: input.role,
-    // WI-3645: PAPERCUSP_ACCOUNT_ID alone used to be the only "route through the gateway" signal —
-    // an explicit-auto (or an unpinned-after-validation-failure) spawn had no account id and so got
-    // NO gateway config at all, silently falling back to direct ChatGPT egress on the local CLI
-    // credential. PAPERCUSP_CODEX_GATEWAY carries "gateway on" independent of whether a pin resolved.
-    gatewayOn: routeMode !== 'default' && !!gatewayEnv.PAPERCUSP_CODEX_GATEWAY,
+    gatewayOn,
     contextConfig: opts.contextConfig,
+    modelCatalogPath: modelCatalog?.path ?? null,
   });
   publishCodexConfig(join(codexHome, 'config.toml'), toml);
 

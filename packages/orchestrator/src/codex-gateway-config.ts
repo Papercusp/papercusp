@@ -27,7 +27,9 @@
  * and diagnostics locate/replace the managed blocks by them — keep them byte-stable.
  */
 
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse as parseToml } from '@iarna/toml';
 
@@ -124,6 +126,17 @@ export function codexManagedFeaturesToml(
     '[features]',
     ...(opts.disableMemories === false ? [] : ['memories = false']),
     'remote_compaction_v2 = false',
+    // client-native-features-adoption-2026-10-21 D-003/D-005: native subagents
+    // fan work out of the orchestrator's spawn graph (the same reason Claude's
+    // Task/Agent/Workflow are denied by default), and native goals compete with
+    // Papercusp's own objective store (the reason memories are off). The home is
+    // shared by every later resume, so it always says false; the psu
+    // `--allow-subagents` opt-in is a per-launch `-c features.multi_agent=true`
+    // (CODEX_SUBAGENT_OPT_IN_CONFIG). These keys alone do NOT remove the tools:
+    // the model catalog's multi_agent fields switch them on regardless, so every
+    // managed home also runs on a stripped catalog (stripCodexCatalogMultiAgent).
+    'multi_agent = false',
+    'goals = false',
     // Custom providers do not consult `model_catalog_url` unless this Codex feature is on.
     // Without it, /model silently falls back to the shared/default-account cache even while
     // the gateway can serve newer model ids for inference.
@@ -142,6 +155,182 @@ export function codexManagedFeaturesToml(
       : []),
     '',
   ];
+}
+
+/** The `-c` override psu adds to a Codex launch argv for `--allow-subagents`.
+ *  psu-launcher.mjs (plain node) duplicates this literal; a lockstep test pins
+ *  the two copies together. On a stripped catalog it restores the v1 subagent
+ *  tools (measured in D-003); goals stay off. */
+export const CODEX_SUBAGENT_OPT_IN_CONFIG = 'features.multi_agent=true';
+
+/** Model-catalog fields that turn Codex native multi-agent tools on regardless
+ *  of `[features]` (measured on codex-cli 0.163.0, plan D-003). */
+export const CODEX_MULTI_AGENT_CATALOG_FIELDS = ['multi_agent_version', 'multi_agent_reasoning_effort'] as const;
+
+/** The stripped catalog a non-gateway managed home points `model_catalog_json` at. */
+export const CODEX_MANAGED_MODEL_CATALOG_FILE = 'papercusp-model-catalog.json';
+
+type CatalogRecord = Record<string, unknown>;
+
+function isCatalogRecord(value: unknown): value is CatalogRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** One catalog model without the multi-agent fields (a copy; the input is not touched). */
+export function stripCodexModelMultiAgent<T>(model: T): T {
+  if (!isCatalogRecord(model)) return model;
+  const copy: CatalogRecord = { ...model };
+  for (const field of CODEX_MULTI_AGENT_CATALOG_FIELDS) delete copy[field];
+  return copy as T;
+}
+
+/** A `{ models: [...] }` catalog with the multi-agent fields removed from every model. */
+export function stripCodexCatalogMultiAgent<T>(catalog: T): T {
+  if (!isCatalogRecord(catalog) || !Array.isArray(catalog.models)) return catalog;
+  return { ...catalog, models: catalog.models.map(stripCodexModelMultiAgent) } as T;
+}
+
+/** Where a managed home's stripped catalog came from (recorded in home diagnostics). */
+export type CodexModelCatalogSource = 'home-cache' | 'user-cache' | 'bundled';
+
+export interface CodexModelCatalogMaterialized {
+  path: string;
+  source: CodexModelCatalogSource;
+  sourcePath: string | null;
+  modelCount: number;
+  fetchedAt: string | null;
+}
+
+export class CodexModelCatalogUnavailableError extends Error {
+  // A declared field, not a constructor parameter property: Node's strip-only
+  // TypeScript loader refuses parameter properties, and the Codex launcher
+  // imports this module that way.
+  readonly attempts: string[];
+
+  constructor(attempts: string[]) {
+    super(
+      `no Codex model catalog is available to strip (${attempts.join('; ')}); ` +
+        'refusing to write a non-gateway Codex home that would start with native subagent tools',
+    );
+    this.name = 'CodexModelCatalogUnavailableError';
+    this.attempts = attempts;
+  }
+}
+
+let bundledCatalogMemo: string | null = null;
+
+/** The catalog compiled into the installed codex binary. `codex debug models`
+ *  renders it from an empty home with no auth and no network (measured
+ *  2026-10-21, codex-cli 0.163.0: 11 models in 0.5s). Memoized per process. */
+export function readBundledCodexModelCatalog(): string {
+  if (bundledCatalogMemo !== null) return bundledCatalogMemo;
+  const emptyHome = mkdtempSync(join(tmpdir(), 'papercusp-codex-catalog-'));
+  try {
+    bundledCatalogMemo = execFileSync('codex', ['debug', 'models'], {
+      env: { ...process.env, CODEX_HOME: emptyHome },
+      encoding: 'utf8',
+      timeout: 30_000,
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return bundledCatalogMemo;
+  } finally {
+    rmSync(emptyHome, { recursive: true, force: true });
+  }
+}
+
+function parsedCatalog(text: string): (CatalogRecord & { models: unknown[] }) | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (isCatalogRecord(parsed) && Array.isArray(parsed.models) && parsed.models.length > 0) {
+      return parsed as CatalogRecord & { models: unknown[] };
+    }
+  } catch {
+    /* unreadable source: try the next one */
+  }
+  return null;
+}
+
+/**
+ * Write `<codexHome>/papercusp-model-catalog.json`: the freshest available Codex
+ * catalog with the multi-agent fields removed (plan D-005 route 2). Sources, in
+ * order: the newer (by `fetched_at`) of the home's own and the user's
+ * `models_cache.json`, then the catalog compiled into the codex binary. Throws
+ * {@link CodexModelCatalogUnavailableError} when none yields a model: a
+ * non-gateway home without a stripped catalog would start WITH subagent tools,
+ * because the `[features]` keys alone do not remove them.
+ */
+export function materializeStrippedCodexModelCatalog(opts: {
+  codexHome: string;
+  userCodexHome?: string;
+  readBundledCatalog?: () => string;
+}): CodexModelCatalogMaterialized {
+  const attempts: string[] = [];
+  const caches = [
+    { source: 'home-cache' as const, path: join(opts.codexHome, 'models_cache.json') },
+    { source: 'user-cache' as const, path: join(opts.userCodexHome ?? join(homedir(), '.codex'), 'models_cache.json') },
+  ].flatMap((candidate) => {
+    if (!existsSync(candidate.path)) {
+      attempts.push(`${candidate.source}: absent`);
+      return [];
+    }
+    let catalog: ReturnType<typeof parsedCatalog> = null;
+    try {
+      catalog = parsedCatalog(readFileSync(candidate.path, 'utf8'));
+    } catch (error) {
+      attempts.push(`${candidate.source}: ${(error as Error).message}`);
+      return [];
+    }
+    if (!catalog) {
+      attempts.push(`${candidate.source}: no models`);
+      return [];
+    }
+    const fetchedAt = typeof catalog.fetched_at === 'string' ? catalog.fetched_at : null;
+    const fetchedMs = fetchedAt ? Date.parse(fetchedAt) : Number.NaN;
+    return [{ ...candidate, catalog, fetchedAt, fetchedMs: Number.isFinite(fetchedMs) ? fetchedMs : 0 }];
+  });
+  caches.sort((a, b) => b.fetchedMs - a.fetchedMs);
+  let chosen: {
+    source: CodexModelCatalogSource;
+    sourcePath: string | null;
+    catalog: CatalogRecord & { models: unknown[] };
+    fetchedAt: string | null;
+  } | null = caches[0]
+    ? { source: caches[0].source, sourcePath: caches[0].path, catalog: caches[0].catalog, fetchedAt: caches[0].fetchedAt }
+    : null;
+  if (!chosen) {
+    try {
+      const bundled = parsedCatalog((opts.readBundledCatalog ?? readBundledCodexModelCatalog)());
+      if (bundled) chosen = { source: 'bundled', sourcePath: null, catalog: bundled, fetchedAt: null };
+      else attempts.push('bundled: no models');
+    } catch (error) {
+      attempts.push(`bundled: ${(error as Error).message.split('\n')[0]}`);
+    }
+  }
+  if (!chosen) throw new CodexModelCatalogUnavailableError(attempts);
+  const stripped = stripCodexCatalogMultiAgent({ models: chosen.catalog.models });
+  const path = join(opts.codexHome, CODEX_MANAGED_MODEL_CATALOG_FILE);
+  const staging = mkdtempSync(join(opts.codexHome, '.model-catalog-'));
+  try {
+    const staged = join(staging, CODEX_MANAGED_MODEL_CATALOG_FILE);
+    writeFileSync(staged, `${JSON.stringify(stripped)}\n`, { mode: 0o600 });
+    renameSync(staged, path);
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+  return {
+    path,
+    source: chosen.source,
+    sourcePath: chosen.sourcePath,
+    modelCount: chosen.catalog.models.length,
+    fetchedAt: chosen.fetchedAt,
+  };
+}
+
+/** The root config line pointing a non-gateway home at its stripped catalog.
+ *  Top-level key: it must precede every `[table]`. */
+export function codexModelCatalogToml(catalogPath: string): string[] {
+  return [`model_catalog_json = "${tomlEscape(catalogPath)}"`];
 }
 
 /**
