@@ -202,7 +202,16 @@ export function setUnionArrays(base: readonly unknown[], child: readonly unknown
   return out;
 }
 
-/** Intersect two upper-bound constraints. Unequal non-numeric values fail closed. */
+function isPrimitiveList(value: unknown): value is Array<string | number | boolean> {
+  return Array.isArray(value) && value.every((entry) =>
+    typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean');
+}
+
+/**
+ * Intersect two upper-bound constraints. Numbers take the minimum; two allow-lists
+ * of primitives keep only what both allow (in the base's order). Other unequal
+ * values fail closed.
+ */
 export function intersectConstraint(
   base: unknown,
   child: unknown,
@@ -210,6 +219,10 @@ export function intersectConstraint(
   context: MergeContext = {},
 ): unknown {
   if (typeof base === 'number' && typeof child === 'number') return Math.min(base, child);
+  if (isPrimitiveList(base) && isPrimitiveList(child)) {
+    const allowed = new Set<unknown>(child);
+    return base.filter((value) => allowed.has(value));
+  }
   if (stableStringify(base) === stableStringify(child)) return base;
   throw new MergeConflictError(path, 'constraint-intersection', base, child, context);
 }

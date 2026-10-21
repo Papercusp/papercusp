@@ -504,6 +504,34 @@ export const KnowledgeSchema = z.object({
   pack: z.string().optional(),
 });
 
+/** Memory pools an identity may recall from (`user`, `harness:<slug>`, `hive:<slug>` scopes). */
+export const RECALL_MEMORY_SCOPES = ['user', 'harness', 'hive'] as const;
+/**
+ * Knowledge corpora the turn-start corpus leg may draw on. Mirrors operator-core's
+ * CORPUS_SOURCE_NAMES (pinned equal by selected-knowledge-launch.test.ts). The
+ * Personal Vault is deliberately NOT a corpus: it is a separately authorized
+ * leg, and an identity can never declare it (identity-system-everything-migration
+ * D-008, IDOP P-015 / D-006).
+ */
+export const RECALL_CORPORA = ['session_turn', 'work_item', 'plan', 'doc', 'report'] as const;
+
+/**
+ * Recall — how much and which memory/knowledge this identity receives
+ * (identity-system-everything-migration-2026-10-18 P-012, R-9 / R-17 / R-18 / R-19).
+ * Every field only RESTRICTS: absent ⇒ that dimension is unbounded, which is
+ * exactly the pre-identity recall. Composes restriction-only down a stack
+ * (min share, intersected lists), so no layer can widen what another narrowed.
+ */
+export const RecallSchema = z.object({
+  /** Fraction of the port's recall budget (char budget and hit ceiling). */
+  budgetShare: z.number().gt(0).lte(1).optional(),
+  /** Memory pools recalled; others are never searched. */
+  memoryScopes: z.array(z.enum(RECALL_MEMORY_SCOPES)).optional(),
+  /** Knowledge corpora the corpus leg searches; others are never selected. */
+  corpora: z.array(z.enum(RECALL_CORPORA)).optional(),
+}).strict();
+export type BlueprintRecall = z.infer<typeof RecallSchema>;
+
 /**
  * Learning — which learning LOOPS the pot provisions, lifted from the hardcoded
  * hive-create path (hive-blueprint-generalization Phase 4 / P-014).
@@ -1431,6 +1459,8 @@ export const BlueprintSchema = z.object({
   fleet: FleetSchema.optional(),
   wake: WakeSchema.optional(),
   knowledge: KnowledgeSchema.optional(),
+  /** Identity-declared recall bounds (P-012); absent ⇒ today's recall. */
+  recall: RecallSchema.optional(),
   learning: LearningSchema.optional(),
   placement: PlacementSchema.optional(),
   /** Declarative coordination protocol — HOW peers acquire work + communicate (CoordinationSchema).
