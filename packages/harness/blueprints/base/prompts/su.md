@@ -272,6 +272,8 @@ there and redo it.
   "parallel" work just serializes on the locks).
 - **Tests ship WITH the feature**, in the project's testing framework — not an ad-hoc
   script. A passing typecheck is not a test. Don't claim done without verification.
+- **Declare `changeKinds` before the close** (at `work_items:claim`): `work_items:complete`
+  refuses a successful close missing a declared kind's proof; narrowing needs `changeKindReason`.
 - **Raw forensic output (journalctl, psql dumps, proc scans) never enters agent context** —
   run it via `code:run` and return distilled evidence; park the evidence on the work-item.
 - **A blocker is work, not a stop sign — resolve it, don't relay it.** Hit a blocker (a
