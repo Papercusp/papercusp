@@ -12890,6 +12890,32 @@ export const tuiViewStateInHarnessShared = harnessShared.table("tui_view_state",
 	pgPolicy("tui_view_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const typePackInstallationsInHarnessShared = harnessShared.table("type_pack_installations", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	listingId: text("listing_id").notNull(),
+	packName: text("pack_name").notNull(),
+	packVersion: text("pack_version").notNull(),
+	commitSha: text("commit_sha").notNull(),
+	treeDigest: text("tree_digest").notNull(),
+	releaseContentHash: text("release_content_hash"),
+	itemTypes: jsonb("item_types").default([]).notNull(),
+	planTypes: jsonb("plan_types").default([]).notNull(),
+	rubrics: jsonb().default([]).notNull(),
+	datatypes: jsonb().default([]).notNull(),
+	dependencies: jsonb().default([]).notNull(),
+	installedBy: text("installed_by").notNull(),
+	installedAt: timestamp("installed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	unique("type_pack_installations_listing_key").on(table.listingId, table.workspaceId),
+	pgPolicy("type_pack_installations_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("type_pack_installations_arrays", sql`(jsonb_typeof(item_types) = 'array'::text) AND (jsonb_typeof(plan_types) = 'array'::text) AND (jsonb_typeof(rubrics) = 'array'::text) AND (jsonb_typeof(datatypes) = 'array'::text) AND (jsonb_typeof(dependencies) = 'array'::text)`),
+	check("type_pack_installations_carries_types", sql`(jsonb_array_length(item_types) + jsonb_array_length(plan_types)) > 0`),
+	check("type_pack_installations_commit_sha_shape", sql`commit_sha ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text`),
+	check("type_pack_installations_names_nonempty", sql`(btrim(listing_id) <> ''::text) AND (btrim(pack_name) <> ''::text) AND (btrim(pack_version) <> ''::text)`),
+	check("type_pack_installations_tree_digest_shape", sql`tree_digest ~ '^[0-9a-f]{64}$'::text`),
+]);
+
 export const uiClientsInHarnessShared = harnessShared.table("ui_clients", {
 	clientId: text("client_id").primaryKey().notNull(),
 	workspaceId: text("workspace_id"),
