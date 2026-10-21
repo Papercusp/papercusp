@@ -113,7 +113,8 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
   assert.deepEqual(MERGE_RULES.bundles?.key, ['kind', 'ref']);
   assert.equal(MERGE_RULES['grants.requires']?.rule, 'set-union');
   assert.equal(MERGE_RULES['grants.optional']?.rule, 'set-union');
-  // D-003 / D-029: safety caps compose by constraint intersection.
+  // D-003 / D-029: safety caps compose by constraint intersection; so do the
+  // identity recall bounds (identity-system-everything-migration P-012).
   const caps = Object.entries(MERGE_RULES)
     .filter(([, r]) => r.rule === 'constraint-intersection')
     .map(([p]) => p)
@@ -124,6 +125,9 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
     'knobs.maxCostUsd',
     'knobs.parallelWorkers.max',
     'knobs.parallelWorkers.maxFeaturesInFlight',
+    'recall.budgetShare',
+    'recall.corpora',
+    'recall.memoryScopes',
     'recursion.maxDepth',
     'spine.maxTurns',
   ]);
