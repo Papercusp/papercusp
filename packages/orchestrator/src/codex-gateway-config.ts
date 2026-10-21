@@ -130,9 +130,10 @@ export function codexManagedFeaturesToml(
     // fan work out of the orchestrator's spawn graph (the same reason Claude's
     // Task/Agent/Workflow are denied by default), and native goals compete with
     // Papercusp's own objective store (the reason memories are off). The home is
-    // shared by every later resume, so it always says false; the psu
-    // `--allow-subagents` opt-in is a per-launch `-c features.multi_agent=true`
-    // (CODEX_SUBAGENT_OPT_IN_CONFIG). These keys alone do NOT remove the tools:
+    // shared by every later session, so it always says false; the psu
+    // `--allow-subagents` opt-in is a `-c features.multi_agent=true` on a NEW
+    // session's launch (CODEX_SUBAGENT_OPT_IN_CONFIG). Codex fixes the setting at
+    // session creation and resume/fork inherit it (D-008). These keys alone do NOT remove the tools:
     // the model catalog's multi_agent fields switch them on regardless, so every
     // managed home also runs on a stripped catalog (stripCodexCatalogMultiAgent).
     'multi_agent = false',
@@ -157,10 +158,11 @@ export function codexManagedFeaturesToml(
   ];
 }
 
-/** The `-c` override psu adds to a Codex launch argv for `--allow-subagents`.
- *  psu-launcher.mjs (plain node) duplicates this literal; a lockstep test pins
- *  the two copies together. On a stripped catalog it restores the v1 subagent
- *  tools (measured in D-003); goals stay off. */
+/** The `-c` override psu adds to a NEW Codex session's launch argv for
+ *  `--allow-subagents`. psu-launcher.mjs (plain node) duplicates this literal; a
+ *  lockstep test pins the two copies together. On a stripped catalog it restores
+ *  the v1 subagent tools (measured in D-003/D-008); goals stay off. It has no
+ *  effect on `resume`/`fork`, which keep the session's creation-time setting. */
 export const CODEX_SUBAGENT_OPT_IN_CONFIG = 'features.multi_agent=true';
 
 /** Model-catalog fields that turn Codex native multi-agent tools on regardless
