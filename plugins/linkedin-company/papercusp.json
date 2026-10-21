@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "linkedin-company", "version": "0.1.0", "papercusp": "^0.1.0",
   "description": "LinkedIn company-page text publishing and authored-post reads. Partner approval pending; offline fakes and conformance only.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

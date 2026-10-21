@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin",
   "name": "google-contacts",
   "version": "0.1.0",

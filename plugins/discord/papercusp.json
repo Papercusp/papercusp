@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "discord", "version": "0.2.0", "papercusp": "^0.1.0",
   "description": "Run your bot in your Discord server: read members' messages, reply to them, post notifications, and show the server's public online count. Fixture-verified; not live-verified.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "linkedin", "version": "0.1.0", "papercusp": "^0.1.0",
   "description": "LinkedIn personal-profile text posts and deletion through host-held OAuth. Live verification pending.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

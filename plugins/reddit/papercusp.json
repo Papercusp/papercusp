@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "reddit", "version": "0.1.0", "papercusp": "^0.1.0",
   "description": "Reddit inbox comment replies, mentions and account submissions with host-mediated publishing.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

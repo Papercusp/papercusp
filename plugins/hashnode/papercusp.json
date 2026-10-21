@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "hashnode", "version": "0.1.0", "papercusp": "^0.1.0",
   "description": "Cross-post Markdown to Hashnode as a draft or published post with a papercusp.com canonical URL. Fixture-verified; not live-verified.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

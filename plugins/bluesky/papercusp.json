@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "bluesky", "version": "0.1.0", "papercusp": "^0.1.0",
   "description": "Bluesky notifications and author posts, with host-held app-password sessions and publishing.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

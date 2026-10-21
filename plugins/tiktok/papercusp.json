@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "kind": "plugin", "name": "tiktok", "version": "0.1.0", "papercusp": "^0.1.0",
   "description": "Read-only TikTok Display API provider. Recorded-fake verification; live verification pending.",
   "author": "Papercusp", "license": "MIT", "main": "./index.cjs",

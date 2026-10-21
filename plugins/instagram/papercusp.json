@@ -1,4 +1,5 @@
 {
+  "distribution": "cupboard",
   "$schema": "https://papercuspai.com/schema/papercusp-plugin.schema.json",
   "kind": "plugin",
   "name": "instagram",
