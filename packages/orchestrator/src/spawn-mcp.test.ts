@@ -708,7 +708,22 @@ describe('async spawn config writers use stale-port recovery', () => {
 describe('per-spawn Codex account route', () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  async function writtenConfig(gatewayEnv?: Record<string, string | undefined>) {
+  // Non-gateway homes materialize a stripped model catalog. The fake keeps these
+  // route tests independent of ~/.codex and of an installed codex binary.
+  const catalogWrites: string[] = [];
+  const fakeMaterializeModelCatalog = ({ codexHome }: { codexHome: string }) => {
+    catalogWrites.push(codexHome);
+    const path = join(codexHome, 'papercusp-model-catalog.json');
+    writeFileSync(path, '{"models":[{"slug":"stripped"}]}\n');
+    return { path, source: 'bundled' as const, sourcePath: null, modelCount: 1, fetchedAt: null };
+  };
+  beforeEach(() => { catalogWrites.length = 0; });
+
+  async function writtenConfig(gatewayEnv?: Record<string, string | undefined>): Promise<string> {
+    return (await writtenHome(gatewayEnv)).toml;
+  }
+
+  async function writtenHome(gatewayEnv?: Record<string, string | undefined>) {
     const handle = await writeSignedSpawnCodexHome({
       harnessSlug: 'demo', workspaceId: 'ws', role: 'release-fixer',
       runId: 'route-run', spawnId: 'route-spawn', clientId: 'route-owner',
@@ -717,10 +732,36 @@ describe('per-spawn Codex account route', () => {
       model: TEST_CODEX_MODEL, gatewayEnv, probe: async () => true,
       pg: (async () => [{ value_b64: Buffer.alloc(32, 7).toString('base64'),
         rotated_at: new Date('2026-08-25T00:00:00Z') }]) as SpawnMcpSigningPg,
+      materializeModelCatalog: fakeMaterializeModelCatalog,
     });
-    try { return readFileSync(join(handle.codexHome, 'config.toml'), 'utf8'); }
+    try { return { toml: readFileSync(join(handle.codexHome, 'config.toml'), 'utf8'), codexHome: handle.codexHome }; }
     finally { handle.cleanup(); }
   }
+
+  it('a non-gateway spawn home runs on a stripped model_catalog_json and a gateway spawn home has none', async () => {
+    vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', undefined);
+    vi.stubEnv('PAPERCUSP_ACCOUNT_ID', undefined);
+    const local = await writtenHome({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'default' });
+    const lines = local.toml.split('\n');
+    const catalogLine = `model_catalog_json = "${join(local.codexHome, 'papercusp-model-catalog.json')}"`;
+    expect(catalogWrites).toEqual([local.codexHome]);
+    expect(lines.filter((line) => line === catalogLine)).toHaveLength(1);
+    // A root key: it precedes every [table], or TOML would scope it to that table.
+    expect(lines.indexOf(catalogLine)).toBeLessThan(lines.findIndex((line) => line.startsWith('[')));
+    expect(lines).toEqual(expect.arrayContaining(['multi_agent = false', 'goals = false']));
+
+    catalogWrites.length = 0;
+    const gateway = await writtenConfig({ PAPERCUSP_ACCOUNT_ROUTING_MODE: 'auto', PAPERCUSP_CODEX_GATEWAY: '1' });
+    expect(gateway).toContain('model_provider = "papercusp-codex-gateway"');
+    expect(gateway).not.toContain('model_catalog_json');
+    expect(catalogWrites).toEqual([]);
+    expect(gateway.split('\n')).toEqual(expect.arrayContaining(['multi_agent = false', 'goals = false']));
+
+    // The renderer itself drops a catalog path on the gateway route.
+    expect(buildSpawnCodexConfigToml('http://127.0.0.1:3070/api/mcp', null, {
+      model: TEST_CODEX_MODEL, gatewayOn: true, modelCatalogPath: '/tmp/catalog.json',
+    })).not.toContain('model_catalog_json');
+  });
 
   it('auto route writes gateway config without pin when orchestrator env is unset', async () => {
     vi.stubEnv('PAPERCUSP_CODEX_GATEWAY', undefined);

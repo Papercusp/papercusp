@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { closeSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { codexGatewayConfigToml, codexManagedFeaturesToml, publishCodexConfig } from './codex-gateway-config';
+import {
+  CODEX_MANAGED_MODEL_CATALOG_FILE,
+  CODEX_MULTI_AGENT_CATALOG_FIELDS,
+  CodexModelCatalogUnavailableError,
+  codexGatewayConfigToml,
+  codexManagedFeaturesToml,
+  codexModelCatalogToml,
+  materializeStrippedCodexModelCatalog,
+  publishCodexConfig,
+  stripCodexCatalogMultiAgent,
+} from './codex-gateway-config';
 
 const publicationFault = vi.hoisted(() => ({ partialWrite: false }));
 vi.mock('node:fs', async (importActual) => {
@@ -130,6 +140,112 @@ describe('codexGatewayConfigToml model discovery', () => {
   it('refuses a weak or injectable private token', () => {
     for (const token of ['papercusp-gateway', 'a'.repeat(64) + '\n', 'a'.repeat(64) + '"']) {
       expect(() => codexGatewayConfigToml('pool', { gateway: { baseURL: 'http://127.0.0.1:32101', token } })).toThrow(/scoped/);
+    }
+  });
+});
+
+// client-native-features-adoption-2026-10-21 P-001 (D-003/D-005): Codex native
+// subagents and goals are off in every managed home.
+describe('Codex native subagents and goals off by default', () => {
+  it('codexManagedFeaturesToml turns native subagents and goals off in every variant', () => {
+    for (const opts of [{}, { disableMemories: false }, { headless: true }, { disableMemories: false, headless: true }]) {
+      const config = codexManagedFeaturesToml(opts);
+      const features = config.indexOf('[features]');
+      expect(features).toBeGreaterThan(-1);
+      for (const line of ['multi_agent = false', 'goals = false']) {
+        expect(config.filter((entry) => entry === line)).toHaveLength(1);
+        expect(config.indexOf(line)).toBeGreaterThan(features);
+      }
+      expect(config.join('\n')).not.toMatch(/multi_agent\s*=\s*true|goals\s*=\s*true/);
+    }
+  });
+
+  it('stripCodexCatalogMultiAgent removes both multi_agent fields from every model and leaves the input untouched', () => {
+    const input = {
+      fetched_at: '2026-10-21T00:00:00Z',
+      models: [
+        { slug: 'gpt-a', multi_agent_version: 'v2', multi_agent_reasoning_effort: 'low', context_window: 1 },
+        { slug: 'gpt-b', multi_agent_version: 'v1' },
+        { slug: 'gpt-c' },
+      ],
+    };
+    const before = JSON.stringify(input);
+    const stripped = stripCodexCatalogMultiAgent(input);
+    expect(stripped.models).toEqual([{ slug: 'gpt-a', context_window: 1 }, { slug: 'gpt-b' }, { slug: 'gpt-c' }]);
+    for (const model of stripped.models) {
+      for (const field of CODEX_MULTI_AGENT_CATALOG_FIELDS) expect(model).not.toHaveProperty(field);
+    }
+    expect(stripped.fetched_at).toBe(input.fetched_at);
+    expect(JSON.stringify(input)).toBe(before);
+    expect(stripCodexCatalogMultiAgent({ notModels: true })).toEqual({ notModels: true });
+  });
+
+  it('materializeStrippedCodexModelCatalog prefers the newer cache, falls back to the bundled catalog, and refuses when no source exists', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codex-catalog-materialize-'));
+    const codexHome = join(root, 'home');
+    const userCodexHome = join(root, 'user');
+    const cache = (slug: string, fetchedAt: string) => JSON.stringify({
+      fetched_at: fetchedAt,
+      models: [{ slug, multi_agent_version: 'v2', multi_agent_reasoning_effort: 'medium' }],
+    });
+    const readCatalog = (path: string) => JSON.parse(readFileSync(path, 'utf8')) as { models: Array<Record<string, unknown>> };
+    const unexpectedBundled = () => { throw new Error('bundled catalog must not be read while a cache exists'); };
+    const catalogPath = join(codexHome, CODEX_MANAGED_MODEL_CATALOG_FILE);
+    try {
+      mkdirSync(codexHome);
+      mkdirSync(userCodexHome);
+
+      // 1. Both caches present: the newer fetched_at wins, whichever home holds it.
+      writeFileSync(join(codexHome, 'models_cache.json'), cache('home-model', '2026-10-01T00:00:00Z'));
+      writeFileSync(join(userCodexHome, 'models_cache.json'), cache('user-model', '2026-10-20T00:00:00Z'));
+      const fromUser = materializeStrippedCodexModelCatalog({ codexHome, userCodexHome, readBundledCatalog: unexpectedBundled });
+      expect(fromUser).toMatchObject({
+        path: catalogPath,
+        source: 'user-cache',
+        sourcePath: join(userCodexHome, 'models_cache.json'),
+        modelCount: 1,
+        fetchedAt: '2026-10-20T00:00:00Z',
+      });
+      expect(readCatalog(catalogPath).models).toEqual([{ slug: 'user-model' }]);
+      if (process.platform !== 'win32') expect(statSync(catalogPath).mode & 0o777).toBe(0o600);
+      // The staging directory is gone; only the cache and the published catalog remain.
+      expect(readdirSync(codexHome).sort()).toEqual([CODEX_MANAGED_MODEL_CATALOG_FILE, 'models_cache.json'].sort());
+
+      writeFileSync(join(codexHome, 'models_cache.json'), cache('home-model', '2026-10-21T00:00:00Z'));
+      const fromHome = materializeStrippedCodexModelCatalog({ codexHome, userCodexHome, readBundledCatalog: unexpectedBundled });
+      expect(fromHome.source).toBe('home-cache');
+      expect(readCatalog(catalogPath).models).toEqual([{ slug: 'home-model' }]);
+
+      // 2. No usable cache (one absent, one with no models): the bundled catalog, stripped.
+      rmSync(join(codexHome, 'models_cache.json'));
+      writeFileSync(join(userCodexHome, 'models_cache.json'), JSON.stringify({ models: [] }));
+      const bundled = JSON.stringify({ models: [{ slug: 'bundled-a', multi_agent_version: 'v2' }, { slug: 'bundled-b' }] });
+      const fromBundled = materializeStrippedCodexModelCatalog({ codexHome, userCodexHome, readBundledCatalog: () => bundled });
+      expect(fromBundled).toMatchObject({ source: 'bundled', sourcePath: null, modelCount: 2, fetchedAt: null });
+      expect(readCatalog(catalogPath).models).toEqual([{ slug: 'bundled-a' }, { slug: 'bundled-b' }]);
+
+      // 3. No source at all: refuse, naming every attempt, and publish nothing new.
+      rmSync(catalogPath);
+      let refusal: unknown = null;
+      try {
+        materializeStrippedCodexModelCatalog({
+          codexHome,
+          userCodexHome,
+          readBundledCatalog: () => { throw new Error('codex: not installed\nsecond line'); },
+        });
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toBeInstanceOf(CodexModelCatalogUnavailableError);
+      expect((refusal as CodexModelCatalogUnavailableError).attempts).toEqual([
+        'home-cache: absent',
+        'user-cache: no models',
+        'bundled: codex: not installed',
+      ]);
+      expect(existsSync(catalogPath)).toBe(false);
+      expect(codexModelCatalogToml(catalogPath)).toEqual([`model_catalog_json = "${catalogPath}"`]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
