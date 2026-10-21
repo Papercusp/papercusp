@@ -9090,7 +9090,7 @@ export const planItemsInHarnessShared = harnessShared.table("plan_items", {
 			name: "plan_items_plan_fk"
 		}).onDelete("cascade"),
 	primaryKey({ columns: [table.harnessSlug, table.itemId, table.planSlug, table.workspaceId], name: "plan_items_pkey"}),
-	check("plan_items_deliverable_check", sql`(deliverable IS NULL) OR (deliverable = ANY (ARRAY['code'::text, 'doc'::text, 'decision'::text, 'research'::text, 'operation'::text, 'artifact'::text]))`),
+	check("plan_items_deliverable_check", sql`(deliverable IS NULL) OR (deliverable = ANY (ARRAY['code'::text, 'doc'::text, 'decision'::text, 'research'::text, 'operation'::text, 'artifact'::text])) OR (deliverable ~ '^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$'::text)`),
 ]);
 
 export const planRevisionsInHarnessShared = harnessShared.table("plan_revisions", {
