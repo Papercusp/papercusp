@@ -233,7 +233,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       'Managed read/list/search/LSP tools govern durable access and bounded output; efficient native rendering or read-only helpers may remain only where their access/output boundary is explicitly accepted.',
     managedAuthorities: ['capability:read', 'capability:list', 'search:fulltext', 'search:semantic', 'lsp:query'],
     evidence: {
-      path: 'packages/operator-core/lib/agent-tools/capability/read.ts',
+      path: 'packages/operator-core/lib/agent-tools/capability/read-handler.ts',
       anchors: ["name: 'capability:read'", 'MAX_BYTE_PAGE'],
       note: 'Managed byte/range read with an explicit bounded page contract.',
     },
