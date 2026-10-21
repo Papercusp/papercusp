@@ -1931,10 +1931,18 @@ export function getOrgPg(): OrgPgHandle {
  */
 export function createDedicatedOrgPg(
   label: string,
-  options: { readonly max?: number; readonly sessionAffinity?: boolean } = {},
+  options: {
+    readonly max?: number;
+    readonly sessionAffinity?: boolean;
+    /** WI-6554700010018666: an explicit target that bypasses adminUrl() resolution. A
+     *  DSN-free process (the green-checkpoint suite) otherwise falls through to the
+     *  discovery file, which can belong to a different cluster entirely. */
+    readonly url?: string;
+  } = {},
 ): { sql: Sql; url: string } {
   const pooled = !options.sessionAffinity && pgbouncerEnabled();
-  const resolvedUrl = adminUrl();
+  const explicitUrl = options.url?.trim() || undefined;
+  const resolvedUrl = explicitUrl ?? adminUrl();
   const url = options.sessionAffinity ? resolvedUrl : maybePgbouncer(resolvedUrl);
   const poolLabel = `org-admin-${label}`;
   const sql = buildClient(
@@ -1946,7 +1954,7 @@ export function createDedicatedOrgPg(
   );
   validateDiscoveryTargetOnce(sql, poolLabel, {
     url,
-    checkSchema: _resolvedAdminUrlSource === 'discovery',
+    checkSchema: !explicitUrl && _resolvedAdminUrlSource === 'discovery',
   });
   return { sql, url };
 }
