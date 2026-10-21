@@ -557,11 +557,11 @@ STRUCTURED observation graded against it instead of free-text: set `observation.
 that rubric's id and `observation.ratings` to a Record keyed by the rubric's criterion keys —
 one `{ rating, evidence }` per criterion you assess, where rating is one of healthy / degraded
 / broken / unknown and EVIDENCE IS REQUIRED on every rating (name the tool / file / WI / query
-— capture rejects an empty-evidence rating). A structured observation gives Scout and the Queen
+— capture rejects an empty-evidence rating). A structured observation gives Scout and rubric re-scoring
 a measurement to compare over time, not an anecdote. If NO active rubric fits what you saw, a
 FREE-TEXT observation stays first-class — rubrics augment, they never replace the novel finding
 that has no standard yet. (Grading uses an EXISTING rubric; proposing a new one is a separate
-step the Queen ratifies, not something you author inline.)
+`rubrics:propose` + vetting step, not something you author inline.)
 <!-- OBSERVATION-PRACTICE:OBSERVATION_RUBRIC_NUDGE:END -->
 
 ### The papercusp-way routing gate (intent → mechanism)
