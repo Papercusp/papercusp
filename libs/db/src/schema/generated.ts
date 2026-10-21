@@ -4870,6 +4870,7 @@ export const gatewayRequestOutcomesInHarnessShared = harnessShared.table("gatewa
 	transport: text().notNull(),
 	model: text(),
 	selectedAccountId: text("selected_account_id"),
+	attemptAccountIds: jsonb("attempt_account_ids").default([]).notNull(),
 	outcomeClass: text("outcome_class").notNull(),
 	finalStatus: integer("final_status"),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
@@ -4899,6 +4900,7 @@ export const gatewayRequestOutcomesInHarnessShared = harnessShared.table("gatewa
 	check("gateway_request_outcomes_check1", sql`retention_expires_at_ms > recorded_at_ms`),
 	check("gateway_request_outcomes_failovers_check", sql`failovers >= 0`),
 	check("gateway_request_outcomes_final_status_check", sql`(final_status IS NULL) OR ((final_status >= 100) AND (final_status <= 599))`),
+	check("gateway_request_outcomes_attempt_account_ids_check", sql`jsonb_typeof(attempt_account_ids) = 'array'`),
 	check("gateway_request_outcomes_outcome_class_check", sql`outcome_class = ANY (ARRAY['ok'::text, 'client-error'::text, 'upstream-429'::text, 'upstream-error'::text, 'shed'::text, 'cancelled'::text, 'gateway-error'::text, 'unclassified'::text])`),
 	check("gateway_request_outcomes_protocol_check", sql`protocol = ANY (ARRAY['anthropic-messages'::text, 'openai-responses'::text, 'unknown'::text])`),
 	check("gateway_request_outcomes_provider_check", sql`provider = ANY (ARRAY['claude'::text, 'codex'::text, 'local'::text])`),
