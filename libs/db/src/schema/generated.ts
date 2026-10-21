@@ -9318,6 +9318,26 @@ export const planTypeDefinitionsInHarnessShared = harnessShared.table("plan_type
 	check("plan_type_definitions_revision_check", sql`revision >= 1`),
 ]);
 
+export const planTypePinsInHarnessShared = harnessShared.table("plan_type_pins", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	kind: text().notNull(),
+	typeId: text("type_id").notNull(),
+	revision: integer().notNull(),
+	contentHash: text("content_hash").notNull(),
+	pinnedAt: timestamp("pinned_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	pinnedBy: text("pinned_by").notNull(),
+	pinReason: text("pin_reason"),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.kind, table.planSlug, table.typeId, table.workspaceId], name: "plan_type_pins_pkey"}),
+	pgPolicy("plan_type_pins_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("plan_type_pins_content_hash_shape", sql`content_hash ~ '^[0-9a-f]{64}$'::text`),
+	check("plan_type_pins_id_grammar", sql`type_id ~ '^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$'::text`),
+	check("plan_type_pins_kind_check", sql`kind = ANY (ARRAY['item-type'::text, 'plan-type'::text])`),
+	check("plan_type_pins_revision_check", sql`revision >= 1`),
+]);
+
 export const planWorkGroupMembersInHarnessShared = harnessShared.table("plan_work_group_members", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
