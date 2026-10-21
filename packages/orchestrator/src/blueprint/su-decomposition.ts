@@ -510,10 +510,26 @@ export function suTilingProblems(suText: string, tiles: readonly SuTile[] = SU_T
   return problems;
 }
 
+/**
+ * The `code` on the error `locateSuTiles` throws when an su.md's heading structure does not
+ * match the tiles it is checked against. su.md is not text-only: its headings are a contract
+ * with the SU_TILES compiled into a build, so a caller that reads su.md from a different tree
+ * than its own code (the D-001 prompt-root redirect) can meet this skew and recover from it
+ * by composing its own build's su.md (WI-6554700010019096). Match on the code, not the message.
+ */
+export const SU_TILING_UNSOUND_CODE = 'su-tiling-unsound';
+
+/** True when `e` is the tiling-skew error `locateSuTiles` throws (see SU_TILING_UNSOUND_CODE). */
+export function isSuTilingError(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: unknown }).code === SU_TILING_UNSOUND_CODE;
+}
+
 /** Resolve every tile to its line range + text in THIS su.md; throws on a tiling problem. */
 export function locateSuTiles(suText: string, tiles: readonly SuTile[] = SU_TILES): LocatedSuTile[] {
   const problems = suTilingProblems(suText, tiles);
-  if (problems.length) throw new Error(`su.md tiling is unsound:\n  - ${problems.join('\n  - ')}`);
+  if (problems.length) {
+    throw Object.assign(new Error(`su.md tiling is unsound:\n  - ${problems.join('\n  - ')}`), { code: SU_TILING_UNSOUND_CODE });
+  }
   const lines = suLines(suText);
   const starts = tiles.map((t) => lines.indexOf(t.anchor) + 1);
   return tiles.map((t, i) => {
