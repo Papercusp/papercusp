@@ -288,9 +288,10 @@ test('buildPrompt — non-curator gets the observation-rubric nudge (rubric-driv
     assert.match(out, /healthy \/ degraded/);
     assert.match(out, /\/ broken \/ unknown/);
     assert.match(out, /EVIDENCE IS REQUIRED/);
-    // Free-text stays first-class; authoring a rubric is a separate Queen-ratified step.
+    // Free-text stays first-class; new rubrics use the separate proposal/vetting workflow.
     assert.match(out, /FREE-TEXT observation stays first-class/);
-    assert.match(out, /Queen ratifies/);
+    assert.match(out, /rubrics:propose/);
+    assert.match(out, /vetting step, not something you author inline/);
   } finally {
     fx.cleanup();
   }
