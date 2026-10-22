@@ -70,6 +70,7 @@ function htmlToText(html) {
 
 // libs/papercusp/plugins/mastodon/papercusp.json
 var papercusp_default = {
+  distribution: "cupboard",
   kind: "plugin",
   name: "mastodon",
   version: "0.1.0",
