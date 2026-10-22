@@ -68,10 +68,9 @@ installation, and replays recover the recorded ticket instead of filing again.
   "verification": {
     "method": "Trace one reaction, one form report and one thread mention through their trigger runs to the recorded ticketFiling outcome.",
     "check": {
-      "kind": "tests",
-      "files": [
-        "packages/operator-core/lib/capability-verbs/ticket.integration.test.ts"
-      ]
+      "kind": "instrument",
+      "instrumentKey": "ticket:filing-integration",
+      "expect": { "op": "eq", "value": 1 }
     },
     "replication": "Repeat for a replayed run and for a report from an unwatched channel."
   }
