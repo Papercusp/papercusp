@@ -1115,7 +1115,7 @@ export const CORE_MCP_TOOL_NAMES: readonly string[] = [
   'plans:new',
   'plans:get',
   'plans:set-status',
-  'plans:items',
+  // plans:get includes items with effectiveStatus; load the narrower plans:items view on demand.
   // plans:set-now — the plan-narration duty every plan-holding agent carries ("## Now" is
   // the status surface peers + the owner read). 467 tools:invoke fallback reaches + 807
   // direct calls in 7d — a top unmet need (2026-07-05 demand-evidence rebalance).
