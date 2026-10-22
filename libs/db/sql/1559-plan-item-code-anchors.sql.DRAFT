@@ -47,3 +47,21 @@ CREATE TABLE IF NOT EXISTS harness_shared.plan_anchor_notices (
 );
 CREATE INDEX IF NOT EXISTS plan_anchor_notices_plan_idx
   ON harness_shared.plan_anchor_notices(workspace_id,harness_slug,plan_slug,raised_at);
+
+ALTER TABLE harness_shared.plan_item_anchors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.plan_anchor_notices ENABLE ROW LEVEL SECURITY;
+-- FORWARD-COMPAT: these policies belong only to the new anchor tables, unused by the older release.
+DROP POLICY IF EXISTS plan_item_anchors_workspace ON harness_shared.plan_item_anchors;
+CREATE POLICY plan_item_anchors_workspace ON harness_shared.plan_item_anchors
+  USING (workspace_id=current_setting('app.workspace_id',true))
+  WITH CHECK (workspace_id=current_setting('app.workspace_id',true));
+DROP POLICY IF EXISTS plan_anchor_notices_workspace ON harness_shared.plan_anchor_notices;
+CREATE POLICY plan_anchor_notices_workspace ON harness_shared.plan_anchor_notices
+  USING (workspace_id=current_setting('app.workspace_id',true))
+  WITH CHECK (workspace_id=current_setting('app.workspace_id',true));
+GRANT SELECT,INSERT,UPDATE,DELETE ON harness_shared.plan_item_anchors,harness_shared.plan_anchor_notices TO harness_app,harness_admin;
+GRANT USAGE,SELECT ON SEQUENCE harness_shared.plan_item_anchors_id_seq,harness_shared.plan_anchor_notices_id_seq TO harness_app,harness_admin;
+CREATE OR REPLACE TRIGGER emit_change_notify_trg AFTER INSERT OR UPDATE OR DELETE ON harness_shared.plan_item_anchors
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.emit_change_notify();
+CREATE OR REPLACE TRIGGER emit_change_notify_trg AFTER INSERT OR UPDATE OR DELETE ON harness_shared.plan_anchor_notices
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.emit_change_notify();
