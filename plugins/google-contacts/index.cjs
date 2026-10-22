@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Google Contacts provider (plan provider-adapters-to-packages-2026-10-11, P-004 / D-036).
+ * Google Contacts provider with shared Google account consent and host-owned sync state.
  *
  * Replaces the app-code contacts poll (connector-sync-action.ts + personal-vault/live-sink.ts
  * syncGoogleContacts) and the contacts-access check that lived in external-triggers/google-workspace.ts.
