@@ -36,6 +36,12 @@ function setupRegistry(): { home: string; projectDir: string; harnessDir: string
     join(harnessDir, 'blueprints', 'base', 'prompts', 'worker.md'),
     '# WORKER\n\nDo your job.\n',
   );
+  // assembleRolePrompt also loads the shared observation-practice sections
+  // from this harness root; keep the isolated fixture's required base asset.
+  cpSync(
+    fileURLToPath(new URL('../../harness/blueprints/base/prompts/su.practice.md', import.meta.url)),
+    join(harnessDir, 'blueprints', 'base', 'prompts', 'su.practice.md'),
+  );
 
   // Registry pointing the slug at the project dir.
   writeFileSync(
