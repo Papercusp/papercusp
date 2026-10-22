@@ -501,14 +501,14 @@ const HISTORY_SUBTYPES = new Set(['thread_broadcast', 'bot_message', 'file_share
 const GONE_CHANNEL = /^slack_conversations_history_(not_in_channel|channel_not_found|is_archived)$/;
 
 /**
- * How far back the rescan of an already-backfilled channel reads (WI-6554700010012278): a week of
+ * How far back the rescan of an already-backfilled channel reads: a week of
  * posts. Each sync round rescans one such channel in turn, so a message posted in the last week and
  * deleted while the daemon was offline is tombstoned within one sweep of the channels.
  */
 export const SLACK_RESCAN_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
 /**
- * How often each already-backfilled channel's WHOLE history is re-read (WI-6554700010012486). The
+ * How often each already-backfilled channel's WHOLE history is re-read. The
  * week-long rescan cannot see a message older than its window, or a reply in a thread whose root is
  * older, that was deleted while the daemon was offline. A due round re-reads the next known channel
  * from its start instead of its last week, so every known channel is re-walked about once a period:
@@ -688,8 +688,8 @@ async function membershipPage(fetchSlack, state) {
   const current = channels.map((channel) => channel.id);
   const queue = current.filter((id) => !seen.has(id));
   // One already-backfilled channel per round re-reads its recent window, in turn, so a delete made
-  // while the daemon was offline is found (WI-6554700010012278). When a whole-history re-walk is due,
-  // the next channel of that separate rotation is re-read from its start instead (WI-6554700010012486);
+  // while the daemon was offline is found. When a whole-history re-walk is due,
+  // the next channel of that separate rotation is re-read from its start instead;
   // the re-walk clock starts on the first membership page.
   const known = current.filter((id) => seen.has(id));
   const now = Date.now();
@@ -712,7 +712,7 @@ async function membershipPage(fetchSlack, state) {
 /**
  * History page: one conversations.history page of the channel being read (the first queued
  * channel's whole history, else the rescan channel's window from `oldest`), every thread's replies
- * included. Each page also reports what it read completely (WI-6554700010012278): the channel's
+ * included. Each page also reports what it read completely: the channel's
  * messages outside threads between its oldest message and the previous page's (down to `oldest`, or
  * the channel's start, on the last page), and each thread whose replies it re-read. Every page of
  * one read stops at the same `latest`, so a message posted meanwhile is neither read nor counted as
@@ -790,7 +790,7 @@ async function historyPage(fetchSlack, state) {
  * the last week of one channel backfilled before, in turn, or when due re-reads one such channel's
  * whole history (SLACK_DEEP_RESCAN_PERIOD_SECONDS); the socket delivers new messages. Each
  * history page reports the windows it read completely, so the host tombstones what Slack no longer
- * returns (WI-6554700010012278). A rate limit throws the
+ * returns. A rate limit throws the
  * SDK's rate-limited error (slackBody), so the host waits out Slack's Retry-After.
  */
 export async function syncPage(request, fetchSlack) {
