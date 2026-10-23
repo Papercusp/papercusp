@@ -1,0 +1,9 @@
+-- WI-6554700010020422 / P532 / D288: sequences are local to their author.
+-- INACTIVE CONTRACT-PHASE DRAFT. Do not arm while any legacy writer still
+-- uses ON CONFLICT (workspace_id, harness_slug, feature_id, seq).
+-- Upgrade those writers to a target-independent conflict clause before the
+-- governed contract phase. This change preserves every existing claim row.
+ALTER TABLE harness_shared.feature_claims
+  DROP CONSTRAINT feature_claims_pkey,
+  ADD CONSTRAINT feature_claims_pkey
+    PRIMARY KEY (workspace_id, harness_slug, feature_id, claimer_pubkey, seq);
