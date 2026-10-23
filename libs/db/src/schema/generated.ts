@@ -12344,6 +12344,21 @@ export const testCaseRunsInHarnessShared = harnessShared.table("test_case_runs",
 	check("test_case_runs_status_check", sql`status = ANY (ARRAY['pass'::text, 'fail'::text, 'skip'::text])`),
 ]);
 
+export const testCoverageMapsInHarnessShared = harnessShared.table("test_coverage_maps", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	rootPath: text("root_path").notNull(),
+	scopeRoot: text("scope_root").notNull(),
+	testFile: text("test_file").notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).notNull(),
+	runGroupId: text("run_group_id"),
+	snapshot: jsonb().notNull(),
+}, (table) => [
+	index("test_coverage_maps_retention_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("timestamptz_ops")),
+	primaryKey({ columns: [table.harnessSlug, table.rootPath, table.scopeRoot, table.testFile, table.workspaceId], name: "test_coverage_maps_pkey"}),
+	check("test_coverage_maps_snapshot_check", sql`octet_length((snapshot)::text) <= 300000`),
+]);
+
 export const testDowngradesInHarnessShared = harnessShared.table("test_downgrades", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
