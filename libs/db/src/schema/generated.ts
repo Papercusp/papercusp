@@ -1,4 +1,10 @@
 import { type AnyPgColumn, type PgTableExtraConfigValue, bigint, bigserial, boolean, check, customType, date, doublePrecision, foreignKey, index, integer, jsonb, numeric, pgPolicy, pgSchema, pgTable, primaryKey, real, smallint, text, timestamp, unique, uniqueIndex, uuid, vector } from "drizzle-orm/pg-core"
+
+const unboundedVectorCustom = customType<{ data: number[]; driverData: string }>({
+  dataType: () => 'vector',
+  toDriver: value => JSON.stringify(value),
+  fromDriver: value => JSON.parse(value),
+});
 import { sql } from "drizzle-orm"
 
 // Custom column types for PG types drizzle-kit can't introspect
@@ -11116,6 +11122,47 @@ export const secretsGuardPathExemptionsInHarnessShared = harnessShared.table("se
 }, (table) => [
 	primaryKey({ columns: [table.path, table.workspaceId], name: "secrets_guard_path_exemptions_pkey"}),
 	pgPolicy("secrets_guard_path_exemptions_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const semanticCodeFilesInHarnessShared = harnessShared.table("semantic_code_files", {
+	workspaceId: text("workspace_id").notNull(),
+	repositoryId: text("repository_id").notNull(),
+	embeddingProfile: text("embedding_profile").notNull(),
+	path: text().notNull(),
+	blobSha: text("blob_sha").notNull(),
+	normalizationVersion: text("normalization_version").notNull(),
+	dimensions: integer().notNull(),
+	state: text().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.embeddingProfile, table.path, table.repositoryId, table.workspaceId], name: "semantic_code_files_pkey"}),
+	check("semantic_code_files_dimensions_check", sql`dimensions > 0`),
+	check("semantic_code_files_state_check", sql`state = ANY (ARRAY['pending'::text, 'ready'::text, 'failed'::text])`),
+]);
+
+export const semanticCodeFunctionsInHarnessShared = harnessShared.table("semantic_code_functions", {
+	workspaceId: text("workspace_id").notNull(),
+	repositoryId: text("repository_id").notNull(),
+	embeddingProfile: text("embedding_profile").notNull(),
+	path: text().notNull(),
+	functionId: text("function_id").notNull(),
+	blobSha: text("blob_sha").notNull(),
+	name: text().notNull(),
+	line: integer().notNull(),
+	columnNumber: integer("column_number").notNull(),
+	summary: text().notNull(),
+	normalizedBody: text("normalized_body").notNull(),
+	embedding: unboundedVectorCustom().notNull(),
+	searchText: tsvectorCustom("search_text").generatedAlwaysAs(sql`to_tsvector('simple'::regconfig, ((summary || ' '::text) || normalized_body))`),
+}, (table) => [
+	index("semantic_code_functions_text_idx").using("gin", table.searchText.asc().nullsLast().op("tsvector_ops")),
+	foreignKey({
+			columns: [table.workspaceId, table.repositoryId, table.embeddingProfile, table.path],
+			foreignColumns: [semanticCodeFilesInHarnessShared.workspaceId, semanticCodeFilesInHarnessShared.repositoryId, semanticCodeFilesInHarnessShared.embeddingProfile, semanticCodeFilesInHarnessShared.path],
+			name: "semantic_code_functions_workspace_id_repository_id_embeddi_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.embeddingProfile, table.functionId, table.path, table.repositoryId, table.workspaceId], name: "semantic_code_functions_pkey"}),
+	check("semantic_code_functions_column_number_check", sql`column_number > 0`),
+	check("semantic_code_functions_line_check", sql`line > 0`),
 ]);
 
 export const sensitiveActionApprovalsInHarnessShared = harnessShared.table("sensitive_action_approvals", {
