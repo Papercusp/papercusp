@@ -342,6 +342,31 @@ export async function readAndClearResourceWaiters(
 }
 
 /**
+ * A released exclusive creates a back-up hint only if the grant cascade leaves
+ * no live exclusive holder. If a successor is promoted immediately, clear that
+ * holder's stale waiter row and preserve the remaining waiters for its release.
+ */
+async function resourcesReadyForBackUp(
+  tx: Sql,
+  coordinationDomain: string,
+  candidates: string[],
+): Promise<string[]> {
+  const ready: string[] = [];
+  for (const resource of new Set(candidates)) {
+    const exclusiveHolders = (await readLiveHolders(tx, coordinationDomain, resource))
+      .filter((holder) => holder.mode === 'exclusive');
+    if (exclusiveHolders.length > 0) {
+      for (const holder of exclusiveHolders) {
+        await clearResourceWaiter(tx, coordinationDomain, resource, holder.owner);
+      }
+      continue;
+    }
+    ready.push(resource);
+  }
+  return ready;
+}
+
+/**
  * Reactive nudge for the exclusive wait loop: sweep this workspace's
  * expired resource holders, then run the drain cascade unconditionally.
  * Mirrors pokeWorkspace for the file locks — a shared holder whose TTL
@@ -676,11 +701,16 @@ export async function tryReleaseResource(
   }
 
   await promoteResourceExclusiveQueue(tx, cd);
-  // Resources whose EXCLUSIVE hold was just released — the back-up broadcast
-  // audience (P-010). Distinct; empty when only shared rows were released.
-  const exclusiveResources = [
-    ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
+  // An expired or live exclusive is back up only if the cascade did not grant
+  // another exclusive immediately. The expired rows are captured before the
+  // sweep because that delete removes the evidence from agent_resource_locks.
+  const exclusiveCandidates = [
+    ...new Set([
+      ...deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource),
+      ...expiredRows.filter((row) => row.mode === 'exclusive').map((row) => row.resource),
+    ]),
   ];
+  const exclusiveResources = await resourcesReadyForBackUp(tx, cd, exclusiveCandidates);
   // Read + clear the waiters on each freed exclusive — they're the targeted
   // back-up audience (A4), replacing the old ['*'] broadcast.
   const waiters: Record<string, string[]> = {};
@@ -725,9 +755,14 @@ export async function releaseAllResourcesForOwner(
   await tx`DELETE FROM agent_resource_waiters WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}`;
   await tx`DELETE FROM agent_resource_exclusive_queue WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}`;
   await promoteResourceExclusiveQueue(tx, coordinationDomain);
-  const exclusiveResources = [
+  const exclusiveCandidates = [
     ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
   ];
+  const exclusiveResources = await resourcesReadyForBackUp(
+    tx,
+    coordinationDomain,
+    exclusiveCandidates,
+  );
   const waiters: Record<string, string[]> = {};
   for (const res of exclusiveResources) {
     waiters[res] = await readAndClearResourceWaiters(tx, coordinationDomain, res);
