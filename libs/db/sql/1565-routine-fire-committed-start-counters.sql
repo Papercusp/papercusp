@@ -1,6 +1,6 @@
 -- P-003/R-1. Physical routineFire INSERT counts, not claims/attempts or retained
 -- workflow history. No existing counter retains these dimensions across GC.
--- Reuse the migration plane and operator_settings coverage provenance. Local
+-- Reuse the migration plane and trigger metadata for coverage provenance. Local
 -- telemetry, one row per UTC hour/routine, seven-day retention, no backfill.
 CREATE TABLE IF NOT EXISTS harness_shared.routine_fire_start_counts (
   bucket_start_ms bigint NOT NULL,
@@ -62,13 +62,12 @@ BEGIN
   CREATE TRIGGER routine_fire_committed_start_counter AFTER INSERT ON dbos.workflow_status
     FOR EACH ROW WHEN (NEW.name = 'routineFire')
     EXECUTE FUNCTION harness_shared.count_committed_routine_fire_start();
+  -- Coverage belongs to this physical system-table trigger, not a tenant's
+  -- operator_settings. Stamp its native metadata transactionally with install.
   -- Reinstallation resets coverage rather than concealing a missing interval.
-  INSERT INTO harness_shared.operator_settings (key, value, description, updated_at)
-    VALUES ('routine_fire_start_counter_since_ms',
-      floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint::text,
-      'Continuous routineFire INSERT counter coverage; UTC-hour windows only.',
-      floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint)
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at;
+  EXECUTE format('COMMENT ON TRIGGER routine_fire_committed_start_counter ON dbos.workflow_status IS %L',
+    jsonb_build_object('schemaVersion', 1,
+      'sinceMs', floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint)::text);
 END;
 $$;
 
