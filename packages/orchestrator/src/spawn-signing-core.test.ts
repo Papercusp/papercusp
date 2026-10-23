@@ -15,7 +15,7 @@ import {
 describe('spawn-signing-core', () => {
   it('the allowlist is the exact signed-envelope set', () => {
     expect([...SIGNED_PARAM_ALLOWLIST].sort()).toEqual(
-      ['chunk', 'client', 'detector', 'exp', 'feature', 'harness', 'parent_spawn', 'role', 'run', 'spawn', 'workspace'],
+      ['chat', 'chunk', 'client', 'detector', 'exp', 'feature', 'harness', 'parent_spawn', 'role', 'run', 'spawn', 'workspace'],
     );
   });
 

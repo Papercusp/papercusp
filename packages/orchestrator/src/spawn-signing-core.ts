@@ -38,6 +38,7 @@ export const SIGNED_PARAM_ALLOWLIST: ReadonlySet<string> = new Set([
   'parent_spawn',
   'client',
   'detector',
+  'chat',
   'exp',
 ]);
 
