@@ -60,6 +60,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, realpathSync, rmSync, readdirSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
 import { repairEmptyArrayDefaults, repairRawSqlCallDefaults } from '../src/schema/schema-defaults.mjs';
+import { repairUnconstrainedVectorColumns } from '../src/schema/schema-vector-columns.mjs';
 import {
   annotateCircularForeignKeyExtraConfigs,
   promoteGeneratedSchemaArtifacts,
@@ -569,6 +570,12 @@ let fixedUnknownFallback = 0;
     );
   }
 }
+
+// PG permits vectors without a declared width. Drizzle's vector() builder
+// requires a dimensions config and otherwise crashes while importing schema.
+// Preserve the database's actual unconstrained type through a custom column.
+const repairedVectors = repairUnconstrainedVectorColumns(schema);
+schema = repairedVectors.schema;
 
 // Fix 5: drizzle-kit drops primary keys. Re-query PG and inject any missing
 // `primaryKey({ columns: [...] })` into the table-config callback.
