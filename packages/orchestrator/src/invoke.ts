@@ -3052,9 +3052,10 @@ export function registerInvocationLane(
     try { return harnessSlugFromProjectDir(ctx.projectDir); } catch { return ''; }
   })();
   const { pg, workspaceId: ws, phase } = ctx;
-  if (!pg || !ws || !laneSlug) return async () => {};
+  if (!pg || !ws || !laneSlug || lanePid == null) return async () => {};
   const startedAtMs = Date.now();
-  const laneWritePromise = lanePid == null ? null : (async () => {
+  let laneWritten = false;
+  const laneWritePromise = (async () => {
     try {
       await pg`
         INSERT INTO harness_shared.harness_lanes
@@ -3066,6 +3067,7 @@ export function registerInvocationLane(
           started_at   = EXCLUDED.started_at,
           workspace_id = EXCLUDED.workspace_id
       `;
+      laneWritten = true;
     } catch (err) {
       ctx.log(`  lane write failed: ${(err as Error).message}`);
     }
@@ -3073,12 +3075,16 @@ export function registerInvocationLane(
   return async () => {
     try {
       // A fast child can exit before its INSERT completes.
-      if (laneWritePromise) await laneWritePromise;
+      await laneWritePromise;
+      if (!laneWritten) return;
       await pg`
         DELETE FROM harness_shared.harness_lanes
         WHERE harness_slug = ${laneSlug}
           AND phase = ${phase}
           AND role = ${role}
+          AND workspace_id = ${ws}
+          AND pid = ${lanePid}
+          AND started_at = ${startedAtMs}
       `;
     } catch (err) {
       ctx.log(`  lane clear failed: ${(err as Error).message}`);
