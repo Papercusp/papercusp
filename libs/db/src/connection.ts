@@ -661,7 +661,8 @@ function noteServedAppUrl(url: string): string {
   return url;
 }
 
-function appUrl(opts?: { operatorEnvironmentFile?: string }): string {
+/** Shared app-role target for children that must inherit a resolved parent database. */
+export function appUrl(opts?: { operatorEnvironmentFile?: string }): string {
   // Single funnel: every resolution path returns through here, so a future branch
   // added to resolveAppUrl() inherits the rebind guard instead of having to
   // remember its own teardown — the failure mode this whole class came from.
