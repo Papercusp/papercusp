@@ -32,7 +32,7 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse as parseToml } from '@iarna/toml';
-import { resolveCapabilityPolicy, type CapabilityPolicyRequest } from './managed-capability-policy';
+import { resolveCapabilityPolicy, type CapabilityPolicyRequest } from '@papercusp/orchestrator/managed-capability-policy';
 
 /** Publish one complete, valid private config. Never truncate the live file:
  * an interrupted write must leave either the prior document or the new one.

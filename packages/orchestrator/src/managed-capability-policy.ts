@@ -79,15 +79,15 @@ import {
   MANAGED_CAPABILITY_FAMILY_IDS,
   type ManagedCapabilityDispositionKind,
   type ManagedCapabilityFamilyId,
-} from './managed-capability-contract';
+} from '@papercusp/orchestrator/managed-capability-contract';
 import {
   NATIVE_SCHEDULER_SKILL_DENY,
   NATIVE_SCHEDULER_TOOL_DENY,
   OS_SCHEDULER_BASH_DENY,
-} from './native-scheduler-deny';
-import { NATIVE_TOOL_SEARCH_DENY } from './native-tool-search-deny';
-import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
-import { OWNER_DESKTOP_NOTIFY_BASH_DENY } from './owner-desktop-notify-deny';
+} from '@papercusp/orchestrator/native-scheduler-deny';
+import { NATIVE_TOOL_SEARCH_DENY } from '@papercusp/orchestrator/native-tool-search-deny';
+import { NO_SUBAGENT_TOOLS_DENY } from '@papercusp/orchestrator/no-subagent-deny';
+import { OWNER_DESKTOP_NOTIFY_BASH_DENY } from '@papercusp/orchestrator/owner-desktop-notify-deny';
 
 /** The agent CLI families a managed launch can target. */
 export type CapabilityClientFamily = 'claude' | 'codex' | 'omp';
