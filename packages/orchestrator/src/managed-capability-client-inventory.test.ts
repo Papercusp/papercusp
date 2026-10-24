@@ -56,6 +56,14 @@ describe('version-pinned client native tool inventory', () => {
     expect(report.completeNameMapping).toBe(false);
   });
 
+  it('retains the measured Codex clock until a managed time query has parity proof', () => {
+    const report = nativeToolInventory({ client: 'codex', clientVersion: '0.163.0', nativeNames: ['clock__curr_time'] });
+    expect(report.rows[0]).toMatchObject({ family: null, managedAuthorities: [],
+      disposition: 'unsupported-gap', gap: 'native-parity-unverified', cutoverReady: false });
+    expect(report.rows[0].boundary).toContain('current UTC time');
+    expect(report.completeNameMapping).toBe(false);
+  });
+
   it('keeps prototype-property tool names unknown', () => {
     const report = nativeToolInventory({ client: 'omp', clientVersion: '18.0.3',
       nativeNames: ['constructor', 'toString', '__proto__'] });
@@ -64,9 +72,12 @@ describe('version-pinned client native tool inventory', () => {
 
   it('distinguishes registered MCP tools and qualified native aliases', () => {
     const report = nativeToolInventory({ client: 'codex', clientVersion: '0.163.0',
-      nativeNames: ['functions.exec_command', 'multi_agent_v1.spawn_agent', 'mcp__managed_surface',
+      nativeNames: ['functions.exec_command', 'multi_agent_v1.spawn_agent', 'multi_agent_v1__close_agent',
+        'functions__wait', 'mcp__managed_surface',
         'managed_surface_canary'], managedNames: ['managed_surface_canary'] });
-    expect(report.rows.map(row => row.family)).toEqual(['shell-ssh-interpreters', 'delegation']);
+    expect(report.rows.map(row => row.family)).toEqual(['shell-ssh-interpreters', 'delegation', 'delegation',
+      'script-orchestration-kernels']);
+    expect(report.rows[3].boundary).toContain('yielded-cell resumption');
     expect(report.ignoredManagedNames).toEqual(['mcp__managed_surface', 'managed_surface_canary']);
   });
 

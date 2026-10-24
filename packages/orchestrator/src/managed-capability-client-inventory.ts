@@ -19,8 +19,8 @@ type Group = { family: ManagedCapabilityFamilyId; names: readonly string[]; boun
 const common: readonly Group[] = [
   { family: 'shell-ssh-interpreters', names: ['Bash', 'bash', 'exec_command', 'shell_command', 'shell'] },
   { family: 'jobs-output-stop-pty', names: ['write_stdin', 'TaskStop', 'BashOutput', 'KillShell'] },
-  { family: 'script-orchestration-kernels', names: ['exec', 'python'],
-    boundary: 'Native orchestration/code-mode execution needs its own managed continuity and media proof.' },
+  { family: 'script-orchestration-kernels', names: ['exec', 'wait', 'python'],
+    boundary: 'Native orchestration/code-mode execution and yielded-cell resumption need their own managed continuity and media proof.' },
   { family: 'reads-list-search-lsp', names: ['Read', 'read', 'Glob', 'glob', 'Grep', 'grep', 'lsp'] },
   { family: 'edit-write-patch-notebook', names: ['Edit', 'edit', 'Write', 'write', 'apply_patch', 'NotebookEdit', 'notebook'],
     boundary: 'Exact-string edit is not multi-file patch or notebook parity; keep each adapter gap explicit.' },
@@ -45,7 +45,7 @@ const clientNames: Readonly<Record<CapabilityClientFamily, ReadonlySet<string>>>
     'Edit', 'Write', 'NotebookEdit', 'CronCreate', 'CronDelete', 'CronList', 'ScheduleWakeup', 'ListAgents',
     'SendMessage', 'ReportFindings', 'Skill', 'ToolSearch', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskStop',
     'TaskUpdate', 'WebFetch', 'WebSearch', 'EnterWorktree', 'ExitWorktree', 'AskUserQuestion']),
-  codex: new Set(['exec', 'exec_command', 'write_stdin', 'shell_command', 'shell', 'apply_patch', 'view_image',
+  codex: new Set(['exec', 'wait', 'exec_command', 'write_stdin', 'shell_command', 'shell', 'apply_patch', 'view_image',
     'web', 'spawn_agent', 'send_input', 'resume_agent', 'close_agent', 'wait_agent', 'sleep', 'update_plan',
     'get_goal', 'create_goal', 'update_goal', 'request_user_input', 'imagegen',
     'list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource']),
@@ -59,6 +59,10 @@ const clientNames: Readonly<Record<CapabilityClientFamily, ReadonlySet<string>>>
 // rather than a name-only mapping to one managed capability family.
 const observedUnverifiedContracts: Readonly<Partial<Record<CapabilityClientFamily,
   Readonly<Record<string, string>>>>> = {
+  codex: {
+    clock__curr_time: 'Codex clock reads the current UTC time. Retain this native time query; ' +
+      'no managed clock replacement has verified parity.',
+  },
   omp: {
     eval: 'OMP eval runs a persistent multi-language kernel, with read/write/env, tool, completion and agent helpers. ' +
       'Cross-call state, helper effects, media and delegation need separate managed parity proof.',
@@ -82,7 +86,7 @@ export interface NativeToolInventoryRow {
 }
 
 function callableName(client: CapabilityClientFamily, name: string): string {
-  if (client === 'codex') return name.replace(/^(?:functions|multi_agent_v1)\./, '');
+  if (client === 'codex') return name.replace(/^(?:functions|multi_agent_v1)(?:\.|__)/, '');
   return name;
 }
 
