@@ -37,17 +37,29 @@ describe('version-pinned client native tool inventory', () => {
     expect(report.cutoverReady).toBe(false);
   });
 
-  it('names observed OMP eval/hub gaps without inventing their semantics or admitting cutover', () => {
+  it('retains inspected OMP composite contracts until their managed parity is verified', () => {
     const report = nativeToolInventory({ client: 'omp', clientVersion: '18.0.3', nativeNames: ['eval', 'hub'] });
     expect(report.completeNameMapping).toBe(false);
-    expect(report.rows.every(row => row.gap === 'native-semantics-unmeasured')).toBe(true);
+    expect(report.rows.every(row => row.gap === 'native-parity-unverified')).toBe(true);
     expect(report.rows.every(row => row.family === null && row.managedAuthorities.length === 0)).toBe(true);
     expect(report.rows.every(row => row.disposition === 'unsupported-gap' && !row.cutoverReady)).toBe(true);
+    expect(report.rows[0].boundary).toContain('persistent multi-language kernel');
+    expect(report.rows[0].boundary).toContain('helper effects, media and delegation');
+    expect(report.rows[1].boundary).toContain('peer messaging');
+    expect(report.rows[1].boundary).toContain('background-job wait/cancel');
+    expect(report.rows[1].boundary).toContain('PTY input and persistence');
+    expect(report.rows.every(row => row.boundary.includes('separate managed parity proof'))).toBe(true);
   });
 
   it('does not treat an empty native surface as evidence of complete coverage', () => {
     const report = nativeToolInventory({ client: 'codex', clientVersion: '0.163.0', nativeNames: [] });
     expect(report.completeNameMapping).toBe(false);
+  });
+
+  it('keeps prototype-property tool names unknown', () => {
+    const report = nativeToolInventory({ client: 'omp', clientVersion: '18.0.3',
+      nativeNames: ['constructor', 'toString', '__proto__'] });
+    expect(report.rows.every(row => row.gap === 'unknown-native-tool')).toBe(true);
   });
 
   it('distinguishes registered MCP tools and qualified native aliases', () => {

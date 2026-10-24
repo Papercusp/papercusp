@@ -53,14 +53,22 @@ const clientNames: Readonly<Record<CapabilityClientFamily, ReadonlySet<string>>>
     'inspect_image', 'browser', 'computer', 'task', 'todo', 'web_search', 'ask']),
 };
 
-// Observed in the installed OMP request (P023 native probe); their operation
-// contracts still need inspection. Naming the gap is preferable to pretending
-// that a familiar tool name proves a semantically equivalent replacement.
-const observedUnmapped: Readonly<Partial<Record<CapabilityClientFamily, ReadonlySet<string>>>> = {
-  omp: new Set(['eval', 'hub']),
+// Inspected in installed OMP 18.0.3 src/prompts/tools/{eval,hub}.md and
+// src/tools/{eval.ts,hub/index.ts}; the native probe also captures the rendered
+// descriptions. These composite contracts require operation-level parity,
+// rather than a name-only mapping to one managed capability family.
+const observedUnverifiedContracts: Readonly<Partial<Record<CapabilityClientFamily,
+  Readonly<Record<string, string>>>>> = {
+  omp: {
+    eval: 'OMP eval runs a persistent multi-language kernel, with read/write/env, tool, completion and agent helpers. ' +
+      'Cross-call state, helper effects, media and delegation need separate managed parity proof.',
+    hub: 'OMP hub combines peer messaging, background-job wait/cancel, and project-scoped process ' +
+      'start/ps/logs/stop/restart/describe, including PTY input and persistence. ' +
+      'Messaging, job delivery and process lifecycle each need separate managed parity proof.',
+  },
 };
 export type NativeToolInventoryGap = 'client-version-unmeasured' | 'client-version-drift' |
-  'unknown-native-tool' | 'native-semantics-unmeasured';
+  'unknown-native-tool' | 'native-parity-unverified';
 
 export interface NativeToolInventoryRow {
   nativeName: string;
@@ -116,18 +124,21 @@ export function nativeToolInventory(input: {
       ? common.find(row => row.names.includes(name))
       : undefined;
     const family = group && MANAGED_CAPABILITY_DISPOSITIONS.find(row => row.family === group.family);
+    const contracts = observedUnverifiedContracts[input.client];
+    const unverifiedContract = contracts && Object.hasOwn(contracts, name) ? contracts[name] : undefined;
     const gap: NativeToolInventoryGap | null = observedVersion === null
       ? 'client-version-unmeasured'
       : !versionMatches ? 'client-version-drift'
-      : !family ? observedUnmapped[input.client]?.has(name)
-        ? 'native-semantics-unmeasured' : 'unknown-native-tool' : null;
+      : !family ? unverifiedContract
+        ? 'native-parity-unverified' : 'unknown-native-tool' : null;
     rows.push({
       nativeName,
       family: group?.family ?? null,
       disposition: gap ? 'unsupported-gap' : family!.disposition,
       managedAuthorities: family?.managedAuthorities ?? [],
       boundary: gap
-        ? `Retain this native surface: ${gap}; no client-removal guarantee is established.`
+        ? [unverifiedContract, `Retain this native surface: ${gap}; no client-removal guarantee is established.`]
+          .filter(Boolean).join(' ')
         : [family!.boundary, group!.boundary].filter(Boolean).join(' '),
       gap,
       cutoverReady: false,
