@@ -19,6 +19,8 @@ import {
   beginAcquire,
   describeAcquirePressure,
   PG_RESULT_DIAGNOSTIC_LIMIT,
+  pgAcquireTimingSnapshot,
+  PG_ACQUIRE_TIMING_LIMIT,
   pgQueryFamily,
   pgResultDiagnosticSnapshot,
   capturePgDiagnosticContext,
@@ -28,6 +30,7 @@ import {
   recordPoolMax,
   resetAcquireRegistryForTest,
   setPgDiagnosticContextResolver,
+  withPgAcquireDiagnostics,
 } from './acquire-registry';
 import {
   withAcquisitionDeadline,
@@ -172,6 +175,54 @@ describe('bounded acquisition ticket diagnostics', () => {
     expect(JSON.stringify(snapshot)).not.toContain('not-a-validated-request-id');
     expect(JSON.stringify(snapshot)).not.toContain('secret');
     ticket.release();
+  });
+});
+
+describe('request-scoped pool acquisition timings', () => {
+  it('records successful waits and releases before acquisition', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const snapshot = await withPgAcquireDiagnostics('spawner.process.exec', () => {
+      const acquired = beginAcquire('org-app');
+      vi.setSystemTime(new Date(Date.now() + 17));
+      acquired.acquired();
+      acquired.release();
+
+      const released = beginAcquire('org-admin');
+      vi.setSystemTime(new Date(Date.now() + 9));
+      released.release();
+      return pgAcquireTimingSnapshot();
+    });
+
+    expect(snapshot).toMatchObject({
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      operation: 'spawner.process.exec',
+      capacity: PG_ACQUIRE_TIMING_LIMIT,
+      omitted: 0,
+      acquisitions: [
+        { pool: 'org-app', elapsedMs: 17, outcome: 'acquired' },
+        { pool: 'org-admin', elapsedMs: 9, outcome: 'released-before-acquire' },
+      ],
+    });
+  });
+
+  it('caps each async request independently', async () => {
+    const snapshots = await Promise.all(['org-app', 'org-admin'].map((pool) =>
+      withPgAcquireDiagnostics('spawner.process.exec', async () => {
+        const tickets = Array.from({ length: PG_ACQUIRE_TIMING_LIMIT + 2 }, () => beginAcquire(pool));
+        await Promise.resolve();
+        tickets.forEach((ticket) => ticket.release());
+        return pgAcquireTimingSnapshot();
+      }),
+    ));
+
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[0]?.requestId).not.toBe(snapshots[1]?.requestId);
+    expect(snapshots.map((snapshot) => snapshot?.acquisitions)).toMatchObject([
+      Array.from({ length: PG_ACQUIRE_TIMING_LIMIT }, () => ({ pool: 'org-app', outcome: 'released-before-acquire' })),
+      Array.from({ length: PG_ACQUIRE_TIMING_LIMIT }, () => ({ pool: 'org-admin', outcome: 'released-before-acquire' })),
+    ]);
+    expect(snapshots.map((snapshot) => snapshot?.omitted)).toEqual([2, 2]);
   });
 });
 

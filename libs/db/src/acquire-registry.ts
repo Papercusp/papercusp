@@ -51,6 +51,7 @@
  * `@papercusp/module-singleton` was built for (EI-19451658870832332).
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { pinModuleState } from '@papercusp/module-singleton';
 import { randomUUID } from 'node:crypto';
 import { readBuildStamp } from './build-stamp';
@@ -70,6 +71,30 @@ export const PG_FAILURE_DIAGNOSTIC_LIMIT = 16;
 
 /** At most this many active acquisition tickets are copied into a deadline error. */
 export const ACQUIRE_TICKET_DIAGNOSTIC_LIMIT = 8;
+
+/** Per-request pool acquisition history is local and bounded. */
+export const PG_ACQUIRE_TIMING_LIMIT = 8;
+
+export interface PgAcquireTiming {
+  pool: string;
+  elapsedMs: number;
+  outcome: 'acquired' | 'released-before-acquire';
+}
+
+export interface PgAcquireTimingSnapshot {
+  requestId: string;
+  operation: string | null;
+  capacity: number;
+  omitted: number;
+  acquisitions: PgAcquireTiming[];
+}
+
+interface PgAcquireTimingContext {
+  requestId: string;
+  operation: string | null;
+  omitted: number;
+  acquisitions: PgAcquireTiming[];
+}
 
 export interface AcquireTicketDiagnostic {
   state: 'waiting' | 'held';
@@ -137,12 +162,38 @@ interface RegistryState {
   pools: Map<string, PoolState>;
   seq: number;
   contextResolver?: PgDiagnosticContextResolver | null;
+  acquireTimingStorage?: AsyncLocalStorage<PgAcquireTimingContext>;
 }
 
 const STATE = pinModuleState<RegistryState>('@papercusp/db-org.acquire-registry', () => ({
   pools: new Map<string, PoolState>(),
   seq: 0,
 }));
+const acquireTimingStorage = STATE.acquireTimingStorage ??= new AsyncLocalStorage<PgAcquireTimingContext>();
+
+/** Scope successful and incomplete pool waits to one bounded request. */
+export function withPgAcquireDiagnostics<T>(operation: string, run: (requestId: string) => T): T {
+  const context: PgAcquireTimingContext = {
+    requestId: randomUUID(),
+    operation: /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/.test(operation) ? operation : null,
+    omitted: 0,
+    acquisitions: [],
+  };
+  return acquireTimingStorage.run(context, () => run(context.requestId));
+}
+
+/** Read only the current async request's bounded acquisition timings. */
+export function pgAcquireTimingSnapshot(): PgAcquireTimingSnapshot | null {
+  const context = acquireTimingStorage.getStore();
+  if (!context) return null;
+  return {
+    requestId: context.requestId,
+    operation: context.operation,
+    capacity: PG_ACQUIRE_TIMING_LIMIT,
+    omitted: context.omitted,
+    acquisitions: context.acquisitions.map((item) => ({ ...item })),
+  };
+}
 
 function poolState(pool: string): PoolState {
   let s = STATE.pools.get(pool);
@@ -724,6 +775,18 @@ export function recordPoolMax(pool: string, max: number): void {
   poolState(pool).max = Math.max(1, Math.floor(max));
 }
 
+function recordRequestAcquireTiming(
+  context: PgAcquireTimingContext | undefined,
+  timing: PgAcquireTiming,
+): void {
+  if (!context) return;
+  if (context.acquisitions.length >= PG_ACQUIRE_TIMING_LIMIT) {
+    context.omitted += 1;
+    return;
+  }
+  context.acquisitions.push(Object.freeze({ ...timing }));
+}
+
 /**
  * Start tracking one acquisition on `pool`. Call `acquired()` the moment a
  * connection is in hand and `release()` when the acquisition is over — the
@@ -733,7 +796,9 @@ export function recordPoolMax(pool: string, max: number): void {
 export function beginAcquire(pool: string): AcquireTicket {
   const s = poolState(pool);
   const id = ++STATE.seq;
-  s.waiting.set(id, Date.now());
+  const startedAt = Date.now();
+  s.waiting.set(id, startedAt);
+  const requestContext = acquireTimingStorage.getStore();
   const diagnostic = capturePgDiagnosticContext();
   const correlation = diagnostic.state === 'linked' ? diagnostic.correlation : undefined;
   if (correlation?.requestId) {
@@ -747,14 +812,26 @@ export function beginAcquire(pool: string): AcquireTicket {
     acquired(): void {
       if (done) return;
       if (!s.waiting.delete(id)) return; // already moved
-      s.held.set(id, Date.now());
+      const acquiredAt = Date.now();
+      recordRequestAcquireTiming(requestContext, {
+        pool,
+        elapsedMs: Math.max(0, acquiredAt - startedAt),
+        outcome: 'acquired',
+      });
+      s.held.set(id, acquiredAt);
       s.totalAcquired += 1;
-      s.lastAcquiredAt = Date.now();
+      s.lastAcquiredAt = acquiredAt;
     },
     release(): void {
       if (done) return;
       done = true;
-      s.waiting.delete(id);
+      if (s.waiting.delete(id)) {
+        recordRequestAcquireTiming(requestContext, {
+          pool,
+          elapsedMs: Math.max(0, Date.now() - startedAt),
+          outcome: 'released-before-acquire',
+        });
+      }
       s.held.delete(id);
       s.ticketContexts?.delete(id);
     },
