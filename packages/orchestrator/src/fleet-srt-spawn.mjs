@@ -62,7 +62,10 @@ function scopedRuntimeBinding(command, env) {
   // Codex's native distribution keeps ripgrep and sandbox resources alongside
   // bin/, and its npm entry point keeps the platform package below its root.
   // Grant that installed runtime, never the surrounding user/home directory.
-  const runtime = ['codex', 'codex.js'].includes(basename(executable.real)) &&
+  const claudePackage = '/@anthropic-ai/claude-code/';
+  const runtime = env.PAPERCUSP_AGENT === 'claude' && executable.real.includes(claudePackage)
+    ? executable.real.slice(0, executable.real.indexOf(claudePackage) + claudePackage.length - 1)
+    : ['codex', 'codex.js'].includes(basename(executable.real)) &&
     basename(dirname(executable.real)) === 'bin' ? dirname(dirname(executable.real)) : executable.real;
   const node = resolveExecutable('node');
   return { command: executable.real,
@@ -104,11 +107,18 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   let route;
   try { route = snapshotScopedInferenceGateway(JSON.parse(encoded)); }
   catch { throw new Error('Invalid scoped native sandbox route'); }
-  const codexHome = env.CODEX_HOME;
-  if (env.PAPERCUSP_AGENT !== 'codex' || !isAbsolute(cwd) || !codexHome || !isAbsolute(codexHome))
-    throw new Error('Scoped native sandbox requires an isolated Codex home and absolute checkout');
+  const agent = env.PAPERCUSP_AGENT;
+  const homeKey = agent === 'claude' ? 'CLAUDE_CONFIG_DIR' : 'CODEX_HOME';
+  const nativeHome = env[homeKey];
+  const validClaudeEnv = candidate => agent !== 'claude' || candidate.HOME === nativeHome &&
+    candidate.XDG_CONFIG_HOME === join(nativeHome, '.config') && !candidate.CODEX_HOME &&
+    candidate.ANTHROPIC_BASE_URL === route.baseURL && candidate.ANTHROPIC_AUTH_TOKEN === route.token &&
+    !Object.keys(candidate).some(key => candidate[key] !== undefined &&
+      (key.startsWith('ANTHROPIC_') && !['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'].includes(key) || key.startsWith('CLAUDE_CODE_USE_')));
+  if (!['codex', 'claude'].includes(agent) || !isAbsolute(cwd) || !nativeHome || !isAbsolute(nativeHome) || !validClaudeEnv(env))
+    throw new Error('Scoped native sandbox requires an isolated native home, exact route and absolute checkout');
   if (process.platform !== 'linux') throw new Error('Scoped native read isolation requires the verified Linux mount boundary');
-  if (cwd === '/' || codexHome === '/' || [cwd, codexHome].some(p => p === '/dev/shm' || p.startsWith('/dev/shm/')))
+  if (cwd === '/' || nativeHome === '/' || [cwd, nativeHome].some(p => p === '/dev/shm' || p.startsWith('/dev/shm/')))
     throw new Error('Scoped native checkout/home must survive the private device namespace and cannot grant the filesystem root');
   const operatorEndpoint = loopbackEndpoint(env.PAPERCUSP_OPERATOR_URL);
   const gatewayEndpoint = loopbackEndpoint(route.baseURL);
@@ -116,7 +126,8 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     let current;
     try { current = snapshotScopedInferenceGateway(JSON.parse(options.env[SCOPED_INFERENCE_GATEWAY_ENV])); }
     catch { throw new Error('Scoped native sandbox lost its route before spawn'); }
-    if (options.cwd !== cwd || options.env.PATH !== env.PATH || options.env.CODEX_HOME !== codexHome || options.env.PAPERCUSP_AGENT !== 'codex' ||
+    if (options.cwd !== cwd || options.env.PATH !== env.PATH || options.env[homeKey] !== nativeHome || options.env.PAPERCUSP_AGENT !== agent ||
+        !validClaudeEnv(options.env) ||
         current.baseURL !== route.baseURL || current.token !== route.token ||
         options.env[NATIVE_CONTAINER_EXEC_ENV] !== containerEncoded ||
         loopbackEndpoint(options.env.PAPERCUSP_OPERATOR_URL) !== operatorEndpoint)
@@ -125,7 +136,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   if (containerEncoded !== undefined) {
     let binding;
     try { binding = JSON.parse(containerEncoded); } catch { throw new Error('Invalid scoped native container binding'); }
-    if (!binding || binding.kind !== 'docker-exec' || typeof binding.command !== 'string' || !isAbsolute(binding.command) ||
+    if (agent !== 'codex' || !binding || binding.kind !== 'docker-exec' || typeof binding.command !== 'string' || !isAbsolute(binding.command) ||
         !/^[a-f0-9]{64}$/.test(binding.sha256) || Object.keys(binding).sort().join(',') !== 'command,kind,sha256' ||
         env.PAPERCUSP_BACKEND_BIN_CODEX !== binding.command)
       throw new Error('Invalid scoped native container binding');
@@ -156,9 +167,9 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
   if (!bin) throw new Error('Scoped native launch requires SRT; refusing unconfined execution');
   const bwrap = (env.PATH ?? process.env.PATH ?? '').split(':').filter(Boolean).map(p => join(p, 'bwrap')).find(existsSync);
   if (!bwrap) throw new Error('Scoped native launch requires bubblewrap for private default temporary paths');
-  mkdirSync(codexHome, { recursive: true, mode: 0o700 });
+  mkdirSync(nativeHome, { recursive: true, mode: 0o700 });
   let nativeTmp;
-  const dir = mkdtempSync(join(codexHome, 'papercusp-native-srt-'));
+  const dir = mkdtempSync(join(nativeHome, 'papercusp-native-srt-'));
   const settingsPath = join(dir, 'settings.json');
   let runtimePaths;
   let executableFingerprint;
@@ -178,18 +189,18 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     if (!nativeTmp || !existsSync(nativeTmp)) nativeTmp = mkdtempSync('/tmp/pc-native-');
     {
       runtimePaths = observedRuntimePaths;
-      const policy = buildProcessSrtSettings({ cwd, agentHomes: [codexHome],
+      const policy = buildProcessSrtSettings({ cwd, agentHomes: [nativeHome],
         allowedDomains: [...new Set([gatewayEndpoint, operatorEndpoint])], denyWrite: [dir] });
       // Generic fleet credential denies leave ordinary host data readable.
       // Each metered assignment instead gets only its checkout, native state
       // and installed runtime. The fleet cache is shared context, so exclude it.
-      policy.filesystem.allowWrite = [cwd, codexHome, nativeTmp];
+      policy.filesystem.allowWrite = [cwd, nativeHome, nativeTmp];
       // Expand real root entries ourselves. SRT's '/' preset also tmpfs-mounts
       // root symlink aliases after their targets have been hidden and can fail
       // before execution. Alias targets remain subject to the same real mounts.
       const rootDenies = rootReadDenyPaths(readdirSync('/', { withFileTypes: true }));
       policy.filesystem.denyRead = [...rootDenies, ...policy.filesystem.denyRead];
-      policy.filesystem.allowRead = [cwd, codexHome, nativeTmp, '/usr', '/bin', '/sbin', '/lib', '/lib64',
+      policy.filesystem.allowRead = [cwd, nativeHome, nativeTmp, '/usr', '/bin', '/sbin', '/lib', '/lib64',
         '/etc/ssl', '/etc/ld.so.cache', '/etc/ld.so.conf', '/etc/ld.so.conf.d', '/etc/nsswitch.conf',
         '/etc/hosts', '/etc/resolv.conf', '/etc/passwd', '/etc/group', '/etc/localtime',
         ...runtimePaths, ...scopedSandboxReadPaths(bin)];
@@ -209,7 +220,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     let child;
     try {
       child = realSpawn(bwrap, [...mountArgs, '--', wrapped.command, ...wrapped.argv],
-        { ...options, env: { ...options.env, HOME: codexHome, TMPDIR: nativeTmp, CLAUDE_CODE_TMPDIR: nativeTmp } });
+        { ...options, env: { ...options.env, HOME: nativeHome, TMPDIR: nativeTmp, CLAUDE_CODE_TMPDIR: nativeTmp } });
     } catch (error) { cleanup(); throw error; }
     const attachCleanup = (result, completedPromise = false) => {
       // Async spawners can resolve at registration with a live process handle
