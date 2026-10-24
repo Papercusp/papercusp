@@ -24,7 +24,7 @@
  * dependency. Model-family bucketing remains a tiny pure helper at this boundary.
  */
 import { PRICE_TABLE_VERSION, USAGE_LEDGER_PRICING, costFromTokens } from '@papercusp/model-pricing';
-import type { OrchestratorPg } from './invoke';
+import { pgJson, type OrchestratorPg } from './invoke';
 import type { RunUsage } from './cost-cap';
 import { harnessProfile } from './harness-profile';
 import { AGENT_BACKENDS, type AgentBackend } from './types';
@@ -136,7 +136,7 @@ export async function recordUsageSamplePg(
       ${ctx.workspaceId}, ${Date.now()}, ${`${provider}:${modelClass}`}, ${provider}, ${modelClass}, ${'jsonl'},
       ${n(usage.inputTokens)}, ${n(usage.outputTokens)}, ${n(usage.cacheReadTokens)}, ${n(usage.cacheCreationTokens)}, ${costUsd},
       ${model || null}, ${costSource}, ${priceTableVersion}, ${run.harnessSlug ?? null}, ${run.runId ?? null}, ${run.role ?? null}, ${n(usage.turns)},
-      ${JSON.stringify(usageProvenance)}::jsonb,
+      ${pgJson(ctx.pg, usageProvenance)}::jsonb,
       ${run.sessionId ?? null},
       (SELECT harness_shared.goal_id_for_usage_session(${ctx.workspaceId}, ${run.sessionId ?? null})),
       ${run.toolName ?? null}, ${run.turnTrigger ?? null}, ${run.accountId ?? null}

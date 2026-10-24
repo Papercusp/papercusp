@@ -188,18 +188,18 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     );
     expect(values()).toContain('claude-sonnet-4-6');
     expect(values()).toContain('sonnet'); // model class follows the reported turn, not the opus request
-    expect(values()).toContain(JSON.stringify({
+    expect(values()).toContainEqual({
       modelSource: 'turn', requestedModel: 'opus',
       actualModels: ['claude-opus-4-8', 'claude-sonnet-4-6'], backend: 'claude-code', costBound: null,
-    }));
+    });
 
     await recordUsageSamplePg(
       { pg, workspaceId: 'ws-1' },
       { backend: 'codex', model: 'gpt-5.5', usage: { inputTokens: 10, model: 'gpt-5.5', modelProvenance: 'request' } },
     );
-    expect(values()).toContain(JSON.stringify({
+    expect(values()).toContainEqual({
       modelSource: 'request', requestedModel: 'gpt-5.5', actualModels: [], backend: 'codex', costBound: null,
-    }));
+    });
   });
 
   // D-020: a run aggregate has no request size. A long-context model used to persist NULL here;
@@ -213,9 +213,9 @@ describe('recordUsageSamplePg — session attribution (bee-context-efficiency P-
     expect(v[10]).toBeCloseTo(11.472932, 9);
     expect(v[12]).toBe('estimated');
     expect(v[13]).toBe(PRICE_TABLE_VERSION);
-    expect(values()).toContain(JSON.stringify({
+    expect(values()).toContainEqual({
       modelSource: 'request', requestedModel: 'gpt-6-astra', actualModels: [], backend: 'codex', costBound: 'lower',
-    }));
+    });
   });
 
   it('no-ops (no INSERT) on an empty usage so an unparseable run never fabricates a row', async () => {
