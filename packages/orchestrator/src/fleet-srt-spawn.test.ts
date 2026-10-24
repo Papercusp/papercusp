@@ -14,6 +14,27 @@ const fixture = () => {
 };
 
 describe('required scoped native process boundary', () => {
+  it('confines Claude to its clean home and rejects native route/env changes on reuse', () => {
+    const f = fixture(), home = join(f.cwd, 'claude');
+    const env = { ...f.env, PAPERCUSP_AGENT: 'claude', CODEX_HOME: undefined, CLAUDE_CONFIG_DIR: home,
+      HOME: home, XDG_CONFIG_HOME: join(home, '.config'), ANTHROPIC_BASE_URL: route.baseURL, ANTHROPIC_AUTH_TOKEN: route.token };
+    let privateTmp: string | undefined;
+    try {
+      const boundary = createScopedNativeSandboxSpawn({ cwd: f.cwd, env, srtBin: '/usr/bin/srt' })!;
+      const result = boundary('/bin/sh', ['-c', 'true'], { cwd: f.cwd, env }, (command, args, options) => ({ command, args, options }));
+      privateTmp = result.options.env.TMPDIR;
+      const policy = JSON.parse(readFileSync(result.args[result.args.indexOf('-s') + 1], 'utf8'));
+      expect(policy.filesystem.allowWrite).toEqual([f.cwd, home, privateTmp]);
+      expect(policy.filesystem.allowRead).toContain(home); expect(result.options.env.HOME).toBe(home);
+      expect(policy.network.allowedDomains).toEqual(['127.0.0.1:32001', '127.0.0.1:9071']);
+      for (const patch of [{ CLAUDE_CONFIG_DIR: '/other' }, { ANTHROPIC_BASE_URL: 'http://127.0.0.1:9999' },
+        { ANTHROPIC_AUTH_TOKEN: 'other' }, { ANTHROPIC_API_KEY: 'host-key' }, { CODEX_HOME: '/other' }, { HOME: '/host' }]) {
+        expect(() => boundary('/bin/sh', [], { cwd: f.cwd, env: { ...env, ...patch } }, () => { throw new Error('must not spawn'); }))
+          .toThrow(/binding changed/);
+      }
+    } finally { rmSync(f.cwd, { recursive: true, force: true }); if (privateTmp) rmSync(privateTmp, { recursive: true, force: true }); }
+  });
+
   it('leaves ordinary native launches unchanged', () => {
     expect(createScopedNativeSandboxSpawn({ cwd: '/checkout', env: {} })).toBeNull();
   });
