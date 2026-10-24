@@ -65,11 +65,11 @@
  *
  * ## Honest per-client coverage
  *
- * Only claude-code ships a composable `--disallowedTools` deny list. Codex has
- * no equivalent surface, and OMP's tool cut is an ALLOW-list (`fleetOmpToolsArgs`)
+ * Only claude-code ships a composable `--disallowedTools` deny list. Codex uses
+ * version-validated feature switches, and OMP's tool cut is an ALLOW-list (`fleetOmpToolsArgs`)
  * owned elsewhere. Rendering a claude flag for those clients would be false
  * equivalence, which D-003/D-004 forbid, so the resolver reports them as
- * withheld with the missing mechanism named. A withheld restriction is
+ * withheld when no measured control exists. A withheld restriction is
  * reported, never silently dropped — that report is what P-007's teaching
  * denials and P-008's parity matrix consume.
  */
@@ -120,7 +120,7 @@ export type CapabilityAudience = 'headless-agent' | 'interactive-su';
  * different facts, and a parity matrix that cannot tell them apart will report
  * both as the same gap.
  */
-export type CapabilityEnforcementMode = 'deny-list' | 'allow-list-cut' | 'none';
+export type CapabilityEnforcementMode = 'deny-list' | 'allow-list-cut' | 'feature-switches' | 'none';
 
 export const CAPABILITY_CLIENT_ENFORCEMENT: Readonly<
   Record<CapabilityClientFamily, CapabilityEnforcementMode>
@@ -133,9 +133,25 @@ export const CAPABILITY_CLIENT_ENFORCEMENT: Readonly<
   // That is a different mechanism with different semantics; this policy reports
   // the restriction rather than pretending to render it.
   omp: 'allow-list-cut',
-  // codex exposes no host-composable tool-restriction flag.
-  codex: 'none',
+  // Measured config controls, not Claude's composable deny-list syntax.
+  codex: 'feature-switches',
 };
+
+/** Only controls measured against the installed-client request boundary belong
+ * here. A known feature name alone does not prove native-tool removal. */
+export const CODEX_CAPABILITY_CONTROLS: Readonly<Record<string, {
+  readonly validatedClientVersion: string;
+  readonly features: Readonly<Record<string, false>>;
+  readonly deniedNames: readonly string[];
+}>> = Object.freeze({
+  'managed-shell-cutover': {
+    // Independent of the inventory's version: a census refresh must never
+    // silently certify removal behavior on a new client.
+    validatedClientVersion: '0.163.0',
+    features: { shell_tool: false },
+    deniedNames: ['exec_command', 'write_stdin'],
+  },
+});
 
 /**
  * Why a restriction exists — and therefore whether replacement quality gates it.
@@ -371,7 +387,7 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
     authority: { kind: 'managed-cutover' },
     aliases: ['Bash'],
     nestedRoutes: [],
-    clients: ['claude'],
+    clients: ['claude', 'codex'],
     surfaces: ALL_SURFACES,
     audiences: ALL_AUDIENCES,
     yieldsToExplicitDenyList: true,
@@ -638,6 +654,9 @@ export interface CapabilityPolicyDecision {
    * consume it.
    */
   readonly flags: readonly string[];
+  /** Config controls admitted for this exact client version. Empty for clients
+   * whose mechanism is not feature switches, and whenever admission fails. */
+  readonly featureSwitches: Readonly<Record<string, false>>;
 }
 
 function readinessFor(
@@ -672,6 +691,7 @@ export function resolveCapabilityPolicy(
 
   const applied: AppliedCapabilityRestriction[] = [];
   const withheld: CapabilityWithheldRestriction[] = [];
+  const featureSwitches: Record<string, false> = {};
 
   for (const restriction of restrictions) {
     if (!restriction.clients.includes(request.client)) {
@@ -839,19 +859,35 @@ export function resolveCapabilityPolicy(
         continue;
       }
     }
-    if (enforcement !== 'deny-list') {
+    const codexControl = request.client === 'codex'
+      ? CODEX_CAPABILITY_CONTROLS[restriction.id] : undefined;
+    if (enforcement === 'feature-switches' && codexControl) {
+      // Unknown is not validation. This applies even to owner mandates: the
+      // prohibition does not prove that a changed client honors this switch.
+      if (currentClientVersion !== codexControl.validatedClientVersion) {
+        withheld.push({
+          id: restriction.id,
+          reason: 'client-version-drift',
+          detail: `Codex removal controls were validated on ${codexControl.validatedClientVersion}; ` +
+            `current version is ${currentClientVersion ?? 'unknown'}. Revalidate before applying ${restriction.id}.`,
+        });
+        continue;
+      }
+      Object.assign(featureSwitches, codexControl.features);
+    } else if (enforcement !== 'deny-list') {
       withheld.push({
         id: restriction.id,
         reason: 'no-client-enforcement-surface',
         detail:
           enforcement === 'allow-list-cut'
             ? `${request.client} restricts tools by allow-list cut (owned by the OMP tools args), not by a composable deny list, so ${restriction.id} cannot be rendered as a deny flag here.`
-            : `${request.client} exposes no host-composable tool-restriction surface, so ${restriction.id} cannot be enforced at launch.`,
+            : `${request.client} has no validated removal control for ${restriction.id}; the restriction is withheld.`,
       });
       continue;
     }
 
-    const deniedNames = dedupe([...restriction.aliases, ...restriction.nestedRoutes]);
+    const deniedNames = codexControl
+      ? codexControl.deniedNames : dedupe([...restriction.aliases, ...restriction.nestedRoutes]);
     applied.push({
       id: restriction.id,
       authorityKind: restriction.authority.kind,
@@ -876,7 +912,9 @@ export function resolveCapabilityPolicy(
     // line — which is how the wake/launch drift was finally visible at all.
     // Single `=` token: the space form is variadic and would swallow a
     // following positional (the wake path appends the wake text positionally).
-    flags: applied.map((entry) => `--disallowedTools=${entry.deniedNames.join(',')}`),
+    flags: enforcement === 'deny-list'
+      ? applied.map((entry) => `--disallowedTools=${entry.deniedNames.join(',')}`) : [],
+    featureSwitches,
   };
 }
 

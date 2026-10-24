@@ -545,6 +545,7 @@ export interface SpawnCodexContextConfig {
 }
 
 export interface SpawnCodexConfigOpts extends CodexGatewayConfigOpts {
+  capabilityPolicy?: NonNullable<Parameters<typeof codexManagedFeaturesToml>[0]>['capabilityPolicy'];
   /** Effective model written at the CODEX_HOME root so model-less resumes
    * cannot fall through to the installed models cache. The launch boundary
    * supplies its explicit/inherited selection; this renderer does not select
@@ -575,7 +576,7 @@ export function buildSpawnCodexConfigToml(
       ? codexModelCatalogToml(opts.modelCatalogPath)
       : []),
     ...gatewayConfig.root,
-    ...codexManagedFeaturesToml({ disableMemories: false }),
+    ...codexManagedFeaturesToml({ disableMemories: false, capabilityPolicy: opts.capabilityPolicy }),
     '# Per-spawn codex MCP config (managed by spawn-mcp.ts writeSignedSpawnCodexHome).',
     ...gatewayConfig.tables,
     '[mcp_servers.papercusp]',
@@ -604,6 +605,7 @@ export async function writeSignedSpawnCodexHome(
     cleanup?: boolean;
     model?: string | null;
     contextConfig?: SpawnCodexContextConfig | null;
+    capabilityPolicy?: SpawnCodexConfigOpts['capabilityPolicy'];
     /** Resolved child route. Omission alone preserves the legacy process-env fallback. */
     gatewayEnv?: Record<string, string | undefined>;
     /** Reuse the caller's already-open PG handle instead of requiring a DSN env. */
@@ -657,6 +659,7 @@ export async function writeSignedSpawnCodexHome(
     priority: input.role,
     gatewayOn,
     contextConfig: opts.contextConfig,
+    capabilityPolicy: opts.capabilityPolicy,
     modelCatalogPath: modelCatalog?.path ?? null,
   });
   publishCodexConfig(join(codexHome, 'config.toml'), toml);

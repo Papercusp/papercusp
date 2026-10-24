@@ -17,6 +17,7 @@ import {
   policyDeferralReachable,
   resolveCapabilityPolicy,
   type CapabilityPolicySurface,
+  type CapabilityPolicyRequest,
   type CapabilityReadinessSource,
   type ManagedCapabilityRestriction,
 } from './managed-capability-policy';
@@ -282,9 +283,9 @@ describe('managed capability policy — honest per-client coverage', () => {
     }
   });
 
-  it('distinguishes "no surface at all" from "a different enforcement mechanism"', () => {
+  it('distinguishes the measured config controls from the other enforcement mechanisms', () => {
     // A parity matrix that cannot tell these apart reports both as one gap.
-    expect(CAPABILITY_CLIENT_ENFORCEMENT.codex).toBe('none');
+    expect(CAPABILITY_CLIENT_ENFORCEMENT.codex).toBe('feature-switches');
     expect(CAPABILITY_CLIENT_ENFORCEMENT.omp).toBe('allow-list-cut');
     expect(CAPABILITY_CLIENT_ENFORCEMENT.claude).toBe('deny-list');
 
@@ -312,6 +313,54 @@ describe('managed capability policy — honest per-client coverage', () => {
     expect(withheld?.reason).toBe('no-client-enforcement-surface');
     expect(withheld?.detail).toContain('allow-list');
     expect(decision.flags).toEqual([]);
+  });
+});
+
+describe('Codex version-pinned removal controls', () => {
+  const admitted: CapabilityPolicyRequest = {
+    client: 'codex', surface: 'launch', clientVersions: { codex: '0.163.0' },
+    readiness: [{ family: 'shell-ssh-interpreters', cutoverReady: true, openGapIds: [] }],
+    cutoverStaging: { 'shell-ssh-interpreters': 'full' },
+    adoption: [{ client: 'codex', family: 'shell-ssh-interpreters',
+      managedPathProven: true, nativeBypassRefused: true, atClientVersion: '0.163.0' }],
+    matrix: [{ client: 'codex', family: 'shell-ssh-interpreters',
+      allScenariosPassed: true, declaredScenarioCount: 7, unmet: [] }],
+  };
+
+  it.each(SURFACES)('removes the measured native shell aliases on %s without Claude flags', surface => {
+    const decision = resolveCapabilityPolicy({ ...admitted, surface });
+    expect(decision.featureSwitches).toEqual({ shell_tool: false });
+    expect(decision.deniedNames).toEqual(['exec_command', 'write_stdin']);
+    expect(decision.flags).toEqual([]);
+  });
+
+  it.each([undefined, '0.163.1', 'unknown'])('withholds controls for unvalidated version %s', version => {
+    // Omit the adoption version too: the control's own version guard must hold
+    // independently of the older adoption-to-current comparison.
+    const decision = resolveCapabilityPolicy({ ...admitted,
+      clientVersions: version ? { codex: version } : {},
+      adoption: admitted.adoption!.map(row => ({ ...row, atClientVersion: undefined })),
+    });
+    expect(decision.featureSwitches).toEqual({});
+    expect(decision.applied).toEqual([]);
+    expect(decision.withheld.find(row => row.id === 'managed-shell-cutover')?.reason)
+      .toBe('client-version-drift');
+  });
+
+  it('keeps parity, rollout, and matrix admission ahead of config emission', () => {
+    for (const request of [
+      { ...admitted, readiness: [] }, { ...admitted, adoption: [] },
+      { ...admitted, matrix: [] }, { ...admitted, cutoverStaging: {} },
+      { client: 'codex' as const, surface: 'launch' as const },
+    ]) expect(resolveCapabilityPolicy(request).featureSwitches).toEqual({});
+  });
+
+  it('reports an unmeasured control even when an owner mandate covers Codex', () => {
+    const decision = resolveCapabilityPolicy(admitted, [{
+      ...MANAGED_CAPABILITY_RESTRICTIONS[0], clients: ['codex'],
+    }]);
+    expect(decision.featureSwitches).toEqual({});
+    expect(decision.withheld[0]?.reason).toBe('no-client-enforcement-surface');
   });
 });
 

@@ -32,6 +32,7 @@ import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSyn
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parse as parseToml } from '@iarna/toml';
+import { resolveCapabilityPolicy, type CapabilityPolicyRequest } from './managed-capability-policy';
 
 /** Publish one complete, valid private config. Never truncate the live file:
  * an interrupted write must leave either the prior document or the new one.
@@ -109,7 +110,8 @@ export interface CodexGatewayConfigOpts {
  * memory setting by passing `disableMemories: false`.
  */
 export function codexManagedFeaturesToml(
-  opts: { disableMemories?: boolean; headless?: boolean } = {},
+  opts: { disableMemories?: boolean; headless?: boolean;
+    capabilityPolicy?: Omit<CapabilityPolicyRequest, 'client'> } = {},
 ): string[] {
   return [
     // CLI versions are managed outside startup. An update dialog can block a
@@ -154,6 +156,11 @@ export function codexManagedFeaturesToml(
           'auth_elicitation = false',
         ]
       : []),
+    ...Object.entries(resolveCapabilityPolicy({
+      ...opts.capabilityPolicy,
+      client: 'codex',
+      surface: opts.capabilityPolicy?.surface ?? 'launch',
+    }).featureSwitches).map(([feature, value]) => `${feature} = ${value}`),
     '',
   ];
 }

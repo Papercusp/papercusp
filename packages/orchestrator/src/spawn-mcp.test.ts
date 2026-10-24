@@ -899,6 +899,27 @@ describe('ompRemoteCompactionEndpoint (deterministic-context-carry P-002 — gat
 });
 
 describe('buildSpawnCodexConfigToml', () => {
+  it('renders admitted shell removal inside features while retaining the signed MCP route', () => {
+    const toml = buildSpawnCodexConfigToml('http://127.0.0.1:3270/api/mcp?sig=fixture', null, {
+      model: TEST_CODEX_MODEL,
+      capabilityPolicy: {
+        surface: 'wake', clientVersions: { codex: '0.163.0' },
+        readiness: [{ family: 'shell-ssh-interpreters', cutoverReady: true, openGapIds: [] }],
+        cutoverStaging: { 'shell-ssh-interpreters': 'full' },
+        adoption: [{ client: 'codex', family: 'shell-ssh-interpreters',
+          managedPathProven: true, nativeBypassRefused: true, atClientVersion: '0.163.0' }],
+        matrix: [{ client: 'codex', family: 'shell-ssh-interpreters',
+          allScenariosPassed: true, declaredScenarioCount: 7, unmet: [] }],
+      },
+    });
+    const features = toml.slice(toml.indexOf('[features]'), toml.indexOf('[mcp_servers.papercusp]'));
+    expect(features).toContain('shell_tool = false');
+    expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?sig=fixture"');
+    expect(toml).not.toContain('--disallowedTools');
+    expect(buildSpawnCodexConfigToml('http://127.0.0.1:3270/api/mcp', null,
+      { model: TEST_CODEX_MODEL })).not.toContain('shell_tool = false');
+  });
+
   const savedGatewayPort = process.env.PAPERCUSP_GATEWAY_PORT;
   afterEach(() => {
     if (savedGatewayPort === undefined) delete process.env.PAPERCUSP_GATEWAY_PORT;
