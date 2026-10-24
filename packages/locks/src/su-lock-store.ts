@@ -1155,10 +1155,9 @@ export async function tryRelease(
       RETURNING path
     `;
   } else if (lockId && paths && paths.length > 0) {
-    // Owner check (bug #16): lock_id alone is unguessable but it's
-    // persisted in tool_invocations.result_json (audit:read can read
-    // it). Require owner match so a leaked lock_id can't be used by
-    // another agent to release someone else's lock.
+    // Owner check (bug #16): the caller can see the lock_id in the acquire
+    // result, so treat it as replayable rather than as a secret. Require an
+    // owner match so a known ID cannot release another agent's locks.
     released = await tx<Array<{ path: string }>>`
       DELETE FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain}
