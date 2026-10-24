@@ -15,6 +15,8 @@ export function buildProcessSrtSettings(options: {
 export function wrapProcessWithSrt(command: string, argv: string[], options: {
   srtBin: string | null | undefined; settingsPath: string | null | undefined;
 }): { command: string; argv: string[] };
+/** Installed SRT launcher/package paths, including its seccomp resources. */
+export function scopedSandboxReadPaths(bin: string): string[];
 export type NativeSandboxSpawn = (command: string, argv: string[], options: {
   cwd: string; env: NodeJS.ProcessEnv; [key: string]: unknown;
 }, realSpawn: (...args: any[]) => any) => any;

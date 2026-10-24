@@ -69,7 +69,7 @@ function scopedRuntimeBinding(command, env) {
     readPaths: [...new Set([executable.path, executable.real, runtime, node.path, node.real])] };
 }
 
-function scopedSandboxReadPaths(bin) {
+export function scopedSandboxReadPaths(bin) {
   if (!existsSync(bin)) return [bin]; // pure spawn composition may use an injected executable
   const real = realpathSync(bin);
   const marker = '/@anthropic-ai/sandbox-runtime/';
