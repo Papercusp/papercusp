@@ -53,7 +53,14 @@ const clientNames: Readonly<Record<CapabilityClientFamily, ReadonlySet<string>>>
     'inspect_image', 'browser', 'computer', 'task', 'todo', 'web_search', 'ask']),
 };
 
-export type NativeToolInventoryGap = 'client-version-unmeasured' | 'client-version-drift' | 'unknown-native-tool';
+// Observed in the installed OMP request (P023 native probe); their operation
+// contracts still need inspection. Naming the gap is preferable to pretending
+// that a familiar tool name proves a semantically equivalent replacement.
+const observedUnmapped: Readonly<Partial<Record<CapabilityClientFamily, ReadonlySet<string>>>> = {
+  omp: new Set(['eval', 'hub']),
+};
+export type NativeToolInventoryGap = 'client-version-unmeasured' | 'client-version-drift' |
+  'unknown-native-tool' | 'native-semantics-unmeasured';
 
 export interface NativeToolInventoryRow {
   nativeName: string;
@@ -112,7 +119,8 @@ export function nativeToolInventory(input: {
     const gap: NativeToolInventoryGap | null = observedVersion === null
       ? 'client-version-unmeasured'
       : !versionMatches ? 'client-version-drift'
-      : !family ? 'unknown-native-tool' : null;
+      : !family ? observedUnmapped[input.client]?.has(name)
+        ? 'native-semantics-unmeasured' : 'unknown-native-tool' : null;
     rows.push({
       nativeName,
       family: group?.family ?? null,

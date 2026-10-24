@@ -37,6 +37,14 @@ describe('version-pinned client native tool inventory', () => {
     expect(report.cutoverReady).toBe(false);
   });
 
+  it('names observed OMP eval/hub gaps without inventing their semantics or admitting cutover', () => {
+    const report = nativeToolInventory({ client: 'omp', clientVersion: '18.0.3', nativeNames: ['eval', 'hub'] });
+    expect(report.completeNameMapping).toBe(false);
+    expect(report.rows.every(row => row.gap === 'native-semantics-unmeasured')).toBe(true);
+    expect(report.rows.every(row => row.family === null && row.managedAuthorities.length === 0)).toBe(true);
+    expect(report.rows.every(row => row.disposition === 'unsupported-gap' && !row.cutoverReady)).toBe(true);
+  });
+
   it('does not treat an empty native surface as evidence of complete coverage', () => {
     const report = nativeToolInventory({ client: 'codex', clientVersion: '0.163.0', nativeNames: [] });
     expect(report.completeNameMapping).toBe(false);
