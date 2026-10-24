@@ -39,6 +39,22 @@ test('the tiling is SOUND over the live su.md — every anchor unique + in order
   assert.deepEqual(problems, [], `su.md changed under the tiling — re-classify:\n  - ${problems.join('\n  - ')}`);
 });
 
+test('additive observation instructions remain readable by the serving catalog from before those tiles existed', () => {
+  const addedPracticeLabels = new Set([
+    'turn-end observation pass and routing',
+    'bug and friction trip-wire',
+    'rubric nudge for observations',
+  ]);
+  const servingTiles = SU_TILES.filter((tile) => !addedPracticeLabels.has(tile.label));
+  assert.equal(SU_TILES.length - servingTiles.length, 3);
+  const text = su();
+  assert.deepEqual(suTilingProblems(text, servingTiles), [], 'live prompt changes must remain compatible with the older serving reader');
+  const practice = extractSuPart(text, 'su.practice', servingTiles);
+  for (const clause of ['Before you end or yield a turn', 'FILING IS NOT A JUDGMENT CALL', 'rubrics:list']) {
+    assert.ok(practice.includes(clause), `the older reader must retain the observation instruction: ${clause}`);
+  }
+});
+
 test('the tiling is LOSSLESS — the tiles concatenate back to su.md byte-for-byte, with no gap or overlap', () => {
   const text = su();
   const located = locateSuTiles(text);

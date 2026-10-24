@@ -17,9 +17,9 @@ describe('identity-owned observation practice loader', () => {
   it('loads all three sections from the built-in practice document', () => {
     const loaded = loadObservationPractice();
     expect(loaded.sourcePath).toMatch(/blueprints[\\/]base[\\/]prompts[\\/]su\.practice\.md$/);
-    expect(loaded.turnEndObservation).toContain('## Turn-end observation pass');
-    expect(loaded.frictionTripwire).toContain('## Bug + friction trip-wire');
-    expect(loaded.observationRubricNudge).toContain('## Filing an observation?');
+    expect(loaded.turnEndObservation).toContain('Turn-end observation pass');
+    expect(loaded.frictionTripwire).toContain('Bug + friction trip-wire');
+    expect(loaded.observationRubricNudge).toContain('Filing an observation?');
   });
 
   it('prefers a selected harness practice document over the built-in copy', () => {

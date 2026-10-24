@@ -284,19 +284,19 @@ export const SU_TILES: readonly SuTile[] = [
     rationale: 'A stackable working practice (D-007: "practices stack because their slot is additive") — the wait-loop / monitor discipline family.',
   },
   {
-    anchor: '## Turn-end observation pass',
+    anchor: '**Turn-end observation pass**',
     part: 'practice',
     label: 'turn-end observation pass and routing',
     rationale: 'The deliberate observation pass is part of the additive observation practice identity (identity-system-everything-migration-2026-10-18 P-006).',
   },
   {
-    anchor: '## Bug + friction trip-wire (self-learning loop)',
+    anchor: '**Bug + friction trip-wire (self-learning loop)**',
     part: 'practice',
     label: 'bug and friction trip-wire',
     rationale: 'The reactive self-learning trip-wire is part of the additive observation practice identity (identity-system-everything-migration-2026-10-18 P-006).',
   },
   {
-    anchor: '## Filing an observation? Grade it against a rubric if one fits',
+    anchor: '**Filing an observation? Grade it against a rubric if one fits**',
     part: 'practice',
     label: 'rubric nudge for observations',
     rationale: 'The rubric-first observation guidance is part of the additive observation practice identity (identity-system-everything-migration-2026-10-18 P-006).',
