@@ -1,0 +1,54 @@
+-- P004 passive intent instrument; sql_read_census keeps its existing semantics.
+CREATE TABLE IF NOT EXISTS harness_shared.sql_intent_progress (
+  workspace_id text NOT NULL, scope_id text NOT NULL, harness_slug text NOT NULL,
+  cursor_at timestamptz, cursor_id bigint, pending_until timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (workspace_id, scope_id)
+);
+-- Scalar measurements and scoped tokens only; no SQL or canonical examples.
+CREATE TABLE IF NOT EXISTS harness_shared.sql_intent_operations (
+  workspace_id text NOT NULL, scope_id text NOT NULL, source_token text NOT NULL,
+  source_id bigint NOT NULL, day date NOT NULL, observation jsonb NOT NULL,
+  PRIMARY KEY (workspace_id, scope_id, source_token)
+);
+CREATE INDEX IF NOT EXISTS sql_intent_operations_window_idx
+  ON harness_shared.sql_intent_operations (workspace_id, scope_id, day);
+CREATE TABLE IF NOT EXISTS harness_shared.sql_intent_examples (
+  workspace_id text NOT NULL, scope_id text NOT NULL, source_token text NOT NULL,
+  captured_at timestamptz NOT NULL, expires_at timestamptz NOT NULL, example jsonb NOT NULL,
+  -- Elapsed time, independent of server timezone and daylight-saving boundaries.
+  CHECK (expires_at = captured_at + interval '720 hours'),
+  PRIMARY KEY (workspace_id, scope_id, source_token)
+);
+CREATE INDEX IF NOT EXISTS sql_intent_examples_expiry_idx ON harness_shared.sql_intent_examples (expires_at);
+CREATE TABLE IF NOT EXISTS harness_shared.sql_intent_history (
+  workspace_id text NOT NULL, scope_id text NOT NULL, ran_on date NOT NULL,
+  window_since timestamptz NOT NULL, window_until timestamptz NOT NULL, summary jsonb NOT NULL,
+  source_ids bigint[] NOT NULL, source_tokens text[] NOT NULL, revision_token text NOT NULL,
+  alerted_revision text, computed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (workspace_id, scope_id, ran_on)
+);
+CREATE INDEX IF NOT EXISTS sql_intent_history_retention_idx ON harness_shared.sql_intent_history (computed_at);
+CREATE TABLE IF NOT EXISTS harness_shared.sql_intent_stages (
+  workspace_id text NOT NULL, scope_id text NOT NULL, stage text NOT NULL,
+  status text NOT NULL CHECK (status IN ('ok', 'UNKNOWN')), reason text,
+  measured_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (workspace_id, scope_id, stage)
+);
+ALTER TABLE harness_shared.sql_intent_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.sql_intent_operations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.sql_intent_examples ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.sql_intent_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.sql_intent_stages ENABLE ROW LEVEL SECURITY;
+DO $rls$
+DECLARE tab text;
+BEGIN
+  FOREACH tab IN ARRAY ARRAY['sql_intent_progress', 'sql_intent_operations',
+    'sql_intent_examples', 'sql_intent_history', 'sql_intent_stages'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'harness_shared'
+      AND tablename = tab AND policyname = 'workspace_isolation') THEN
+      EXECUTE format('CREATE POLICY workspace_isolation ON harness_shared.%I
+        USING (workspace_id = current_setting(''app.workspace_id'', true))
+        WITH CHECK (workspace_id = current_setting(''app.workspace_id'', true))', tab);
+    END IF;
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.%I TO harness_app', tab);
+  END LOOP;
+END $rls$;
