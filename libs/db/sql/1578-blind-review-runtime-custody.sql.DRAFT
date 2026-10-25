@@ -1,0 +1,80 @@
+-- WI-6554700010028590 / broker P-001. Additive, isolated ledgers; no legacy
+-- writer reads or writes these tables. requested rows are metadata, not runtime
+-- allocation authority. Receipt consumption and allocating custody commit together.
+CREATE TABLE harness_shared.blind_review_runtime_leases (
+  id uuid PRIMARY KEY,
+  lease_epoch bigserial UNIQUE NOT NULL,
+  workspace_id text NOT NULL,
+  binding_id bigint NOT NULL REFERENCES harness_shared.plan_blind_review_sessions(id),
+  activation_audit_seq integer NOT NULL CHECK (activation_audit_seq > 0),
+  replacement_epoch integer NOT NULL CHECK (replacement_epoch >= 0),
+  request_id text NOT NULL CHECK (length(request_id) BETWEEN 1 AND 128),
+  request_hash text NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+  state text NOT NULL DEFAULT 'requested'
+    CHECK (state IN ('requested','allocating','ready','releasing','released')),
+  receipt_id uuid,
+  admission jsonb,
+  expires_at timestamptz,
+  revoked_at timestamptz,
+  release_reason text,
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  UNIQUE (id, workspace_id),
+  UNIQUE (workspace_id, binding_id, replacement_epoch, activation_audit_seq),
+  CHECK ((state = 'requested') = (receipt_id IS NULL)),
+  CHECK ((receipt_id IS NULL) = (admission IS NULL)),
+  CHECK ((receipt_id IS NULL) = (expires_at IS NULL)),
+  CHECK (state NOT IN ('ready') OR revoked_at IS NULL),
+  CHECK (state NOT IN ('releasing','released') OR revoked_at IS NOT NULL)
+);
+
+CREATE TABLE harness_shared.blind_review_runtime_admissions (
+  id uuid PRIMARY KEY,
+  workspace_id text NOT NULL,
+  lease_id uuid NOT NULL UNIQUE,
+  tuple jsonb NOT NULL CHECK (jsonb_typeof(tuple) = 'object'),
+  tuple_hash text NOT NULL CHECK (tuple_hash ~ '^[a-f0-9]{64}$'),
+  issued_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  expires_at timestamptz NOT NULL DEFAULT (clock_timestamp() + interval '60 seconds'),
+  consumed_at timestamptz,
+  CHECK (expires_at > issued_at),
+  FOREIGN KEY (lease_id, workspace_id) REFERENCES harness_shared.blind_review_runtime_leases(id, workspace_id)
+);
+
+CREATE TABLE harness_shared.blind_review_runtime_resources (
+  id uuid PRIMARY KEY,
+  workspace_id text NOT NULL,
+  lease_id uuid NOT NULL,
+  kind text NOT NULL CHECK (kind IN
+    ('managed-scope','process','listener','display','database','workspace','profile','channel','credential','capture')),
+  slot text NOT NULL CHECK (slot ~ '^[a-z0-9-]{1,64}$'),
+  ownership_tag text NOT NULL UNIQUE CHECK (ownership_tag ~ '^[a-f0-9]{64}$'),
+  identity jsonb CHECK (identity IS NULL OR jsonb_typeof(identity) = 'object'),
+  intended_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  recorded_at timestamptz,
+  UNIQUE (lease_id, kind, slot),
+  CHECK ((identity IS NULL) = (recorded_at IS NULL)),
+  FOREIGN KEY (lease_id, workspace_id) REFERENCES harness_shared.blind_review_runtime_leases(id, workspace_id)
+);
+
+CREATE INDEX blind_review_runtime_reconcile_idx
+  ON harness_shared.blind_review_runtime_leases (expires_at)
+  WHERE state IN ('allocating','ready','releasing');
+
+ALTER TABLE harness_shared.blind_review_runtime_leases ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.blind_review_runtime_admissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_shared.blind_review_runtime_resources ENABLE ROW LEVEL SECURITY;
+CREATE POLICY workspace_isolation ON harness_shared.blind_review_runtime_leases
+  USING (workspace_id = current_setting('app.workspace_id', true))
+  WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+CREATE POLICY workspace_isolation ON harness_shared.blind_review_runtime_admissions
+  USING (workspace_id = current_setting('app.workspace_id', true))
+  WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+CREATE POLICY workspace_isolation ON harness_shared.blind_review_runtime_resources
+  USING (workspace_id = current_setting('app.workspace_id', true))
+  WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.blind_review_runtime_leases,
+  harness_shared.blind_review_runtime_admissions, harness_shared.blind_review_runtime_resources
+  TO harness_app, harness_admin;
+GRANT USAGE, SELECT ON SEQUENCE harness_shared.blind_review_runtime_leases_lease_epoch_seq
+  TO harness_app, harness_admin;
