@@ -3047,7 +3047,7 @@ async function finalizeInvocation(args: {
 export function registerInvocationLane(
   ctx: Pick<InvokeContext, 'projectDir' | 'phase' | 'pg' | 'workspaceId' | 'log'>,
   role: string,
-  featureId: string | undefined,
+  featureId: string | null | undefined,
   lanePid: number | undefined,
 ): () => Promise<void> {
   const laneSlug = (() => {
