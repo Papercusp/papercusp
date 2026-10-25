@@ -122,6 +122,10 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     throw new Error('Scoped native checkout/home must survive the private device namespace and cannot grant the filesystem root');
   const operatorEndpoint = loopbackEndpoint(env.PAPERCUSP_OPERATOR_URL);
   const gatewayEndpoint = loopbackEndpoint(route.baseURL);
+  // Verifier archives are executable inputs, not writable assignments. In
+  // particular SRT's mandatory deny mounts create host-side placeholders when
+  // their parent is writable. Keep those mounts out of the frozen archive.
+  const frozenSource = existsSync(join(cwd, '.verifier-source.json'));
   const verifyBinding = options => {
     let current;
     try { current = snapshotScopedInferenceGateway(JSON.parse(options.env[SCOPED_INFERENCE_GATEWAY_ENV])); }
@@ -194,7 +198,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
       // Generic fleet credential denies leave ordinary host data readable.
       // Each metered assignment instead gets only its checkout, native state
       // and installed runtime. The fleet cache is shared context, so exclude it.
-      policy.filesystem.allowWrite = [cwd, nativeHome, nativeTmp];
+      policy.filesystem.allowWrite = [...(frozenSource ? [] : [cwd]), nativeHome, nativeTmp];
       // Expand real root entries ourselves. SRT's '/' preset also tmpfs-mounts
       // root symlink aliases after their targets have been hidden and can fail
       // before execution. Alias targets remain subject to the same real mounts.
@@ -214,6 +218,7 @@ export function createScopedNativeSandboxSpawn({ env, cwd, srtBin }) {
     // its existing network/PID/seccomp boundary runs. Otherwise a write grant
     // re-binds shared host context through an otherwise complete read deny.
     const mountArgs = ['--die-with-parent', '--bind', '/', '/', '--dev', '/dev', '--bind', nativeTmp, '/tmp/claude'];
+    if (frozenSource) mountArgs.push('--ro-bind', cwd, cwd);
     if (existsSync('/private/tmp/claude')) mountArgs.push('--bind', nativeTmp, '/private/tmp/claude');
     const tempForSpawn = nativeTmp;
     const cleanup = () => rmSync(tempForSpawn, { recursive: true, force: true });

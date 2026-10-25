@@ -1,7 +1,7 @@
 import { it, expect } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createScopedNativeSandboxSpawn } from './fleet-srt-spawn.mjs';
@@ -24,6 +24,31 @@ function run(command: string, argv: string[], options: { cwd: string; env: NodeJ
     p.once('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
   });
 }
+
+it('keeps frozen verifier inputs read-only without materializing sandbox mount points', async () => {
+  const cwd = mkdtempSync(join(physicalTmp, 'native-frozen-source-'));
+  const nativeHome = mkdtempSync(join(physicalTmp, 'native-frozen-home-'));
+  writeFileSync(join(cwd, '.verifier-source.json'), '{}');
+  writeFileSync(join(cwd, 'input.txt'), 'FROZEN_INPUT');
+  mkdirSync(join(cwd, '.claude'));
+  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: homedir(),
+    PAPERCUSP_AGENT: 'codex', CODEX_HOME: nativeHome, PAPERCUSP_OPERATOR_URL: 'http://127.0.0.1:32002',
+    PAPERCUSP_SCOPED_INFERENCE_GATEWAY: JSON.stringify({ baseURL: 'http://127.0.0.1:32001', token: 'a'.repeat(64) }) };
+  try {
+    const boundary = createScopedNativeSandboxSpawn({ cwd, env })!;
+    const result = await boundary('/bin/sh', ['-c',
+      'cat input.txt && ! (printf changed > input.txt) && printf state > "$CODEX_HOME/state"'],
+    { cwd, env }, run);
+    expect(result, result.stderr).toMatchObject({ code: 0, stdout: 'FROZEN_INPUT' });
+    expect(readFileSync(join(cwd, 'input.txt'), 'utf8')).toBe('FROZEN_INPUT');
+    expect(readFileSync(join(nativeHome, 'state'), 'utf8')).toBe('state');
+    for (const path of ['.mcp.json', '.claude/commands', '.claude/agents'])
+      expect(existsSync(join(cwd, path)), path).toBe(false);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+    rmSync(nativeHome, { recursive: true, force: true });
+  }
+}, 30_000);
 
 it('isolates assigned corpus from sibling-arm solutions and hidden grader files', async () => {
   const cwd = mkdtempSync(join(physicalTmp, 'native-context-assigned-'));
