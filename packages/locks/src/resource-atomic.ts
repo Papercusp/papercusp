@@ -38,7 +38,7 @@ export interface AtomicSharedAcquireParams {
 }
 
 export type AtomicSharedAcquireResult =
-  | { ok: true; lock_id: string; expires_ts: Date }
+  | { ok: true; lock_id: string; expires_ts: Date; reused: boolean }
   | { ok: false; reason: Extract<SharedAcquireRpcResult, { ok: false }>['reason'] };
 
 export interface AtomicSharedLeaseParams {
@@ -69,7 +69,7 @@ export async function acquireSharedResourceAtomic(
   `;
   const result = row.result;
   if (!result.ok) return { ok: false, reason: result.reason };
-  return { ok: true, lock_id: result.lock_id, expires_ts: new Date(result.expires_ts) };
+  return { ok: true, lock_id: result.lock_id, expires_ts: new Date(result.expires_ts), reused: result.reused === true };
 }
 
 /** Extend a live shared lease in one statement. `extended:false` = it had
