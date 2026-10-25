@@ -4,6 +4,7 @@
 CREATE TABLE harness_shared.blind_review_runtime_leases (
   id uuid PRIMARY KEY,
   lease_epoch bigserial UNIQUE NOT NULL,
+  runtime_nonce uuid NOT NULL DEFAULT gen_random_uuid(),
   workspace_id text NOT NULL,
   binding_id bigint NOT NULL REFERENCES harness_shared.plan_blind_review_sessions(id),
   activation_audit_seq integer NOT NULL CHECK (activation_audit_seq > 0),
