@@ -7488,6 +7488,7 @@ export const operatorConversationsInHarnessShared = harnessShared.table("operato
 	summaryTurnsCovered: integer("summary_turns_covered"),
 	subjectKind: text("subject_kind").default('global').notNull(),
 	subjectRef: text("subject_ref"),
+	contextState: jsonb("context_state"),
 }, (table) => [
 	index("operator_conversations_active_idx").using("btree", sql`workspace_id`, sql`COALESCE(harness_slug, ''::text)`).where(sql`(status = 'active'::text)`),
 	index("operator_conversations_started_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.startedAt.desc().nullsFirst().op("int8_ops")),
@@ -7925,6 +7926,7 @@ export const operatorTurnsInHarnessShared = harnessShared.table("operator_turns"
 	workspaceId: text("workspace_id").notNull(),
 	textEmbeddingMode: text("text_embedding_mode"),
 	textEmbeddingProfile: text("text_embedding_profile"),
+	chatState: jsonb("chat_state"),
 }, (table) => [
 	index("operator_turns_conv_seq_idx").using("btree", table.conversationId.asc().nullsLast().op("uuid_ops"), table.seq.asc().nullsLast().op("int4_ops")),
 	index("operator_turns_report_recent_idx").using("btree", table.createdAt.asc().nullsLast().op("int8_ops")).where(sql`(report IS NOT NULL)`),
@@ -12088,6 +12090,80 @@ export const specEvidenceBindingsInHarnessShared = harnessShared.table("spec_evi
 	check("spec_evidence_bindings_verifies_binding_check", sql`(evidence_kind = 'independent-verification'::text) = (verifies_binding_id IS NOT NULL)`),
 ]);
 
+export const sqlIntentExamplesInHarnessShared = harnessShared.table("sql_intent_examples", {
+	workspaceId: text("workspace_id").notNull(),
+	scopeId: text("scope_id").notNull(),
+	sourceToken: text("source_token").notNull(),
+	capturedAt: timestamp("captured_at", { withTimezone: true, mode: 'string' }).notNull(),
+	expiresAt: timestamp("expires_at", { withTimezone: true, mode: 'string' }).notNull(),
+	example: jsonb().notNull(),
+}, (table) => [
+	index("sql_intent_examples_expiry_idx").using("btree", table.expiresAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.scopeId, table.sourceToken, table.workspaceId], name: "sql_intent_examples_pkey"}),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("sql_intent_examples_check", sql`expires_at = (captured_at + '720:00:00'::interval)`),
+]);
+
+export const sqlIntentHistoryInHarnessShared = harnessShared.table("sql_intent_history", {
+	workspaceId: text("workspace_id").notNull(),
+	scopeId: text("scope_id").notNull(),
+	ranOn: date("ran_on").notNull(),
+	windowSince: timestamp("window_since", { withTimezone: true, mode: 'string' }).notNull(),
+	windowUntil: timestamp("window_until", { withTimezone: true, mode: 'string' }).notNull(),
+	summary: jsonb().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sourceIds: bigint("source_ids", { mode: "number" }).array().notNull(),
+	sourceTokens: text("source_tokens").array().notNull(),
+	revisionToken: text("revision_token").notNull(),
+	alertedRevision: text("alerted_revision"),
+	computedAt: timestamp("computed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("sql_intent_history_retention_idx").using("btree", table.computedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.ranOn, table.scopeId, table.workspaceId], name: "sql_intent_history_pkey"}),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const sqlIntentOperationsInHarnessShared = harnessShared.table("sql_intent_operations", {
+	workspaceId: text("workspace_id").notNull(),
+	scopeId: text("scope_id").notNull(),
+	sourceToken: text("source_token").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	sourceId: bigint("source_id", { mode: "number" }).notNull(),
+	day: date().notNull(),
+	observation: jsonb().notNull(),
+}, (table) => [
+	index("sql_intent_operations_window_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.scopeId.asc().nullsLast().op("text_ops"), table.day.asc().nullsLast().op("date_ops")),
+	primaryKey({ columns: [table.scopeId, table.sourceToken, table.workspaceId], name: "sql_intent_operations_pkey"}),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const sqlIntentProgressInHarnessShared = harnessShared.table("sql_intent_progress", {
+	workspaceId: text("workspace_id").notNull(),
+	scopeId: text("scope_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	cursorAt: timestamp("cursor_at", { withTimezone: true, mode: 'string' }),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	cursorId: bigint("cursor_id", { mode: "number" }),
+	pendingUntil: timestamp("pending_until", { withTimezone: true, mode: 'string' }),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.scopeId, table.workspaceId], name: "sql_intent_progress_pkey"}),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const sqlIntentStagesInHarnessShared = harnessShared.table("sql_intent_stages", {
+	workspaceId: text("workspace_id").notNull(),
+	scopeId: text("scope_id").notNull(),
+	stage: text().notNull(),
+	status: text().notNull(),
+	reason: text(),
+	measuredAt: timestamp("measured_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.scopeId, table.stage, table.workspaceId], name: "sql_intent_stages_pkey"}),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("sql_intent_stages_status_check", sql`status = ANY (ARRAY['ok'::text, 'UNKNOWN'::text])`),
+]);
+
 export const sqlReadCensusInHarnessShared = harnessShared.table("sql_read_census", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	workspaceId: text("workspace_id").notNull(),
@@ -12473,7 +12549,7 @@ export const testExecutedSourcesInHarnessShared = harnessShared.table("test_exec
 	recordedGitDir: text("recorded_git_dir"),
 }, (table) => [
 	index("test_executed_sources_newest_idx").using("btree", table.workspaceName.asc().nullsLast().op("text_ops"), table.testFile.asc().nullsLast().op("text_ops"), table.recordedAt.desc().nullsFirst().op("timestamptz_ops")),
-	unique("test_executed_sources_proof_key").on(table.recordedGitDir, table.recordedSha, table.runContext, table.testFile, table.workspaceName),
+	unique("test_executed_sources_proof_key").on(table.recordedGitDir, table.recordedSha, table.runContext, table.runnerIdentity, table.testFile, table.workspaceName),
 	check("test_executed_sources_count_matches", sql`module_count = cardinality(executed_modules)`),
 	check("test_executed_sources_sha_shape", sql`recorded_sha ~ '^[0-9a-f]{7,64}$'::text`),
 ]);
@@ -12683,6 +12759,7 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_activity_session_lookup_idx").using("btree", sql`workspace_id`, sql`COALESCE((args_json ->> 'session_id'::text), (args_json ->> 'sessionId'::text))`, sql`invoked_at`, sql`id`).where(sql`((tool_name = ANY (ARRAY['activity:report'::text, 'activity_report'::text])) AND ((args_json ? 'session_id'::text) OR (args_json ? 'sessionId'::text)))`),
 	index("tool_invocations_app_principal_activity_idx").using("btree", sql`workspace_id`, sql`split_part(coord_owner_id, '/'::text, 1)`, sql`invoked_at`, sql`id`).where(sql`(coord_owner_id ~~ 'app:%'::text)`),
 	index("tool_invocations_campaign_owner_cover_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast(), table.status.asc().nullsLast()).where(sql`(coord_owner_id IS NOT NULL)`),
+	index("tool_invocations_code_run_time_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(tool_name = 'code:run'::text)`),
 	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(error_code IS NOT NULL)`),
 	index("tool_invocations_friction_pending_expiry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("timestamptz_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`((metadata_json ->> 'frictionCapture'::text) = 'pending'::text)`),
