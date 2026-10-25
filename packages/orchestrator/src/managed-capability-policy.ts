@@ -153,6 +153,27 @@ export const CODEX_CAPABILITY_CONTROLS: Readonly<Record<string, {
   },
 });
 
+/** Removal validation is independent of the inventory version pin. */
+export const OMP_CAPABILITY_CONTROLS: Readonly<Record<string, {
+  readonly validatedClientVersion: string;
+  readonly deniedNames: readonly string[];
+}>> = Object.freeze({
+  'managed-shell-cutover': {
+    validatedClientVersion: '18.0.3',
+    deniedNames: ['bash'],
+  },
+});
+
+/** Built-ins accepted by the validated client's --tools parser. MCP extension
+ * tools are outside this list and must remain available after a native cut. */
+export const OMP_NATIVE_TOOL_NAMES: readonly string[] = Object.freeze([
+  // Measured at the installed registry boundary, not copied from --help:
+  // 18.0.3 advertises python/notebook/computer/ask but rejects those names in
+  // this registry, and accepts ast_edit/goal which the help omits.
+  'read', 'bash', 'edit', 'write', 'grep', 'glob', 'lsp', 'inspect_image',
+  'browser', 'task', 'todo', 'web_search', 'ast_edit', 'goal',
+]);
+
 /**
  * Why a restriction exists — and therefore whether replacement quality gates it.
  *
@@ -387,7 +408,7 @@ export const MANAGED_CAPABILITY_RESTRICTIONS: readonly ManagedCapabilityRestrict
     authority: { kind: 'managed-cutover' },
     aliases: ['Bash'],
     nestedRoutes: [],
-    clients: ['claude', 'codex'],
+    clients: ['claude', 'codex', 'omp'],
     surfaces: ALL_SURFACES,
     audiences: ALL_AUDIENCES,
     yieldsToExplicitDenyList: true,
@@ -485,6 +506,10 @@ export interface CapabilityPolicyRequest {
    * of drift — so this narrows the gate only when the version is actually known.
    */
   readonly clientVersions?: Readonly<Partial<Record<CapabilityClientFamily, string>>>;
+  /** Actual native selection measured on this OMP launch configuration. An
+   * inventory/help list is insufficient: default code mode exposes eval/hub,
+   * which --tools cannot preserve. Missing or unrepresentable stays retained. */
+  readonly ompNativeTools?: readonly string[];
 }
 
 /** Minimal shape the gate needs from a disposition — family, readiness, gaps. */
@@ -861,6 +886,8 @@ export function resolveCapabilityPolicy(
     }
     const codexControl = request.client === 'codex'
       ? CODEX_CAPABILITY_CONTROLS[restriction.id] : undefined;
+    const ompControl = request.client === 'omp'
+      ? OMP_CAPABILITY_CONTROLS[restriction.id] : undefined;
     if (enforcement === 'feature-switches' && codexControl) {
       // Unknown is not validation. This applies even to owner mandates: the
       // prohibition does not prove that a changed client honors this switch.
@@ -874,6 +901,26 @@ export function resolveCapabilityPolicy(
         continue;
       }
       Object.assign(featureSwitches, codexControl.features);
+    } else if (enforcement === 'allow-list-cut' && ompControl) {
+      if (currentClientVersion !== ompControl.validatedClientVersion) {
+        withheld.push({
+          id: restriction.id,
+          reason: 'client-version-drift',
+          detail: `OMP removal controls were validated on ${ompControl.validatedClientVersion}; ` +
+            `current version is ${currentClientVersion ?? 'unknown'}. Revalidate before applying ${restriction.id}.`,
+        });
+        continue;
+      }
+      if (!request.ompNativeTools?.length ||
+          request.ompNativeTools.some(name => !OMP_NATIVE_TOOL_NAMES.includes(name))) {
+        withheld.push({
+          id: restriction.id,
+          reason: 'no-client-enforcement-surface',
+          detail: 'OMP requires a measured native selection representable by --tools. ' +
+            'The default eval/hub code-mode surface cannot be preserved by this control; retain it until separately validated.',
+        });
+        continue;
+      }
     } else if (enforcement !== 'deny-list') {
       withheld.push({
         id: restriction.id,
@@ -886,8 +933,8 @@ export function resolveCapabilityPolicy(
       continue;
     }
 
-    const deniedNames = codexControl
-      ? codexControl.deniedNames : dedupe([...restriction.aliases, ...restriction.nestedRoutes]);
+    const deniedNames = codexControl?.deniedNames ?? ompControl?.deniedNames ??
+      dedupe([...restriction.aliases, ...restriction.nestedRoutes]);
     applied.push({
       id: restriction.id,
       authorityKind: restriction.authority.kind,
@@ -897,6 +944,7 @@ export function resolveCapabilityPolicy(
   }
 
   const deniedNames = dedupe(applied.flatMap((entry) => entry.deniedNames));
+  const ompAllowedNames = request.ompNativeTools?.filter(name => !deniedNames.includes(name)) ?? [];
 
   return {
     client: request.client,
@@ -913,7 +961,10 @@ export function resolveCapabilityPolicy(
     // Single `=` token: the space form is variadic and would swallow a
     // following positional (the wake path appends the wake text positionally).
     flags: enforcement === 'deny-list'
-      ? applied.map((entry) => `--disallowedTools=${entry.deniedNames.join(',')}`) : [],
+      ? applied.map((entry) => `--disallowedTools=${entry.deniedNames.join(',')}`)
+      : enforcement === 'allow-list-cut' && deniedNames.length
+        ? ompAllowedNames.length ? ['--tools', ompAllowedNames.join(',')] : ['--no-tools']
+        : [],
     featureSwitches,
   };
 }
@@ -935,6 +986,32 @@ function dedupe(names: readonly string[]): readonly string[] {
  */
 export function capabilityPolicyFlags(request: CapabilityPolicyRequest): readonly string[] {
   return resolveCapabilityPolicy(request).flags;
+}
+
+/** OMP replaces its tool selection rather than unioning restrictions. Compose
+ * the admitted cut with operator/fleet selections into a single occurrence. */
+export function composeOmpCapabilityTools(
+  argv: readonly string[],
+  request: Omit<CapabilityPolicyRequest, 'client'>,
+): string[] {
+  const decision = resolveCapabilityPolicy({ ...request, client: 'omp' });
+  if (!decision.deniedNames.length || argv.includes('--no-tools')) return [...argv];
+  const remaining: string[] = [];
+  let selected: string[] | undefined;
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index];
+    if (arg === '--tools') {
+      const value = argv[++index];
+      if (!value || value.startsWith('-')) throw new Error('OMP --tools requires an explicit selection');
+      selected = value.split(',');
+    } else if (arg.startsWith('--tools=')) selected = arg.slice('--tools='.length).split(',');
+    else remaining.push(arg);
+  }
+  if (selected?.some(name => !request.ompNativeTools!.includes(name))) {
+    throw new Error('OMP native selection changed after measurement; revalidate the allow-list before cutover');
+  }
+  const allowed = (selected ?? request.ompNativeTools!).filter(name => !decision.deniedNames.includes(name));
+  return [...remaining, ...(allowed.length ? ['--tools', allowed.join(',')] : ['--no-tools'])];
 }
 
 /**

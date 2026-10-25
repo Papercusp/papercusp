@@ -73,7 +73,7 @@ import {
   normalizeModelForBackend,
   resolveCodexModel,
 } from './env';
-import { capabilityPolicyFlags } from './managed-capability-policy';
+import { capabilityPolicyFlags, composeOmpCapabilityTools, type CapabilityPolicyRequest } from './managed-capability-policy';
 import { hasExplicitDisallowedTools } from './native-scheduler-deny';
 import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
@@ -2601,6 +2601,8 @@ function ensureMemoryFiles(stateDir: string): void {
  * `ctx.worktreePathFor` based on the FEATURE_ID extra).
  */
 export interface InvokeOptions {
+  /** Evidence admitted by the caller; absent evidence keeps managed cutover off. */
+  capabilityPolicy?: Omit<CapabilityPolicyRequest, 'client' | 'surface' | 'audience'>;
   inlinePrompt?: string;
   cwd?: string;
   /**
@@ -3761,7 +3763,12 @@ export async function invoke(
     });
   }
 
-  const finalArgv = [...argv.slice(1), ...extraFlags];
+  const assembledArgv = [...argv.slice(1), ...extraFlags];
+  const finalArgv = agentBackend === 'omp'
+    ? composeOmpCapabilityTools(assembledArgv, {
+        ...options.capabilityPolicy, surface: 'launch', audience: 'headless-agent',
+      })
+    : assembledArgv;
   const command = argv[0];
   const startedAt = Date.now();
 

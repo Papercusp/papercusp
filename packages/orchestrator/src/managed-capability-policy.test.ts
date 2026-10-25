@@ -13,6 +13,7 @@ import {
   CONTRACT_CAPABILITY_READINESS,
   MANAGED_CAPABILITY_RESTRICTIONS,
   capabilityPolicyFlags,
+  composeOmpCapabilityTools,
   policyDeferralEnv,
   policyDeferralReachable,
   resolveCapabilityPolicy,
@@ -361,6 +362,61 @@ describe('Codex version-pinned removal controls', () => {
     }]);
     expect(decision.featureSwitches).toEqual({});
     expect(decision.withheld[0]?.reason).toBe('no-client-enforcement-surface');
+  });
+});
+
+describe('OMP version-pinned removal and allow-list composition', () => {
+  const admitted: CapabilityPolicyRequest = {
+    client: 'omp', surface: 'launch', clientVersions: { omp: '18.0.3' },
+    ompNativeTools: ['read', 'bash', 'grep'],
+    readiness: [{ family: 'shell-ssh-interpreters', cutoverReady: true, openGapIds: [] }],
+    cutoverStaging: { 'shell-ssh-interpreters': 'full' },
+    adoption: [{ client: 'omp', family: 'shell-ssh-interpreters',
+      managedPathProven: true, nativeBypassRefused: true, atClientVersion: '18.0.3' }],
+    matrix: [{ client: 'omp', family: 'shell-ssh-interpreters',
+      allScenariosPassed: true, declaredScenarioCount: 7, unmet: [] }],
+  };
+
+  it.each(SURFACES)('cuts bash on %s and preserves an explicit narrower selection', surface => {
+    expect(resolveCapabilityPolicy({ ...admitted, surface }).deniedNames).toEqual(['bash']);
+    expect(composeOmpCapabilityTools(['--tools', 'read,bash,grep'], { ...admitted, surface }))
+      .toEqual(['--tools', 'read,grep']);
+    expect(composeOmpCapabilityTools(['--tools=bash'], { ...admitted, surface })).toEqual(['--no-tools']);
+    expect(composeOmpCapabilityTools(['--no-tools'], { ...admitted, surface })).toEqual(['--no-tools']);
+  });
+
+  it('normalizes repeated flags so an operator selection cannot restore bash', () => {
+    const argv = ['--print', '--tools', 'read,bash', '--tools=grep,bash'];
+    const result = composeOmpCapabilityTools(argv, admitted);
+    expect(result).toEqual(['--print', '--tools', 'grep']);
+    // Wrong implementation: appending a second selection lets its bash win.
+    expect([...result, '--tools', 'bash'].at(-1)).toBe('bash');
+  });
+
+  it.each([undefined, '18.0.4', 'unknown'])('retains the surface for an unvalidated version %s', version => {
+    const request = { ...admitted, clientVersions: version ? { omp: version } : {},
+      adoption: admitted.adoption!.map(row => ({ ...row, atClientVersion: undefined })) };
+    expect(resolveCapabilityPolicy(request).withheld.find(row => row.id === 'managed-shell-cutover')?.reason)
+      .toBe('client-version-drift');
+    expect(composeOmpCapabilityTools(['--tools', 'read,bash'], request)).toEqual(['--tools', 'read,bash']);
+  });
+
+  it('keeps each evidence gate ahead of allow-list emission', () => {
+    for (const request of [{ ...admitted, readiness: [] }, { ...admitted, adoption: [] },
+      { ...admitted, matrix: [] }, { ...admitted, cutoverStaging: {} }]) {
+      expect(composeOmpCapabilityTools([], request)).toEqual([]);
+    }
+  });
+
+  it('retains unmeasured and code-mode surfaces instead of losing eval/hub or enabling other tools', () => {
+    for (const ompNativeTools of [undefined, [], ['read', 'bash', 'eval', 'hub']]) {
+      const request = { ...admitted, ompNativeTools };
+      expect(composeOmpCapabilityTools([], request)).toEqual([]);
+      expect(resolveCapabilityPolicy(request).withheld.find(row => row.id === 'managed-shell-cutover')?.reason)
+        .toBe('no-client-enforcement-surface');
+    }
+    expect(() => composeOmpCapabilityTools(['--tools', 'browser,bash'], admitted))
+      .toThrow('selection changed after measurement');
   });
 });
 
