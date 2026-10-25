@@ -25,9 +25,9 @@
  * WHY IT DOES NOT SKIP. A skipped test is not evidence — `skipped` is exactly
  * what the adequacy evaluator refuses as executable proof. On a host with no
  * `claude` the P-008 real-client claim genuinely cannot be evidenced, so this
- * fails loudly rather than passing vacuously. `claude` is required because it
- * is the ONLY client any managed-cutover restriction declares; codex and omp
- * are probed informationally, since no cutover targets them yet.
+ * fails loudly rather than passing vacuously. Every client declared by a
+ * managed-cutover restriction is required; other clients are probed
+ * informationally without claiming cutover evidence for them.
  *
  * COST + SAFETY. `--version` / `--help` only: no session is started, no tokens
  * are spent, no account is touched, and HOME plus every client config dir are
@@ -194,20 +194,23 @@ describe('P-008 real-client layer — the version dimension is read from the cli
   it(
     'reads a real semver-shaped version and drives version-mismatch with it',
     () => {
-      const probe = probeClient('claude', ['--version']);
-      expect(
-        probe.ok,
-        `claude --version failed (status ${probe.status}${probe.error ? `, ${probe.error}` : ''}).`,
-      ).toBe(true);
-
-      const version = probe.stdout.trim().match(/\d+\.\d+\.\d+/)?.[0];
-      expect(
-        version,
-        `could not parse a version from claude --version output: ${JSON.stringify(probe.stdout.slice(0, 200))}`,
-      ).toBeDefined();
-
       const scenarios = declareRealClientMatrix();
       expect(scenarios.length).toBeGreaterThan(0); // calibration
+      const clientVersions: Partial<Record<CapabilityClientFamily, string>> = {};
+      for (const client of new Set(scenarios.map((scenario) => scenario.client))) {
+        const probe = probeClient(client, ['--version']);
+        expect(
+          probe.ok,
+          `${client} --version failed (status ${probe.status}${probe.error ? `, ${probe.error}` : ''}).`,
+        ).toBe(true);
+
+        const version = probe.stdout.trim().match(/\d+\.\d+\.\d+/)?.[0];
+        expect(
+          version,
+          `could not parse a version from ${client} --version output: ${JSON.stringify(probe.stdout.slice(0, 200))}`,
+        ).toBeDefined();
+        clientVersions[client] = version!;
+      }
 
       // Results recorded on a DIFFERENT version than the client really is.
       // The mismatch is detected against a version nobody hard-coded, so this
@@ -217,10 +220,10 @@ describe('P-008 real-client layer — the version dimension is read from the cli
         results: scenarios.map((scenario) => ({
           scenarioId: scenario.id,
           outcome: 'pass' as const,
-          clientVersion: `${version}-superseded`,
+          clientVersion: `${clientVersions[scenario.client]}-superseded`,
           observedAt: new Date().toISOString(),
         })),
-        clientVersions: { claude: version! },
+        clientVersions,
       });
       expect(stale.rows.every((row) => row.status === 'version-mismatch')).toBe(true);
       expect(stale.allDeclaredScenariosPassed).toBe(false);
@@ -233,37 +236,40 @@ describe('P-008 real-client layer — the version dimension is read from the cli
         results: scenarios.map((scenario) => ({
           scenarioId: scenario.id,
           outcome: 'pass' as const,
-          clientVersion: version!,
+          clientVersion: clientVersions[scenario.client]!,
           observedAt: new Date().toISOString(),
         })),
-        clientVersions: { claude: version! },
+        clientVersions,
       });
       expect(current.allDeclaredScenariosPassed).toBe(true);
     },
-    PROBE_TIMEOUT_MS,
+    PROBE_TIMEOUT_MS * 3,
   );
 
   it(
     'records the other installed clients honestly rather than assuming them',
     () => {
-      // No managed-cutover restriction targets codex or omp, so their absence
-      // is not a failure — but claiming a real-client matrix without ever
-      // looking would be. Whatever is installed is reported; nothing is
-      // asserted about a client no cutover declares.
+      // Codex now has managed-shell restrictions, so it must be installed.
+      // OMP remains informational until a cutover restriction declares it.
       const observed = (['codex', 'omp'] as const).map((binary) => ({
         binary,
-        version: probeClient(binary, ['--version']).stdout.trim().match(/\d+\.\d+\.\d+/)?.[0],
+        probe: probeClient(binary, ['--version']),
       }));
+      const clients = new Set(declareRealClientMatrix().map((scenario) => scenario.client));
 
-      for (const { binary, version } of observed) {
+      for (const { binary, probe } of observed) {
+        const version = probe.stdout.trim().match(/\d+\.\d+\.\d+/)?.[0];
+        if (clients.has(binary)) {
+          expect(probe.ok, `${binary} --version: ${probe.error ?? probe.stderr}`).toBe(true);
+          expect(version, `${binary} has declared cutover scenarios but no measurable version`).toBeDefined();
+        }
         if (version === undefined) continue;
         expect(version, `${binary} reported a malformed version`).toMatch(/^\d+\.\d+\.\d+$/);
       }
 
       // The declared matrix must not silently claim scenarios for a client no
       // restriction covers — that would be a permanently-unprovable cell.
-      const clients = new Set(declareRealClientMatrix().map((scenario) => scenario.client));
-      expect(clients.has('codex')).toBe(false);
+      expect(clients.has('codex')).toBe(true);
       expect(clients.has('omp')).toBe(false);
     },
     PROBE_TIMEOUT_MS * 2,
