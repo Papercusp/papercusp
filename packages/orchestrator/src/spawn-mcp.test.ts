@@ -6,6 +6,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync, lstatSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { parse as parseToml } from '@iarna/toml';
 import {
   buildSpawnCodexConfigToml,
   buildSpawnMcpConfig,
@@ -967,6 +968,10 @@ describe('buildSpawnCodexConfigToml', () => {
     );
     expect(toml).toContain('[mcp_servers.papercusp]');
     expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a\\"b"');
+    expect(parseToml(toml).mcp_servers).toEqual({ papercusp: {
+      url: 'http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a"b',
+      tools: { 'tools:invoke': { approval_mode: 'approve' } },
+    } });
   });
 
   it('leaves the model provider unset when no spawn account is pinned', () => {

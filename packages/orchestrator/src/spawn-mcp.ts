@@ -25,6 +25,7 @@ import { AGENT_SESSION_CONTEXT_TIER } from './agent-session-context-tier';
 // `./codex-gateway-config` subpath export — one builder, one behavior, no drift. Model-specific
 // TOML stays there; this file keeps only the spawn-specific composition (MCP url + CODEX_HOME).
 import {
+  CODEX_MANAGED_DISPATCHER_APPROVAL_TOML,
   codexGatewayConfigToml,
   codexManagedFeaturesToml,
   codexModelCatalogToml,
@@ -581,6 +582,7 @@ export function buildSpawnCodexConfigToml(
     ...gatewayConfig.tables,
     '[mcp_servers.papercusp]',
     `url = "${tomlEscape(mcpUrl)}"`,
+    ...CODEX_MANAGED_DISPATCHER_APPROVAL_TOML,
     '',
   ].join('\n');
 }

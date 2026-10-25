@@ -58,6 +58,14 @@ export function publishCodexConfig(configPath: string, text: string): void {
  */
 export const CODEX_GATEWAY_PROVIDER_ID = 'papercusp-codex-gateway';
 
+/** Inside the generated Papercusp MCP table only. Codex's `never` policy
+ * refuses approval-requiring dispatchers unless the tool is preauthorized.
+ * Papercusp still authorizes the nested call at its normal dispatch boundary;
+ * unrelated MCP servers and tools retain their own approval policy. */
+export const CODEX_MANAGED_DISPATCHER_APPROVAL_TOML = [
+  'tools = { "tools:invoke" = { approval_mode = "approve" } }',
+] as const;
+
 /** Host-issued per-process route; independent launches strip this envelope. */
 export const SCOPED_INFERENCE_GATEWAY_ENV = 'PAPERCUSP_SCOPED_INFERENCE_GATEWAY';
 export interface ScopedInferenceGateway { baseURL: string; token: string }
