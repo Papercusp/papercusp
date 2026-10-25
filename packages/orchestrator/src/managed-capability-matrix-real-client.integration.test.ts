@@ -249,8 +249,8 @@ describe('P-008 real-client layer — the version dimension is read from the cli
   it(
     'records the other installed clients honestly rather than assuming them',
     () => {
-      // Codex now has managed-shell restrictions, so it must be installed.
-      // OMP remains informational until a cutover restriction declares it.
+      // Codex and OMP have managed-shell restrictions, so both must expose
+      // an installed version for their declared cutover scenarios.
       const observed = (['codex', 'omp'] as const).map((binary) => ({
         binary,
         probe: probeClient(binary, ['--version']),
@@ -270,7 +270,7 @@ describe('P-008 real-client layer — the version dimension is read from the cli
       // The declared matrix must not silently claim scenarios for a client no
       // restriction covers — that would be a permanently-unprovable cell.
       expect(clients.has('codex')).toBe(true);
-      expect(clients.has('omp')).toBe(false);
+      expect(clients.has('omp')).toBe(true);
     },
     PROBE_TIMEOUT_MS * 2,
   );
