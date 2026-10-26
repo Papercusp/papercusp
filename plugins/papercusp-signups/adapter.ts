@@ -89,6 +89,9 @@ function person(key: string, raw: unknown, scope: { accountId: string; namespace
   return {
     datatype: 'person', nativeId: key, event: 'person.updated', occurredAt: timestamp,
     payload: {
+      provider: ID,
+      externalId: key,
+      observedAt: timestamp,
       emails: [email],
       extensions: { [ID]: {
         signupEventId: key,

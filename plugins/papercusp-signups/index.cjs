@@ -209,6 +209,9 @@ function person(key, raw, scope) {
     event: "person.updated",
     occurredAt: timestamp,
     payload: {
+      provider: ID,
+      externalId: key,
+      observedAt: timestamp,
       emails: [email],
       extensions: { [ID]: {
         signupEventId: key,
