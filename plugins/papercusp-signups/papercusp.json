@@ -1,0 +1,39 @@
+{
+  "distribution": "cupboard",
+  "kind": "plugin",
+  "name": "papercusp-signups",
+  "version": "0.1.0",
+  "papercusp": "^0.1.0",
+  "description": "Read captured papercusp.com access requests from Cloudflare KV through the host connector driver. Produces source-cited person records; signup is neither verified identity nor communication consent. Fixture verified only.",
+  "author": "Papercusp",
+  "license": "MIT",
+  "main": "./index.cjs",
+  "runtime": { "kind": "daemon", "daemonCommand": ["node", "daemon.cjs"] },
+  "capabilities": [],
+  "tools": [],
+  "provider": {
+    "id": "papercusp-signups",
+    "contractVersion": 1,
+    "displayName": "Papercusp captured signups",
+    "datatypes": ["person"],
+    "capabilities": [],
+    "egressHosts": ["api.cloudflare.com"],
+    "setup": { "credentials": [{
+      "key": "kv_read_token",
+      "label": "Cloudflare KV read token",
+      "hosts": ["api.cloudflare.com"],
+      "help": "Use a token restricted to read the signup KV namespace in the selected Cloudflare account. The host stores it and injects the bearer; the adapter never receives it. Selecting a record destination is separate from connecting.",
+      "helpUrl": "https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"
+    }] },
+    "configSchema": {
+      "type": "object",
+      "required": ["accountId", "namespaceId"],
+      "properties": {
+        "accountId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "namespaceId": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "harnessSlug": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
