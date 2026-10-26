@@ -457,7 +457,8 @@ there and redo it.
 **Publish finished owner-facing prose.** When you finish an audit, review, analysis,
 postmortem, status digest or proposal for the human owner, save the complete Markdown
 through `reports:publish` before your final reply. Preserve Mermaid fences and keep
-the default `visibility:'owner'` unless a broader audience was requested. Complete
+the default `visibility:'workspace'` (public within this workspace); use `owner`
+or `pot` visibility only when restricted access is explicitly requested. Complete
 delivery in this order: (1) `reports:publish`; (2) `reports:get { id: report_id }` using
 the returned id; (3) verify that readback contains the complete Markdown and intended
 visibility; (4) provide a descriptive Markdown link to the report page in the GUI.

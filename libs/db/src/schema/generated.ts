@@ -10634,7 +10634,7 @@ export const reportLibraryInHarnessShared = harnessShared.table("report_library"
 	originHarnessSlug: text("origin_harness_slug"),
 	authorOwnerId: text("author_owner_id"),
 	authorSessionRef: text("author_session_ref"),
-	visibility: text().default('owner').notNull(),
+	visibility: text().default('workspace').notNull(),
 	supersedesReportId: text("supersedes_report_id"),
 	lineageId: text("lineage_id").notNull(),
 	source: text().default('agent').notNull(),
@@ -12090,6 +12090,20 @@ export const specEvidenceBindingsInHarnessShared = harnessShared.table("spec_evi
 	check("spec_evidence_bindings_verifies_binding_check", sql`(evidence_kind = 'independent-verification'::text) = (verifies_binding_id IS NOT NULL)`),
 ]);
 
+export const sqlCandidateReviewsInHarnessShared = harnessShared.table("sql_candidate_reviews", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	lifecycleId: text("lifecycle_id").notNull(),
+	editionId: text("edition_id").notNull(),
+	artifactId: text("artifact_id").notNull(),
+	suppressed: boolean().default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.editionId, table.harnessSlug, table.lifecycleId, table.workspaceId], name: "sql_candidate_reviews_pkey"}),
+	unique("sql_candidate_reviews_workspace_id_artifact_id_key").on(table.artifactId, table.workspaceId),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const sqlIntentExamplesInHarnessShared = harnessShared.table("sql_intent_examples", {
 	workspaceId: text("workspace_id").notNull(),
 	scopeId: text("scope_id").notNull(),
@@ -12146,6 +12160,7 @@ export const sqlIntentProgressInHarnessShared = harnessShared.table("sql_intent_
 	cursorId: bigint("cursor_id", { mode: "number" }),
 	pendingUntil: timestamp("pending_until", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	retainedFrom: timestamp("retained_from", { withTimezone: true, mode: 'string' }).default(sql`clock_timestamp()`).notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.scopeId, table.workspaceId], name: "sql_intent_progress_pkey"}),
 	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
