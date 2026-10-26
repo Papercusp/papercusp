@@ -20,6 +20,7 @@ CREATE TABLE harness_shared.blind_review_runtime_leases (
   release_reason text,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  reconciled_at timestamptz,
   UNIQUE (id, workspace_id),
   UNIQUE (workspace_id, binding_id, replacement_epoch, activation_audit_seq),
   CHECK ((state = 'requested') = (receipt_id IS NULL)),
@@ -59,7 +60,7 @@ CREATE TABLE harness_shared.blind_review_runtime_resources (
 );
 
 CREATE INDEX blind_review_runtime_reconcile_idx
-  ON harness_shared.blind_review_runtime_leases (expires_at)
+  ON harness_shared.blind_review_runtime_leases (reconciled_at NULLS FIRST, id)
   WHERE state IN ('allocating','ready','releasing');
 
 ALTER TABLE harness_shared.blind_review_runtime_leases ENABLE ROW LEVEL SECURITY;
