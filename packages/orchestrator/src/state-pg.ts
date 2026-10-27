@@ -19,6 +19,7 @@
 import type { OrchestratorPg } from './invoke';
 import type { FeatureRecord } from './types';
 
+import { ISSUE_FAMILY_ROUTE_KINDS } from '@papercusp/harness/work-item-kinds';
 export interface PgStateContext {
   pg: OrchestratorPg;
   workspaceId: string;
@@ -353,7 +354,7 @@ export async function setFeatureStatusPg(
         UPDATE harness_shared.work_items
            SET status = ${status}, attempts = 0, updated_ts = ${now}
          WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${slug}
-           AND feature_id = ${featureId} AND item_kind NOT IN ('bug', 'change', 'task')
+           AND feature_id = ${featureId} AND item_kind <> ALL(${[...ISSUE_FAMILY_ROUTE_KINDS]}::text[])
       `;
     } else if (options.bumpAttempts) {
       await ctx.pg`
@@ -362,14 +363,14 @@ export async function setFeatureStatusPg(
                attempts = COALESCE(attempts, 0) + 1,
                updated_ts = ${now}
          WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${slug}
-           AND feature_id = ${featureId} AND item_kind NOT IN ('bug', 'change', 'task')
+           AND feature_id = ${featureId} AND item_kind <> ALL(${[...ISSUE_FAMILY_ROUTE_KINDS]}::text[])
       `;
     } else {
       await ctx.pg`
         UPDATE harness_shared.work_items
            SET status = ${status}, updated_ts = ${now}
          WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${slug}
-           AND feature_id = ${featureId} AND item_kind NOT IN ('bug', 'change', 'task')
+           AND feature_id = ${featureId} AND item_kind <> ALL(${[...ISSUE_FAMILY_ROUTE_KINDS]}::text[])
       `;
     }
     return readFeaturesPg(ctx);
