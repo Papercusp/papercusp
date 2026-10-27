@@ -1,0 +1,35 @@
+-- 1593 — cover the harness-scoped issue occurrence census.
+--
+-- EI-25503081061868211: the exact readIssueOccurrenceCounts query filters on
+-- workspace, harness, and occurred_at, groups by the canonical work-item id,
+-- and counts report_kind. Its measured plan selected
+-- work_item_occurrences_canonical_idx, then fetched 770 heap blocks because
+-- report_kind was not stored there. The separate flow index from 1432 includes
+-- report_kind but is a worse match for the harness predicate. Extend the
+-- existing canonical index so the selected reader path can stay index-only.
+--
+-- The migration runner wraps each file in a transaction. For a large live
+-- ledger, pre-build this exact definition with CREATE INDEX CONCURRENTLY before
+-- applying; the idempotent migration will then reuse it and preserve the
+-- canonical index name used by existing readers and diagnostics.
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'harness_shared'
+       AND indexname = 'work_item_occurrences_canonical_idx'
+       AND indexdef LIKE '%INCLUDE (report_kind)%'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS work_item_occurrences_canonical_covering_idx
+      ON harness_shared.work_item_occurrences
+        (workspace_id, canonical_harness_slug, canonical_work_item_id, occurred_at DESC)
+      INCLUDE (report_kind);
+    DROP INDEX IF EXISTS harness_shared.work_item_occurrences_canonical_idx;
+    ALTER INDEX harness_shared.work_item_occurrences_canonical_covering_idx
+      RENAME TO work_item_occurrences_canonical_idx;
+  END IF;
+END $$;
+
+COMMENT ON INDEX harness_shared.work_item_occurrences_canonical_idx IS
+  'Canonical occurrence lookup and exact harness census; covers report_kind aggregates without evidence heap fetches';
