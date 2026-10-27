@@ -17,6 +17,11 @@
       "import": "./paths.ts",
       "default": "./paths.ts"
     },
+    "./work-item-kinds": {
+      "types": "./work-item-kinds.ts",
+      "import": "./work-item-kinds.ts",
+      "default": "./work-item-kinds.ts"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
