@@ -63,6 +63,45 @@ export interface ResourceAcquireParams {
    * can grant a lease after the caller has already stopped waiting.
    */
   queueOnConflict?: boolean;
+  /**
+   * 'domain' (default): the caller holds the EXCLUSIVE domain key, so the
+   * expiry sweep and grant cascade cover every resource in the domain.
+   * 'resource': the caller's inWorkspaceTxn was opened with `resources:
+   * [resource]` (shared gate + per-resource key), so only this resource's rows
+   * may be touched — the resource-scoped sweep and cascade from sql/030.
+   */
+  scope?: ResourceTxnScope;
+}
+
+/** Which advisory scope the caller's inWorkspaceTxn holds; see ResourceAcquireParams.scope. */
+export type ResourceTxnScope = 'domain' | 'resource';
+
+/** Expire stale holders: the whole domain, or (resource scope) only `resource`'s rows. */
+async function sweepExpiredInScope(
+  tx: Sql,
+  coordinationDomain: string,
+  resource: string,
+  scope: ResourceTxnScope,
+): Promise<void> {
+  if (scope === 'resource') {
+    await tx`SELECT resource_sweep_expired_scoped(${coordinationDomain}, ${resource})`;
+    return;
+  }
+  await sweepResourceExpired(tx, coordinationDomain);
+}
+
+/** Run the grant cascade: the whole domain, or (resource scope) only `resource`. */
+async function promoteInScope(
+  tx: Sql,
+  coordinationDomain: string,
+  resource: string,
+  scope: ResourceTxnScope,
+): Promise<void> {
+  if (scope === 'resource') {
+    await tx`SELECT resource_grant_cascade(${coordinationDomain}, clock_timestamp(), ${resource}::text)`;
+    return;
+  }
+  await promoteResourceExclusiveQueue(tx, coordinationDomain);
 }
 
 /** A pending exclusive request. Queue rows are requests, not leases. */
@@ -404,6 +443,7 @@ export async function tryAcquireResource(
     reason,
     ttlSec,
     queueOnConflict = false,
+    scope = 'domain',
   } = params;
   await tx`SET LOCAL statement_timeout = '500ms'`;
 
@@ -416,11 +456,11 @@ export async function tryAcquireResource(
   }
 
   // Clean expired holders first so conflict + drain checks see live state.
-  await sweepResourceExpired(tx, cd);
+  await sweepExpiredInScope(tx, cd, resource, scope);
   // Queue rows may have been left by a prior refused acquire, and a release
   // may have happened before this retry reached the transaction. Re-run the
   // idempotent cascade so the current FIFO head is visible before gating.
-  await promoteResourceExclusiveQueue(tx, cd);
+  await promoteInScope(tx, cd, resource, scope);
 
   const holders = await readLiveHolders(tx, cd, resource);
   const queue = await readLiveExclusiveQueue(tx, cd, resource);
@@ -599,6 +639,9 @@ export interface ResourceReleaseParams {
   owner: string;
   lockId?: string;
   resource?: string;
+  /** See ResourceAcquireParams.scope. 'resource' requires `resource` and confines
+   *  the release (including a lockId release) to that resource's rows. */
+  scope?: ResourceTxnScope;
 }
 
 export interface ExpiredResourceLock {
@@ -632,7 +675,10 @@ export async function tryReleaseResource(
    *  targeted back-up broadcast audience (A4). Cleared as part of this read. */
   waiters: Record<string, string[]>;
 }> {
-  const { coordinationDomain: cd, owner, lockId, resource } = params;
+  const { coordinationDomain: cd, owner, lockId, resource, scope = 'domain' } = params;
+  if (scope === 'resource' && !resource) {
+    throw new Error('tryReleaseResource: scope "resource" requires the resource name');
+  }
   await tx`SET LOCAL statement_timeout = '5s'`;
 
   // Capture matching expired rows before sweeping them. Once the sweep runs,
@@ -644,7 +690,17 @@ export async function tryReleaseResource(
     mode: ResourceMode;
     expires_ts: Date;
   }>;
-  if (lockId) {
+  if (lockId && scope === 'resource') {
+    expiredRows = await tx`
+      SELECT lock_id::text AS lock_id, resource, mode, expires_ts
+        FROM agent_resource_locks
+       WHERE coordination_domain = ${cd}
+         AND resource = ${resource as string}
+         AND lock_id = ${lockId}::uuid
+         AND owner = ${owner}
+         AND expires_ts <= clock_timestamp()
+    `;
+  } else if (lockId) {
     expiredRows = await tx`
       SELECT lock_id::text AS lock_id, resource, mode, expires_ts
         FROM agent_resource_locks
@@ -666,10 +722,18 @@ export async function tryReleaseResource(
     throw new Error('tryReleaseResource requires lockId or resource');
   }
 
-  await sweepResourceExpired(tx, cd);
+  if (scope === 'resource') await sweepExpiredInScope(tx, cd, resource as string, scope);
+  else await sweepResourceExpired(tx, cd);
 
   let deleted: Array<{ mode: ResourceMode; resource: string }>;
-  if (lockId) {
+  if (lockId && scope === 'resource') {
+    deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
+      DELETE FROM agent_resource_locks
+       WHERE coordination_domain = ${cd} AND resource = ${resource as string}
+         AND lock_id = ${lockId}::uuid AND owner = ${owner}
+      RETURNING mode, resource
+    `;
+  } else if (lockId) {
     deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
       DELETE FROM agent_resource_locks
        WHERE coordination_domain = ${cd} AND lock_id = ${lockId}::uuid AND owner = ${owner}
@@ -700,7 +764,8 @@ export async function tryReleaseResource(
     heldResourceSuggestions = rows.map((row) => row.resource);
   }
 
-  await promoteResourceExclusiveQueue(tx, cd);
+  if (scope === 'resource') await promoteInScope(tx, cd, resource as string, scope);
+  else await promoteResourceExclusiveQueue(tx, cd);
   // An expired or live exclusive is back up only if the cascade did not grant
   // another exclusive immediately. The expired rows are captured before the
   // sweep because that delete removes the evidence from agent_resource_locks.
@@ -763,6 +828,51 @@ export async function releaseAllResourcesForOwner(
     coordinationDomain,
     exclusiveCandidates,
   );
+  const waiters: Record<string, string[]> = {};
+  for (const res of exclusiveResources) {
+    waiters[res] = await readAndClearResourceWaiters(tx, coordinationDomain, res);
+  }
+  return { released: deleted.length, exclusiveResources, waiters };
+}
+
+/**
+ * releaseAllResourcesForOwner for a KNOWN lock set, under resource scope: the
+ * caller's inWorkspaceTxn was opened with `resources: <the same names>`, so this
+ * deletes the owner's rows for those names only and runs each name's
+ * resource-scoped cascade. Use it when the owner token is private to one
+ * operation (a git-sync fire), so the set of names it holds is known exactly;
+ * a session-end cleanup that does not know its names keeps the domain form.
+ */
+export async function releaseOwnerResourcesScoped(
+  tx: Sql,
+  coordinationDomain: string,
+  owner: string,
+  resources: readonly string[],
+): Promise<{ released: number; exclusiveResources: string[]; waiters: Record<string, string[]> }> {
+  const names = Array.from(new Set(resources.filter((resource) => resource.length > 0))).sort();
+  if (names.length === 0) return { released: 0, exclusiveResources: [], waiters: {} };
+  await tx`SET LOCAL statement_timeout = '5s'`;
+  const deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
+    DELETE FROM agent_resource_locks
+     WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
+       AND resource = ANY(${names}::text[])
+    RETURNING mode, resource
+  `;
+  await tx`
+    DELETE FROM agent_resource_waiters
+     WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
+       AND resource = ANY(${names}::text[])
+  `;
+  await tx`
+    DELETE FROM agent_resource_exclusive_queue
+     WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
+       AND resource = ANY(${names}::text[])
+  `;
+  for (const resource of names) await promoteInScope(tx, coordinationDomain, resource, 'resource');
+  const exclusiveCandidates = [
+    ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
+  ];
+  const exclusiveResources = await resourcesReadyForBackUp(tx, coordinationDomain, exclusiveCandidates);
   const waiters: Record<string, string[]> = {};
   for (const res of exclusiveResources) {
     waiters[res] = await readAndClearResourceWaiters(tx, coordinationDomain, res);

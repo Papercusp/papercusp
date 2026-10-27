@@ -90,6 +90,21 @@ export interface WorkspaceTxnOptions {
    */
   paths?: readonly string[];
   /**
+   * Named resources (agent_resource_locks.resource) this transaction reads and
+   * writes — and ONLY those. When present, take the SHARED workspace gate plus
+   * one EXCLUSIVE `su-resource:<domain>:<resource>` key per name, in sorted
+   * order: exactly the keys `resource_scope_lock` (sidecar sql/030) takes, so a
+   * TypeScript resource transaction and a one-statement SQL resource operation
+   * serialize on the same key. Path-scoped work also holds only the shared gate,
+   * so file locks and unrelated resources stop queueing behind each other; a
+   * domain-global sweep (no paths, no resources) still holds the exclusive key
+   * and excludes both. The callback must not touch another resource's rows: use
+   * `scope: 'resource'` on tryAcquireResource / tryReleaseResource, and
+   * releaseOwnerResourcesScoped for a known lock set (EI-27114494366587753).
+   * Cannot be combined with `paths` or `leaseRenewal`.
+   */
+  resources?: readonly string[];
+  /**
    * Per-operation timeout floors. A drain-capable caller has already declared
    * how long it is prepared to wait; forcing its advisory-lock statement back
    * to the global 5s default makes PostgreSQL cancel it, lose its FIFO queue
@@ -183,8 +198,30 @@ async function acquireAdvisoryScope(
   coordinationDomain: string,
   paths: readonly string[] | undefined,
   leaseRenewal = false,
+  resources?: readonly string[],
 ): Promise<void> {
   const scopedPaths = uniqueSortedPaths(paths);
+  const scopedResources = Array.from(
+    new Set((resources ?? []).filter((resource) => resource.length > 0)),
+  ).sort();
+  if (scopedResources.length > 0) {
+    if (scopedPaths.length > 0 || leaseRenewal) {
+      throw new Error('inWorkspaceTxn: `resources` cannot be combined with `paths` or `leaseRenewal`');
+    }
+    // Same shared gate as path-scoped work: a domain-global operation (or an
+    // older process still taking the exclusive key for resource work) excludes us.
+    await tx`SELECT pg_advisory_xact_lock_shared(
+      ${SU_LOCKS_FEATURE_KEY}::int,
+      hashtext(${'su:' + coordinationDomain})
+    )`;
+    for (const resource of scopedResources) {
+      await tx`SELECT pg_advisory_xact_lock(
+        ${SU_LOCKS_FEATURE_KEY}::int,
+        hashtext(${'su-resource:' + coordinationDomain + ':' + resource})
+      )`;
+    }
+    return;
+  }
   if (!leaseRenewal && scopedPaths.length === 0) {
     // Preserve the original key for global operations and rolling
     // compatibility with processes that still use the workspace lock alone.
@@ -284,7 +321,13 @@ export async function inWorkspaceTxn<T>(
                     set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`,
     );
     await measureAsyncPhase(phaseObserver, 'advisory-scope', () =>
-      acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain, options.paths, options.leaseRenewal),
+      acquireAdvisoryScope(
+        tx as unknown as Sql,
+        coordinationDomain,
+        options.paths,
+        options.leaseRenewal,
+        options.resources,
+      ),
     );
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type

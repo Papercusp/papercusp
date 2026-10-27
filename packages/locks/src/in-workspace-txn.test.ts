@@ -98,6 +98,46 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
     expect(advisory[0]).toContain('pg_advisory_xact_lock_shared');
   });
 
+  // EI-27114494366587753: resource work must not take the EXCLUSIVE workspace key,
+  // which serialized every file-lock operation behind every git-sync lock op.
+  it('scopes a resource transaction to the shared gate plus sorted per-resource keys', async () => {
+    const { sql, tx } = fakePool();
+    mocks.getTxPool.mockReturnValue(sql);
+
+    await inWorkspaceTxn('resource-domain', 'owner', async () => 'ok', {
+      resources: ['git-sync:zeta', 'git-sync:alpha', 'git-sync:zeta'],
+    });
+
+    const advisory = tx.mock.calls
+      .map(([strings, ...values]) => ({ query: strings.join(' '), values }))
+      .filter(({ query }) => query.includes('pg_advisory'));
+    expect(advisory).toHaveLength(3);
+    expect(advisory[0].query).toContain('pg_advisory_xact_lock_shared');
+    expect(advisory[0].values).toContain('su:resource-domain');
+    // Exclusive per-resource keys, de-duplicated and sorted — the same strings
+    // resource_scope_lock (sidecar sql/030) hashes, so TS and SQL callers meet.
+    expect(advisory.slice(1).map(({ query }) => query.includes('pg_advisory_xact_lock_shared'))).toEqual([false, false]);
+    expect(advisory.slice(1).map(({ values }) => values[1])).toEqual([
+      'su-resource:resource-domain:git-sync:alpha',
+      'su-resource:resource-domain:git-sync:zeta',
+    ]);
+    // Never the exclusive domain key.
+    expect(
+      advisory.some(({ query, values }) => !query.includes('_shared') && values.includes('su:resource-domain')),
+    ).toBe(false);
+  });
+
+  it('refuses a resource scope combined with paths', async () => {
+    const { sql } = fakePool();
+    mocks.getTxPool.mockReturnValue(sql);
+    await expect(
+      inWorkspaceTxn('resource-domain', 'owner', async () => 'ok', {
+        resources: ['git-sync:alpha'],
+        paths: ['src/a.ts'],
+      }),
+    ).rejects.toThrow(/cannot be combined/);
+  });
+
   it('keeps the transaction result when the diagnostic observer throws', async () => {
     const { sql } = fakePool();
     mocks.getTxPool.mockReturnValue(sql);
