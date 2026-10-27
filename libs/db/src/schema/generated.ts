@@ -221,6 +221,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
 	retiredBy: text("retired_by"),
 	retiredReason: text("retired_reason"),
+	childLaunchSessionId: text("child_launch_session_id"),
 }, (table) => [
 	index("adv_sessions_app_operation_caller_idx").using("btree", sql`workspace_id`, sql`split_part((((launch_spec -> 'acceptedOperation'::text) -> 'pin'::text) ->> 'callerId'::text), '/'::text, 1)`).where(sql`(launch_spec ? 'acceptedOperation'::text)`),
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
@@ -1987,7 +1988,7 @@ export const codeIntelPushSkipsInHarnessShared = harnessShared.table("code_intel
 	unique("code_intel_push_skips_turn_fact_key").on(table.leg, table.ownerId, table.subject, table.turnId, table.workspaceId),
 	pgPolicy("code_intel_push_skips_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("code_intel_push_skips_chars_nonneg", sql`chars >= 0`),
-	check("code_intel_push_skips_site_known", sql`site = ANY (ARRAY['request-budget'::text, 'turn-budget'::text])`),
+	check("code_intel_push_skips_site_known", sql`site = ANY (ARRAY['request-budget'::text, 'turn-budget'::text, 'wall'::text, 'push-cap'::text])`),
 ]);
 
 export const codeIntelPushesInHarnessShared = harnessShared.table("code_intel_pushes", {
@@ -4148,10 +4149,14 @@ export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_at
 	repoRoot: text("repo_root"),
 	acquiredVia: text("acquired_via"),
 	dispatchCallId: text("dispatch_call_id"),
+	signalEligibility: jsonb("signal_eligibility"),
+	symbols: text().array(),
 }, (table) => [
 	uniqueIndex("edit_attribution_dispatch_repo_file_uidx").using("btree", table.dispatchCallId.asc().nullsLast().op("text_ops"), table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops")).where(sql`(dispatch_call_id IS NOT NULL)`),
 	index("edit_attribution_ledger_agent_ts_idx").using("btree", table.agentId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
 	index("edit_attribution_ledger_repo_file_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
+	index("edit_attribution_ledger_symbols_gin").using("gin", table.symbols.asc().nullsLast().op("array_ops")),
+	index("edit_attribution_ledger_symbols_unknown_idx").using("btree", table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(symbols IS NULL)`),
 	index("edit_attribution_ledger_work_item_idx").using("btree", table.workItemId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(work_item_id IS NOT NULL)`),
 ]);
 
@@ -12118,6 +12123,28 @@ export const sqlIntentExamplesInHarnessShared = harnessShared.table("sql_intent_
 	check("sql_intent_examples_check", sql`expires_at = (captured_at + '720:00:00'::interval)`),
 ]);
 
+export const sqlIntentFamilyRunsInHarnessShared = harnessShared.table("sql_intent_family_runs", {
+	workspaceId: text("workspace_id").notNull(),
+	runId: uuid("run_id").notNull(),
+	family: text().notNull(),
+	coverage: text().notNull(),
+	scanned: integer().notNull(),
+	qualifying: integer().notNull(),
+	diagnostics: jsonb().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.runId],
+			foreignColumns: [sqlIntentRunsInHarnessShared.workspaceId, sqlIntentRunsInHarnessShared.runId],
+			name: "sql_intent_family_runs_workspace_id_run_id_fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.family, table.runId, table.workspaceId], name: "sql_intent_family_runs_pkey"}),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("sql_intent_family_runs_coverage_check", sql`coverage = ANY (ARRAY['measured'::text, 'missing'::text, 'unsupported'::text, 'truncated'::text, 'UNKNOWN'::text])`),
+	check("sql_intent_family_runs_family_check", sql`family = ANY (ARRAY['sql'::text, 'search-reformulation'::text, 'result-recovery'::text, 'workaround-funnel'::text, 'native-operation'::text])`),
+	check("sql_intent_family_runs_qualifying_check", sql`qualifying >= 0`),
+	check("sql_intent_family_runs_scanned_check", sql`scanned >= 0`),
+]);
+
 export const sqlIntentHistoryInHarnessShared = harnessShared.table("sql_intent_history", {
 	workspaceId: text("workspace_id").notNull(),
 	scopeId: text("scope_id").notNull(),
@@ -12161,9 +12188,32 @@ export const sqlIntentProgressInHarnessShared = harnessShared.table("sql_intent_
 	pendingUntil: timestamp("pending_until", { withTimezone: true, mode: 'string' }),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	retainedFrom: timestamp("retained_from", { withTimezone: true, mode: 'string' }).default(sql`clock_timestamp()`).notNull(),
+	nativeCaptureFrom: timestamp("native_capture_from", { withTimezone: true, mode: 'string' }).default(sql`clock_timestamp()`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	nativeCaptureRevision: bigint("native_capture_revision", { mode: "number" }).default(0).notNull(),
+	nativeCaptureReceipt: jsonb("native_capture_receipt"),
 }, (table) => [
 	primaryKey({ columns: [table.scopeId, table.workspaceId], name: "sql_intent_progress_pkey"}),
 	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
+export const sqlIntentRunsInHarnessShared = harnessShared.table("sql_intent_runs", {
+	workspaceId: text("workspace_id").notNull(),
+	runId: uuid("run_id").notNull(),
+	scopeId: text("scope_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	routineId: text("routine_id"),
+	workflowId: text("workflow_id"),
+	sourceSha: text("source_sha"),
+	runtimeId: text("runtime_id").notNull(),
+	startedAt: timestamp("started_at", { withTimezone: true, mode: 'string' }).notNull(),
+	finishedAt: timestamp("finished_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("sql_intent_runs_retention_idx").using("btree", table.startedAt.asc().nullsLast().op("timestamptz_ops")),
+	primaryKey({ columns: [table.runId, table.workspaceId], name: "sql_intent_runs_pkey"}),
+	unique("sql_intent_runs_workspace_id_workflow_id_key").on(table.workflowId, table.workspaceId),
+	pgPolicy("workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("sql_intent_runs_check", sql`(finished_at IS NULL) OR (finished_at >= started_at)`),
 ]);
 
 export const sqlIntentStagesInHarnessShared = harnessShared.table("sql_intent_stages", {
@@ -13771,7 +13821,7 @@ END`),
 	index("wi_admission_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdTs.asc().nullsLast().op("int8_ops")).where(sql`(admission = 'pending'::text)`),
 	index("work_items_acceptance_drain_plan_idx").using("btree", sql`workspace_id`, sql`((payload ->> 'acceptanceDrainPlan'::text))`).where(sql`((payload ->> 'acceptanceDrainPlan'::text) IS NOT NULL)`),
 	index("work_items_active_dependency_item_ids_idx").using("gin", sql`harness_shared.active_dependency_blocker_item_ids(payload)`).where(sql`(payload ? 'externalBlockers'::text)`),
-	index("work_items_agent_review_claim_next_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureOrder.asc().nullsLast().op("int4_ops"), table.createdTs.asc().nullsLast().op("int8_ops"), table.featureId.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'feature'::text])) AND ((taken_by IS NULL) OR (btrim(taken_by) = ''::text)) AND ((agent_review_projection ->> 'status'::text) = 'pending'::text))`),
+	index("work_items_agent_review_claim_next_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.featureOrder.asc().nullsLast().op("int4_ops"), table.createdTs.asc().nullsLast().op("int8_ops"), table.featureId.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text, 'feature'::text])) AND ((taken_by IS NULL) OR (btrim(taken_by) = ''::text)) AND ((agent_review_projection ->> 'status'::text) = 'pending'::text))`),
 	index("work_items_author_pubkey_local_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.authorPubkey.asc().nullsLast().op("text_ops")).where(sql`((author_pubkey IS NOT NULL) AND (author_pubkey <> ''::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_authority_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.authority.asc().nullsLast().op("text_ops")).where(sql`(authority IS NOT NULL)`),
 	index("work_items_authority_proposed_idx").using("btree", table.terminalOwner.asc().nullsLast().op("text_ops"), table.updatedTs.asc().nullsLast().op("int8_ops")).where(sql`(authority = 'proposed'::text)`),
@@ -13787,17 +13837,18 @@ END`),
 	index("work_items_duplicate_of_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.duplicateOf.asc().nullsLast().op("text_ops")).where(sql`(duplicate_of IS NOT NULL)`),
 	index("work_items_embedding_hnsw_idx").using("hnsw", table.embedding.asc().nullsLast().op("vector_cosine_ops")),
 	index("work_items_embedding_mode_idx").using("btree", table.embeddingMode.asc().nullsLast().op("text_ops")).where(sql`(embedding_mode IS NOT NULL)`),
-	index("work_items_escalated_open_idx").using("btree", sql`workspace_id`, sql`COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'minor'::text)`).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
+	index("work_items_escalated_open_idx").using("btree", sql`workspace_id`, sql`COALESCE(((payload -> '_ei'::text) ->> 'severity'::text), 'minor'::text)`).where(sql`((status = 'open'::text) AND (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])))`),
 	index("work_items_external_blockers_gin_idx").using("gin", sql`((payload -> 'externalBlockers'::text))`).where(sql`((payload -> 'externalBlockers'::text) IS NOT NULL)`),
 	index("work_items_external_blockers_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`(payload ? 'externalBlockers'::text)`),
 	index("work_items_feature_family_scope_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`(item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text]))`),
 	index("work_items_frontier_open_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((status = 'open'::text) AND (item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])))`),
 	index("work_items_goal_id_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	uniqueIndex("work_items_intake_promotion_key_uniq").using("btree", sql`(((payload -> 'intakePromotion'::text) ->> 'key'::text))`).where(sql`(payload ? 'intakePromotion'::text)`),
-	index("work_items_issue_created_at_idx").using("btree", sql`workspace_id`, sql`to_timestamp((((created_ts)::numeric / 1000.0))::double precision)`).where(sql`(item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text]))`),
-	uniqueIndex("work_items_keyless_title_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload #>> '{admissionIdentity,titleKey}'::text[]))`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND (NULLIF(btrim((payload ->> 'watchdogKey'::text)), ''::text) IS NULL) AND (COALESCE((payload ->> 'lane'::text), 'improvement'::text) <> 'observation'::text) AND ((payload #>> '{admissionIdentity,schemaVersion}'::text[]) = 'admission-identity-v1'::text) AND (NULLIF(btrim((payload #>> '{admissionIdentity,titleKey}'::text[])), ''::text) IS NOT NULL))`),
+	index("work_items_issue_created_at_idx").using("btree", sql`workspace_id`, sql`to_timestamp((((created_ts)::numeric / 1000.0))::double precision)`).where(sql`(item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text]))`),
+	uniqueIndex("work_items_keyless_title_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload #>> '{admissionIdentity,titleKey}'::text[]))`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND (NULLIF(btrim((payload ->> 'watchdogKey'::text)), ''::text) IS NULL) AND (COALESCE((payload ->> 'lane'::text), 'improvement'::text) <> 'observation'::text) AND ((payload #>> '{admissionIdentity,schemaVersion}'::text[]) = 'admission-identity-v1'::text) AND (NULLIF(btrim((payload #>> '{admissionIdentity,titleKey}'::text[])), ''::text) IS NOT NULL))`),
 	index("work_items_obs_rubric_ref_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL)`),
 	index("work_items_obs_supersedes_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
+	index("work_items_payload_paths_gin").using("gin", sql`((payload -> 'paths'::text))`).where(sql`(jsonb_typeof((payload -> 'paths'::text)) = 'array'::text)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
 	uniqueIndex("work_items_resource_governor_identity_uq").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text))`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::text))`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	index("work_items_resource_governor_queue_idx").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text))`, sql`(((payload -> 'resource_governor'::text) ->> 'state'::text))`, sql`created_ts`, sql`feature_id`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
@@ -13805,7 +13856,7 @@ END`),
 	index("work_items_title_substring_trgm_idx").using("gin", sql`COALESCE(title, ''::text)`),
 	index("work_items_twin_rekey_marker_idx").using("btree", sql`workspace_id`, sql`(((payload -> '_physicalTwinRekey'::text) ->> 'oldId'::text))`).where(sql`(((payload -> '_physicalTwinRekey'::text) ->> 'migration'::text) = '826'::text)`),
 	index("work_items_twin_repair_marker_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")).where(sql`(((payload -> '_physicalTwinRepair'::text) ->> 'migration'::text) = '826'::text)`),
-	uniqueIndex("work_items_watchdog_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload ->> 'watchdogKey'::text))`, sql`COALESCE(((payload -> '_ei'::text) ->> 'signal_origin'::text), 'organic'::text)`, sql`COALESCE((payload ->> 'lane'::text), 'improvement'::text)`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND ((payload ->> 'watchdogKey'::text) IS NOT NULL))`),
+	uniqueIndex("work_items_watchdog_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload ->> 'watchdogKey'::text))`, sql`COALESCE(((payload -> '_ei'::text) ->> 'signal_origin'::text), 'organic'::text)`, sql`COALESCE((payload ->> 'lane'::text), 'improvement'::text)`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND ((payload ->> 'watchdogKey'::text) IS NOT NULL))`),
 	index("work_items_worked_by_history_owner_gin_idx").using("gin", table.workedByHistory.asc().nullsLast().op("jsonb_path_ops")).where(sql`((jsonb_typeof(worked_by_history) = 'array'::text) AND (worked_by_history <> '[]'::jsonb))`),
 	uniqueIndex("work_items_workspace_feature_id_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops")),
 	primaryKey({ columns: [table.featureId, table.harnessSlug], name: "work_items_pkey"}),
@@ -14504,7 +14555,7 @@ export const engineerIssuesInHarnessShared = harnessShared.view("engineer_issues
 	audience: text(),
 	duplicateOf: text("duplicate_of"),
 	duplicateSource: text("duplicate_source"),
-}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode, goal_id, parent_id, tags, source_plan_slug, source_plan_item_ids, redundancy, expected_cost_cents, state_changed_at, admission, admitted_at, admitted_by, last_released_at, last_released_by, claim_hold, needs_owner_action, embedding_profile, nature, audience, duplicate_of, duplicate_source FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+}).as(sql`SELECT workspace_id, feature_id AS issue_id, CASE WHEN harness_slug ~~ 'operator:%'::text OR harness_slug = ''::text THEN 'operator'::text ELSE 'harness:'::text || harness_slug END AS scope, title, COALESCE(summary, ''::text) AS body, COALESCE((payload -> '_ei'::text) ->> 'severity'::text, 'minor'::text) AS severity, COALESCE((payload -> '_ei'::text) ->> 'source'::text, 'engineer'::text) AS source, status AS state, taken_by AS assignee, (payload -> '_ei'::text) ->> 'found_during'::text AS found_during, (payload -> '_ei'::text) ->> 'linked_feature_id'::text AS linked_feature_id, (payload -> '_ei'::text) ->> 'created_by'::text AS created_by, to_timestamp((created_ts::numeric / 1000.0)::double precision) AS created_at, to_timestamp((updated_ts::numeric / 1000.0)::double precision) AS updated_at, author_pubkey, origin, _search, item_kind AS kind, payload, (payload -> '_ei'::text) ->> 'assigned_by'::text AS assigned_by, taken_at AS assigned_at, assignee_rank, rank_writer, rank_updated_at, fed_ts, COALESCE((payload -> '_ei'::text) ->> 'signal_origin'::text, 'organic'::text) AS signal_origin, fed_hlc, terminal_owner, terminal_completion_ref, last_progress_at, harness_slug AS base_harness_slug, origin AS base_origin, feature_order, terminal_reason, authority, closed_ts, lane, embedding, embedding_mode, goal_id, parent_id, tags, source_plan_slug, source_plan_item_ids, redundancy, expected_cost_cents, state_changed_at, admission, admitted_at, admitted_by, last_released_at, last_released_by, claim_hold, needs_owner_action, embedding_profile, nature, audience, duplicate_of, duplicate_source FROM harness_shared.work_items WHERE item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])`);
 
 export const eventAwaitsEffectiveInHarnessShared = harnessShared.view("event_awaits_effective", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
@@ -14780,7 +14831,7 @@ export const harnessFeaturesConsolidatedInHarnessShared = harnessShared.view("ha
 	audience: text(),
 	duplicateOf: text("duplicate_of"),
 	duplicateSource: text("duplicate_source"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, admission, admitted_at, admitted_by, embedding_profile, nature, audience, duplicate_of, duplicate_source FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text])`);
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, wave, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, swarm_affinity, redundancy, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, admission, admitted_at, admitted_by, embedding_profile, nature, audience, duplicate_of, duplicate_source FROM harness_shared.work_items WHERE item_kind <> ALL (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])`);
 
 export const hiveEvalBakeoffDeltasInHarnessShared = harnessShared.view("hive_eval_bakeoff_deltas", {	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }),
@@ -15320,4 +15371,4 @@ export const workItemsClaimableInHarnessShared = harnessShared.view("work_items_
 	externalBlockersProjection: jsonb("external_blockers_projection"),
 	duplicateOf: text("duplicate_of"),
 	duplicateSource: text("duplicate_source"),
-}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe, state_changed_at, admission, admitted_at, admitted_by, first_claimed_at, claim_hold, needs_owner_action, embedding_profile, directive_ref, agent_review_projection, implementation_readiness_projection, implementation_readiness_enrolled, reopen_history_projection, external_blockers_projection, duplicate_of, duplicate_source FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id, item_kind, summary, created_ts)) = 0 AND duplicate_of IS NULL`);
+}).as(sql`SELECT harness_slug, feature_id, title, summary, status, attempts, claims, notes, metadata, kind, project_id, expected_cost_cents, tags, needs_human_review, ts, created_ts, updated_ts, parent_id, goal_id, taken_by, taken_at, expires_at, workspace_id, _search, deprecation_reason, see_also, needs_design, design_status, design_spec_id, discarded_design_work, completion_ref, created_by_github_user_id, working_users, worked_by_history, wave, verified_done_at_remote_ts, verifier_last_error, verifier_last_checked_at, source_plan_slug, source_plan_item_ids, feature_order, author_pubkey, origin, audit_verdict, audit_reasons, audited_at, item_kind, payload, assignee_rank, rank_writer, rank_updated_at, fed_ts, redundancy, swarm_affinity, verified_author_github_user_id, schedule, schedule_active, scheduled_at, tzid, template_slug, run_seq, requeue_count, fed_hlc, last_progress_at, terminal_owner, terminal_completion_ref, last_released_by, last_released_at, embedding, embedding_mode, terminal_reason, authority, closed_ts, lane, condition_key, embedding_recipe, state_changed_at, admission, admitted_at, admitted_by, first_claimed_at, claim_hold, needs_owner_action, embedding_profile, directive_ref, agent_review_projection, implementation_readiness_projection, implementation_readiness_enrolled, reopen_history_projection, external_blockers_projection, duplicate_of, duplicate_source FROM harness_shared.work_items wi WHERE (item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])) AND status = 'open'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'lane'::text) IS DISTINCT FROM 'observation'::text AND (COALESCE(payload, '{}'::jsonb) ->> 'needsOwnerAction'::text) IS DISTINCT FROM 'true'::text AND cardinality(harness_shared.work_item_claim_floors(workspace_id, status, taken_by, origin, title, terminal_owner, terminal_completion_ref, payload, feature_id, item_kind, summary, created_ts)) = 0 AND duplicate_of IS NULL`);
