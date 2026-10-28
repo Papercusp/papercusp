@@ -1,0 +1,31 @@
+-- 1604-code-intel-push-skips-empty-site.sql
+--
+-- WI-6554700010042393 (code-intel-delivery-and-outcomes-2026-10-26, R-7 native-ecosystem
+-- e2e P035/P036/P018). An installed hook dispatcher returned empty text for grep,
+-- first-touch and incident pushes, and nothing recorded why: codeIntelPushText had six
+-- whole-push paths that returned '' with no log line and no ledger row, so the failure
+-- could only be attributed by bisecting a ten-minute private-operator e2e.
+--
+-- push-channel.ts now names every whole-push empty return (noteEmptyPush) and, for the
+-- UNEXPECTED reasons only, records one row here:
+--   * site = 'empty': leg = '(whole-push)', subject = 'empty:<reason>', chars = 0,
+--     budget_left = 0. Reasons recorded: snapshot-* (no usable dependency snapshot),
+--     no-snapshot, no-home-project, aborted-before-gather, aborted-before-commit,
+--     commit-empty, push-error. Expected empties (another workspace or harness, no
+--     input, no legs on, no candidate for this batch) are logged but NOT recorded, so
+--     the table measures failures rather than ordinary quiet turns.
+-- The UNIQUE (workspace_id, owner_id, turn_id, leg, subject) key keeps it to one row per
+-- reason per turn.
+--
+-- FORWARD-COMPAT: the constraint is widened, not narrowed. The release :3070 serves
+-- writes only 'request-budget', 'turn-budget', 'wall' and 'push-cap', all of which stay
+-- allowed, so dropping and re-adding the CHECK in one ALTER cannot refuse a write from
+-- the live build.
+
+ALTER TABLE harness_shared.code_intel_push_skips
+  DROP CONSTRAINT IF EXISTS code_intel_push_skips_site_known,
+  ADD CONSTRAINT code_intel_push_skips_site_known
+    CHECK (site IN ('request-budget', 'turn-budget', 'wall', 'push-cap', 'empty'));
+
+COMMENT ON COLUMN harness_shared.code_intel_push_skips.site IS
+  'request-budget = the request share was strictly the binding limit (historical: memory recall no longer shares the code-intel budget since WI-6554700010029479); turn-budget = the turn''s own code-intel spend was (ties included); wall = the push wall stopped this enabled leg before it ran while it had work: a context read in flight or a snapshot candidate for the batch (subject leg-not-run:<leg>); push-cap = the rendered push exceeded the 500-character per-push cap and was dropped whole; empty = the whole push returned no text for an unexpected reason (leg (whole-push), subject empty:<reason>, chars 0; WI-6554700010042393).';
