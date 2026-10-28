@@ -2028,6 +2028,22 @@ export const codeIntelResearchTrailsInHarnessShared = harnessShared.table("code_
 	check("code_intel_research_trails_subjects_check", sql`(jsonb_typeof(subjects) = 'array'::text) AND (jsonb_array_length(subjects) <= 200)`),
 ]);
 
+export const codeIntelReuseMeasurementsInHarnessShared = harnessShared.table("code_intel_reuse_measurements", {
+	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	epoch: integer().default(0).notNull(),
+	turnId: text("turn_id").notNull(),
+	kind: text().notNull(),
+	subject: text().notNull(),
+	payload: text(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("code_intel_reuse_measurements_kind_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.kind.asc().nullsLast().op("text_ops"), table.recordedAt.asc().nullsLast().op("timestamptz_ops")),
+	unique("code_intel_reuse_measurements_key").on(table.epoch, table.kind, table.ownerId, table.subject, table.workspaceId),
+	check("code_intel_reuse_measurements_kind_known", sql`kind = ANY (ARRAY['reuse-measurement'::text, 'reuse-metrics'::text, 'reuse-provider-action'::text])`),
+]);
+
 export const codeRecipeRunsInHarnessShared = harnessShared.table("code_recipe_runs", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.code_recipe_runs_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -2610,6 +2626,7 @@ export const coordEventLogInHarnessShared = harnessShared.table("coord_event_log
 	index("coord_event_log_msgs_to_expects_reply_gin").using("gin", sql`((body -> 'to'::text))`).where(sql`((surface = 'messages'::text) AND ((body ->> 'expectsReply'::text) = 'true'::text))`),
 	index("coord_event_log_msgs_to_gin").using("gin", sql`((body -> 'to'::text))`).where(sql`(surface = 'messages'::text)`),
 	index("coord_event_log_related_msg_id_idx").using("btree", sql`((body ->> 'related_msg_id'::text))`).where(sql`(body ? 'related_msg_id'::text)`),
+	index("coord_event_log_remote_origin_slug_ts_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")).where(sql`(origin = 'remote'::text)`),
 	index("coord_event_log_reply_deadline").using("btree", sql`(((body ->> 'replyDeadlineAt'::text))::bigint)`).where(sql`((surface = 'messages'::text) AND (body ? 'replyDeadlineAt'::text))`),
 	index("coord_event_log_superseded_by_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.supersededByMsgId.asc().nullsLast().op("text_ops")).where(sql`(superseded_by_msg_id IS NOT NULL)`),
 	index("coord_event_log_surface_id").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.surface.asc().nullsLast().op("text_ops"), table.id.asc().nullsLast().op("int8_ops")),
@@ -4151,6 +4168,8 @@ export const editAttributionLedgerInHarnessShared = harnessShared.table("edit_at
 	dispatchCallId: text("dispatch_call_id"),
 	signalEligibility: jsonb("signal_eligibility"),
 	symbols: text().array(),
+	workItemResolution: text("work_item_resolution"),
+	workItemCandidates: text("work_item_candidates").array(),
 }, (table) => [
 	uniqueIndex("edit_attribution_dispatch_repo_file_uidx").using("btree", table.dispatchCallId.asc().nullsLast().op("text_ops"), table.repoRoot.asc().nullsLast().op("text_ops"), table.file.asc().nullsLast().op("text_ops")).where(sql`(dispatch_call_id IS NOT NULL)`),
 	index("edit_attribution_ledger_agent_ts_idx").using("btree", table.agentId.asc().nullsLast().op("text_ops"), table.ts.desc().nullsFirst().op("timestamptz_ops")),
@@ -9259,6 +9278,19 @@ export const planItemsInHarnessShared = harnessShared.table("plan_items", {
 	check("plan_items_deliverable_check", sql`(deliverable IS NULL) OR (deliverable = ANY (ARRAY['code'::text, 'doc'::text, 'decision'::text, 'research'::text, 'operation'::text, 'artifact'::text])) OR (deliverable ~ '^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$'::text)`),
 ]);
 
+export const planLineConversionFindingsInHarnessShared = harnessShared.table("plan_line_conversion_findings", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	planLineId: text("plan_line_id").notNull(),
+	findingKind: text("finding_kind").notNull(),
+	detail: jsonb().default({}).notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.findingKind, table.harnessSlug, table.planLineId, table.planSlug, table.workspaceId], name: "plan_line_conversion_findings_pkey"}),
+	check("plan_line_conversion_findings_finding_kind_check", sql`finding_kind = ANY (ARRAY['stamped-item-has-parent'::text, 'blocked-line-without-edges'::text, 'active-line-without-work-item'::text, 'blocker-line-missing'::text, 'self-blocking-line'::text])`),
+]);
+
 export const planRevisionsInHarnessShared = harnessShared.table("plan_revisions", {
 	id: bigserial({ mode: "bigint" }).primaryKey().notNull(),
 	planSlug: text("plan_slug").notNull(),
@@ -11334,6 +11366,15 @@ export const sessionCursorInHarnessShared = harnessShared.table("session_cursor"
 	index("session_cursor_updated_idx").using("btree", table.updatedAt.desc().nullsFirst().op("timestamptz_ops")),
 	primaryKey({ columns: [table.sessionId], name: "session_cursor_pkey"}),
 
+]);
+
+export const sessionExposedToolsInHarnessShared = harnessShared.table("session_exposed_tools", {
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	tools: text().array().notNull(),
+	listedAt: timestamp("listed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.ownerId, table.workspaceId], name: "session_exposed_tools_pkey"}),
 ]);
 
 export const sessionGateWatcherFilesInHarnessShared = harnessShared.table("session_gate_watcher_files", {
@@ -13798,6 +13839,15 @@ END`),
 	duplicateSource: text("duplicate_source"),
 	duplicateConfidence: real("duplicate_confidence"),
 	duplicateEvidence: jsonb("duplicate_evidence"),
+	planSlug: text("plan_slug"),
+	planLineId: text("plan_line_id"),
+	planSeq: integer("plan_seq"),
+	planPhase: text("plan_phase"),
+	planImportance: text("plan_importance"),
+	planDecisionRefs: text("plan_decision_refs").array().default([]).notNull(),
+	planDeliverable: text("plan_deliverable"),
+	planOwnerGateMarker: text("plan_owner_gate_marker"),
+	planLineText: text("plan_line_text"),
 }, (table) => [
 	index("blueprint_invocation_item_recovery_idx").using("btree", sql`workspace_id`, sql`harness_slug`, sql`(((payload -> 'blueprintOperation'::text) ->> 'operationId'::text))`, sql`(((payload -> 'blueprintOperation'::text) ->> 'callerId'::text))`, sql`(((payload -> 'blueprintOperation'::text) ->> 'requestKey'::text))`).where(sql`(payload ? 'blueprintOperation'::text)`),
 	index("harness_features_consolidated_claimed_progress_idx").using("btree", table.harnessSlug.asc().nullsLast().op("text_ops"), table.lastProgressAt.asc().nullsLast().op("timestamptz_ops")).where(sql`((taken_by IS NOT NULL) AND (taken_by <> ''::text))`),
@@ -13850,6 +13900,7 @@ END`),
 	index("work_items_obs_supersedes_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_payload_paths_gin").using("gin", sql`((payload -> 'paths'::text))`).where(sql`(jsonb_typeof((payload -> 'paths'::text)) = 'array'::text)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
+	uniqueIndex("work_items_plan_line_node_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.planLineId.asc().nullsLast().op("text_ops")).where(sql`(plan_line_id IS NOT NULL)`),
 	uniqueIndex("work_items_resource_governor_identity_uq").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text))`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::text))`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	index("work_items_resource_governor_queue_idx").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text))`, sql`(((payload -> 'resource_governor'::text) ->> 'state'::text))`, sql`created_ts`, sql`feature_id`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	index("work_items_summary_substring_trgm_idx").using("gin", sql`COALESCE(summary, ''::text)`),
@@ -13873,6 +13924,9 @@ END`),
 	check("work_items_epoch_ms_timestamp_units_chk", sql`((created_ts IS NULL) OR (created_ts < (1000000000)::bigint) OR (created_ts >= '10000000000'::bigint)) AND ((updated_ts IS NULL) OR (updated_ts < (1000000000)::bigint) OR (updated_ts >= '10000000000'::bigint))`),
 	check("work_items_nature_check", sql`nature = ANY (ARRAY['work'::text, 'record'::text, 'document'::text, 'event'::text])`),
 	check("work_items_payload_is_object_ck", sql`(payload IS NULL) OR (jsonb_typeof(payload) = 'object'::text)`),
+	check("work_items_plan_deliverable_chk", sql`(plan_deliverable IS NULL) OR (plan_deliverable = ANY (ARRAY['code'::text, 'doc'::text, 'decision'::text, 'research'::text, 'operation'::text, 'artifact'::text])) OR (plan_deliverable ~ '^[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$'::text)`),
+	check("work_items_plan_line_pair_chk", sql`(plan_slug IS NULL) = (plan_line_id IS NULL)`),
+	check("work_items_plan_line_top_level_chk", sql`(plan_line_id IS NULL) OR (parent_id IS NULL)`),
 	check("work_items_signal_origin_chk", sql`(((payload -> '_ei'::text) ->> 'signal_origin'::text) IS NULL) OR (((payload -> '_ei'::text) ->> 'signal_origin'::text) = ANY (ARRAY['organic'::text, 'drill'::text, 'replay'::text, 'shadow'::text]))`),
 ]);
 
