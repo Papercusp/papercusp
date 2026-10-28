@@ -1,0 +1,92 @@
+-- 1602: a plan-line node is work, so it never sits in the observation lane.
+--
+-- Follow-up to 1601 (one-work-graph-structured-holds-2026-10-26 P-003, WI-6554700010030910),
+-- tracked as WI-6554700010042249. 1601's attach step adopts an already-stamped work-item as a
+-- line's node. Five adopted items were observation-lane rows (payload.lane, which the lane
+-- column is generated from), and every work surface excludes that lane by default, so an open line whose node is an
+-- observation would vanish from them once readers move onto the node graph (P-016/P-018).
+--
+-- The rule lives in one place, a BEFORE trigger on work_items, so it covers every writer:
+-- convert_plan_lines_to_nodes re-runs, the plan-line writers later P-items add, and any write
+-- that puts an existing node back into the observation lane. When a row with plan_line_id set
+-- carries 'observation' in payload.lane or payload._lane, the trigger removes those keys,
+-- records a 'node-was-observation' finding, and parks the node if it is open, the same park 1601
+-- gives the open nodes it creates (D-011). P-008 lifts both parks together, and must drop the
+-- park branch of this trigger when it moves claimability onto nodes.
+--
+-- FORWARD-COMPAT: The dropped and re-added CHECK only widens the finding kinds of plan_line_conversion_findings, a table added by 1601 that the currently-deployed release never reads or writes; the new trigger never refuses a write, it only rewrites the lane on plan-line nodes, so no live write path can fail because of this migration.
+--
+-- Idempotent: the CHECK is replaced by name, the function is CREATE OR REPLACE, the trigger is
+-- dropped and re-created, and the one-time pass only touches nodes still in the observation lane.
+-- No top-level BEGIN/COMMIT: the migration runner applies each file in its own transaction.
+
+-- 1. A new finding kind.
+ALTER TABLE harness_shared.plan_line_conversion_findings
+  DROP CONSTRAINT IF EXISTS plan_line_conversion_findings_finding_kind_check;
+ALTER TABLE harness_shared.plan_line_conversion_findings
+  ADD CONSTRAINT plan_line_conversion_findings_finding_kind_check CHECK (finding_kind IN (
+    'stamped-item-has-parent',
+    'blocked-line-without-edges',
+    'active-line-without-work-item',
+    'blocker-line-missing',
+    'self-blocking-line',
+    'node-was-observation'));
+
+-- 2. The rule.
+CREATE OR REPLACE FUNCTION harness_shared.plan_line_node_leaves_observation_lane()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  INSERT INTO harness_shared.plan_line_conversion_findings
+    (workspace_id, harness_slug, plan_slug, plan_line_id, finding_kind, detail)
+  VALUES (NEW.workspace_id, NEW.harness_slug, NEW.plan_slug, NEW.plan_line_id, 'node-was-observation',
+          jsonb_build_object('node', NEW.feature_id, 'status', NEW.status,
+                             'payloadLane', NEW.payload ->> 'lane',
+                             'payloadUnderscoreLane', NEW.payload ->> '_lane'))
+  ON CONFLICT (workspace_id, harness_slug, plan_slug, plan_line_id, finding_kind)
+  DO UPDATE SET detail = EXCLUDED.detail, recorded_at = now();
+
+  -- work_items.lane is GENERATED from payload ->> 'lane', so clearing the payload key clears it.
+  NEW.payload := COALESCE(NEW.payload, '{}'::jsonb);
+  IF NEW.payload ->> 'lane' = 'observation' THEN
+    NEW.payload := NEW.payload - 'lane';
+  END IF;
+  IF NEW.payload ->> '_lane' = 'observation' THEN
+    NEW.payload := NEW.payload - '_lane';
+  END IF;
+
+  -- An open node entering the work population this way is parked like the open nodes 1601
+  -- creates, until P-008 moves claimability onto nodes (D-011).
+  IF NEW.status = 'open' AND NOT (NEW.payload ? '_claimHold') THEN
+    NEW.payload := NEW.payload || jsonb_build_object(
+      '_claimHold', true,
+      'claim_hold_by', 'migration:plan-line-work-item-nodes',
+      'claim_hold_at', to_jsonb(now()),
+      'claim_hold_reason',
+      'Plan-line node taken out of the observation lane (migration 1602) before claimability moves '
+      || 'onto nodes; lifted by one-work-graph-structured-holds-2026-10-26 P-008 (D-011).');
+  END IF;
+  RETURN NEW;
+END;
+$fn$;
+
+COMMENT ON FUNCTION harness_shared.plan_line_node_leaves_observation_lane() IS
+  'A plan-line node is work: clears an observation lane (column, payload.lane, payload._lane) from a row with plan_line_id set, records a node-was-observation finding, and parks it if open until P-008 (migration 1602, WI-6554700010042249).';
+
+DROP TRIGGER IF EXISTS plan_line_node_leaves_observation_lane ON harness_shared.work_items;
+CREATE TRIGGER plan_line_node_leaves_observation_lane
+  BEFORE INSERT OR UPDATE OF plan_line_id, payload ON harness_shared.work_items
+  FOR EACH ROW
+  WHEN (NEW.plan_line_id IS NOT NULL
+        AND (NEW.payload ->> 'lane' = 'observation'
+             OR NEW.payload ->> '_lane' = 'observation'))
+  EXECUTE FUNCTION harness_shared.plan_line_node_leaves_observation_lane();
+
+-- 3. One-time pass over the nodes 1601 already adopted from the observation lane. The no-op
+--    assignment fires the trigger, so the rule above is the only place it is written.
+UPDATE harness_shared.work_items
+   SET payload = payload
+ WHERE plan_line_id IS NOT NULL
+   AND (payload ->> 'lane' = 'observation'
+        OR payload ->> '_lane' = 'observation');
