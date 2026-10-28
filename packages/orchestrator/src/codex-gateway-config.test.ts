@@ -68,6 +68,17 @@ afterEach(() => {
 });
 
 describe('codexGatewayConfigToml model discovery', () => {
+  it('keeps runtime possession on the local gateway and refuses remote delivery or malformed headers', () => {
+    const nativeRuntimeBearer = 'n'.repeat(43);
+    const render = (bearer: string, baseURL = 'http://127.0.0.1:32101') => codexGatewayConfigToml(null, {
+      gateway: { baseURL, token: 'g'.repeat(64) }, nativeRuntimeBearer: bearer,
+    }).tables.join('\n');
+    expect(render(nativeRuntimeBearer)).toContain(`"x-papercusp-native-runtime" = "${nativeRuntimeBearer}"`);
+    expect(() => render(nativeRuntimeBearer, 'https://external.invalid')).toThrow(/Invalid scoped inference gateway|native_runtime_delivery_denied/);
+    expect(() => render('bad\nheader')).toThrow('native_runtime_delivery_denied');
+    expect(codexGatewayConfigToml(null, { nativeRuntimeBearer })).toEqual({ root: [], tables: [] });
+  });
+
   it('disables startup update dialogs before feature tables for every managed home', () => {
     for (const opts of [{}, { disableMemories: false }, { headless: true }]) {
       const config = codexManagedFeaturesToml(opts);

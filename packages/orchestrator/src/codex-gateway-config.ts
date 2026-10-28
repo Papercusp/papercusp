@@ -96,6 +96,8 @@ export function codexGatewayPort(): number {
 }
 
 export interface CodexGatewayConfigOpts {
+  /** Supplemental runtime possession proof; never a provider credential or authorization grant. */
+  nativeRuntimeBearer?: string | null;
   /** Exact private controller route, independent of process-wide pool defaults. */
   gateway?: ScopedInferenceGateway;
   /** Gateway attribution/owner header (x-papercusp-owner) — the spawn/session owner id. */
@@ -379,6 +381,13 @@ export function codexGatewayConfigToml(
   const priority = opts.priority?.trim();
   if (priority) headers['x-papercusp-priority'] = priority;
   const gatewayBaseUrl = scoped?.baseURL ?? `http://127.0.0.1:${codexGatewayPort()}`;
+  if (opts.nativeRuntimeBearer) {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(opts.nativeRuntimeBearer)
+      || !['127.0.0.1', 'localhost', '[::1]'].includes(new URL(gatewayBaseUrl).hostname)) {
+      throw new Error('native_runtime_delivery_denied');
+    }
+    headers['x-papercusp-native-runtime'] = opts.nativeRuntimeBearer;
+  }
   const headerEntries = Object.entries(headers);
   const httpHeadersLine = headerEntries.length
     ? [`http_headers = { ${headerEntries.map(([k, v]) => `"${tomlEscape(k)}" = "${tomlEscape(v)}"`).join(', ')} }`]
