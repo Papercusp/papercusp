@@ -1,0 +1,16 @@
+-- 1606: bound all-time consult code-familiarity reads by their exact query keys.
+--
+-- The read leg filters tool_invocations by workspace, a candidate-owner set,
+-- successful status, and the five code-reading tools before inspecting JSON
+-- file arguments. Separate owner and workspace/tool indexes made Postgres build
+-- two large bitmaps and intersect them for each routing. A measured consult
+-- query touched 102k owner-index entries and 178k workspace/tool entries, then
+-- exceeded the reader's 1.5s statement timeout. This composite index lands only
+-- successful, attributed calls and resolves those predicates in one access path.
+
+CREATE INDEX IF NOT EXISTS tool_invocations_code_familiarity_idx
+  ON harness_shared.tool_invocations (workspace_id, tool_name, coord_owner_id)
+  WHERE status = 'ok' AND coord_owner_id IS NOT NULL;
+
+COMMENT ON INDEX harness_shared.tool_invocations_code_familiarity_idx IS
+  'consult code familiarity: successful code-read calls by workspace, tool, and candidate owner';
