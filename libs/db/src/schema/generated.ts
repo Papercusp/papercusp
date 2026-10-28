@@ -9108,6 +9108,28 @@ export const planContractTriageInHarnessShared = harnessShared.table("plan_contr
 	check("plan_contract_triage_reason_check", sql`length(btrim(reason)) > 0`),
 ]);
 
+export const planDecisionProvenanceInHarnessShared = harnessShared.table("plan_decision_provenance", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	decisionId: text("decision_id").notNull(),
+	kind: text().notNull(),
+	ownerTurnRef: text("owner_turn_ref"),
+	ownerTurnVerdict: text("owner_turn_verdict"),
+	agentId: text("agent_id").notNull(),
+	source: text().notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.decisionId, table.harnessSlug, table.planSlug, table.workspaceId], name: "plan_decision_provenance_pkey"}),
+	check("plan_decision_provenance_agent_id_check", sql`btrim(agent_id) <> ''::text`),
+	check("plan_decision_provenance_decision_id_check", sql`decision_id ~ '^D-[0-9]{3,}$'::text`),
+	check("plan_decision_provenance_kind_check", sql`kind = ANY (ARRAY['owner'::text, 'agent'::text])`),
+	check("plan_decision_provenance_kind_shape", sql`((kind = 'owner'::text) AND (owner_turn_ref IS NOT NULL) AND (btrim(owner_turn_ref) <> ''::text) AND (owner_turn_verdict IS NOT NULL)) OR ((kind = 'agent'::text) AND (owner_turn_ref IS NULL) AND (owner_turn_verdict IS NULL))`),
+	check("plan_decision_provenance_owner_turn_verdict_check", sql`owner_turn_verdict = ANY (ARRAY['owner-typed'::text, 'owner-turn'::text, 'owner-dialog'::text])`),
+	check("plan_decision_provenance_source_check", sql`source = ANY (ARRAY['write'::text, 'conversion'::text])`),
+]);
+
 export const planDecisionsInHarnessShared = harnessShared.table("plan_decisions", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
