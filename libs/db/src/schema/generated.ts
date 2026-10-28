@@ -690,6 +690,15 @@ export const agentSeatConsumptionsInHarnessShared = harnessShared.table("agent_s
 
 ]);
 
+export const agentUsageHarnessSpendTotalsInHarnessShared = harnessShared.table("agent_usage_harness_spend_totals", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	totalCostUsd: doublePrecision("total_cost_usd").default(0).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.workspaceId], name: "agent_usage_harness_spend_totals_pkey"}),
+	pgPolicy("agent_usage_harness_spend_totals_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+]);
+
 export const agentUsageSamplesInHarnessShared = harnessShared.table("agent_usage_samples", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.agent_usage_samples_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
