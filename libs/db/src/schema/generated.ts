@@ -7325,6 +7325,17 @@ export const oauthNoncesInHarnessShared = harnessShared.table("oauth_nonces", {
 	index("oauth_nonces_exp_idx").using("btree", table.expMs.asc().nullsLast().op("int8_ops")),
 ]);
 
+export const operatorAccountLinkStateInHarnessShared = harnessShared.table("operator_account_link_state", {
+	workspaceId: text("workspace_id").primaryKey().notNull(),
+	payload: jsonb().default({}).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	updatedAt: bigint("updated_at", { mode: "number" }).default(0).notNull(),
+}, (table) => [
+	pgPolicy("operator_account_link_state_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	primaryKey({ columns: [table.workspaceId], name: "operator_account_link_state_pkey"}),
+
+]);
+
 export const operatorAccountOverrideInHarnessShared = harnessShared.table("operator_account_override", {
 	workspaceId: text("workspace_id").primaryKey().notNull(),
 	payload: jsonb().default({}).notNull(),
