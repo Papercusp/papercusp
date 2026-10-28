@@ -9288,7 +9288,7 @@ export const planLineConversionFindingsInHarnessShared = harnessShared.table("pl
 	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, (table) => [
 	primaryKey({ columns: [table.findingKind, table.harnessSlug, table.planLineId, table.planSlug, table.workspaceId], name: "plan_line_conversion_findings_pkey"}),
-	check("plan_line_conversion_findings_finding_kind_check", sql`finding_kind = ANY (ARRAY['stamped-item-has-parent'::text, 'blocked-line-without-edges'::text, 'active-line-without-work-item'::text, 'blocker-line-missing'::text, 'self-blocking-line'::text])`),
+	check("plan_line_conversion_findings_finding_kind_check", sql`finding_kind = ANY (ARRAY['stamped-item-has-parent'::text, 'blocked-line-without-edges'::text, 'active-line-without-work-item'::text, 'blocker-line-missing'::text, 'self-blocking-line'::text, 'node-was-observation'::text])`),
 ]);
 
 export const planRevisionsInHarnessShared = harnessShared.table("plan_revisions", {
