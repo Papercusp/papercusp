@@ -539,6 +539,23 @@ test('buildPrompt — every role gets the wait-loop note (waiting? arm a self-wa
 // ── agents-reuse-first-default P-001/D-001: the soft "extend, don't fork" nudge is
 //    UNIVERSAL in the shared bee base (every role, incl. curator — any role can
 //    introduce a new surface). Soft, not a hard cite-on-every-change requirement. ──
+test('rules events reuse R-66 includes the guide pointer in the existing fleet reuse nudge', () => {
+  for (const role of ['worker', 'curator', 'reviewer'] as const) {
+    const fx = makeFixture(({ harnessDir }) => {
+      writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
+    });
+    try {
+      const out = buildPrompt({ role, promptFile: join(fx.harnessDir, `${role}.md`),
+        promptOverride: '', stateDir: fx.stateDir, harnessDir: fx.harnessDir,
+        projectDir: fx.projectDir, cwdOverride: '', featureId: null, runId: 'guide-pointer', extras: [] });
+      assert.match(out, /project guide section "Conditions, reactions and live data"/);
+      assert.match(out, /rules, declarative events, sync, fusion, caching, ordering and liveness/);
+    } finally {
+      fx.cleanup();
+    }
+  }
+});
+
 test("buildPrompt — every role gets the reuse-first nudge (extend, don't fork; P-001/D-001)", () => {
   for (const role of ['worker', 'curator', 'reviewer'] as const) {
     const fx = makeFixture(({ harnessDir }) => {

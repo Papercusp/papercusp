@@ -703,6 +703,7 @@ export const REUSE_FIRST_NUDGE = [
   'briefly note what you reused or why nothing fit. A new system that duplicates an existing',
   'surface is a top review smell.',
   "Writing a plan? Record that search in its `## Existing infrastructure reused` section (plans:new scaffolds it).",
+  'For the shared calls, read the project guide section "Conditions, reactions and live data" (rules, declarative events, sync, fusion, caching, ordering and liveness).',
 ].join('\n');
 
 /**
