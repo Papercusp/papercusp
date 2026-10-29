@@ -7,6 +7,6 @@
   "requiresDeployedNote": "store.ts added exactOneShot retire-and-insert with per-subscriber/key advisory serialization before replacement writes",
   "rationale": "Migration 941 adds a partial unique index for ordinary exact one-shot rows. The compatible writer retires older matching rows under the same per-subscriber/key advisory lock before inserting a replacement, so its active-row invariant matches the index predicate.",
   "workItem": "EI-21643240969839925",
-  "reviewBy": "2026-10-28",
+  "reviewBy": "2026-11-28",
   "postDeploy": "renew-review"
 }
