@@ -186,7 +186,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     managedAuthorities: ['code:run', 'orchestrate:run', 'recipes:run'],
     evidence: {
       path: 'packages/operator-core/lib/agent-tools/code/run.ts',
-      anchors: ["name: 'code:run'", 'generatedImage({ image_url:'],
+      anchors: ["name: 'code:run'", '`generatedImage` appends validated media'],
       note: 'Managed nested-tool scripting with bounded result/media output and opt-in local JavaScript kernels; API/client parity is not yet accepted.',
     },
     reuseSites: [
@@ -662,7 +662,7 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
       {
         path: 'packages/operator-core/lib/agent-tools/code/run.ts',
-        anchors: ['generatedImage({ image_url:', 'codeRunReturnedContextBytes'],
+        anchors: ['`generatedImage` appends validated media', 'codeRunReturnedContextBytes'],
         note: 'Validated media output and context-byte accounting through the shared result door.',
       },
       {
