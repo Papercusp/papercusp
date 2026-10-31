@@ -227,6 +227,10 @@ export interface PgResultDiagnosticInput {
   /** Bounded PostgreSQL error labels only; the server message is never retained. */
   errorClass?: string | null;
   serverRoutine?: string | null;
+  /** Caller stack from postgres-js Query.origin; never query text or parameters. */
+  queryOrigin?: string | null;
+  /** Caller stack captured when end({ timeout }) starts forced pool teardown. */
+  endCaller?: string | null;
   /** Opaque to postgres.js; sanitized both at capture and retention. */
   context?: unknown;
   /** Exact fulfilled postgres-js object; consumed synchronously into a WeakRef only. */
@@ -315,6 +319,10 @@ export interface PgResultDiagnostic {
   errorCode: string | null;
   errorClass: string | null;
   serverRoutine: string | null;
+  /** Bounded caller stack, without postgres internals, SQL text, or parameters. */
+  queryOrigin: string | null;
+  /** Bounded end({ timeout }) caller stack for a forced queued-query rejection. */
+  endCaller: string | null;
   /** Added only for terminal errors; inferred from the query/command, not SQL values. */
   failurePhase?: PgFailurePhase;
   recordedAt: number;
@@ -366,6 +374,19 @@ function safeDiagnosticIdentifier(value: string | null | undefined, max: number)
   if (typeof value !== 'string' || value.length > max) return null;
   const identifier = value.trim();
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier) ? identifier : null;
+}
+
+/** Retain a short caller-only stack, excluding postgres internals and SQL data. */
+function safeDiagnosticStack(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const frames = value
+    .split(/\r?\n/)
+    .slice(1)
+    .map((frame) => frame.trim())
+    .filter((frame) => frame && !/node_modules[\\/](?:\.pnpm[\\/][^\\/]+[\\/]node_modules[\\/])?postgres[\\/]/i.test(frame))
+    .slice(0, 8);
+  const stack = frames.join('\n').replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 768);
+  return stack || null;
 }
 
 function sanitizePgCorrelation(
@@ -674,6 +695,8 @@ export function recordPgResult(
     errorCode: safeToken(input.errorCode, 16),
     errorClass: failed ? safeDiagnosticIdentifier(input.errorClass, 80) : null,
     serverRoutine: failed ? safeDiagnosticIdentifier(input.serverRoutine, 120) : null,
+    queryOrigin: safeDiagnosticStack(input.queryOrigin),
+    endCaller: safeDiagnosticStack(input.endCaller),
     ...(failed ? {
       failurePhase: classifyPgFailurePhase(input.query, queryFamily, input.command),
     } : {}),
