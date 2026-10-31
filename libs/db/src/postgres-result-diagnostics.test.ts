@@ -3,6 +3,7 @@
  * retaining SQL parameters, row contents, or unbounded history.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
@@ -59,7 +60,7 @@ function registryFromSource(source = ACQUIRE_REGISTRY_SOURCE): typeof import('./
     .replace(/^import .*;\s*$/gm, '')
     .replace(/^export /gm, '');
   const pinned = new Map<string, unknown>();
-  return new Function('pinModuleState', 'randomUUID', 'readBuildStamp', javascript + `
+  return new Function('pinModuleState', 'randomUUID', 'readBuildStamp', 'AsyncLocalStorage', javascript + `
     return { createPgDiagnosticHooks, pgResultDiagnosticSnapshot, beginAcquire,
       recordPgResult, setPgDiagnosticContextResolver, capturePgDiagnosticContext,
       pgQueryFamily, pgQueryFamilyMemoStats, recordPgDiagnosticResponse };
@@ -67,7 +68,7 @@ function registryFromSource(source = ACQUIRE_REGISTRY_SOURCE): typeof import('./
     (key: string, init: () => unknown) => {
       if (!pinned.has(key)) pinned.set(key, init());
       return pinned.get(key);
-    }, randomUUID, () => null,
+    }, randomUUID, () => null, AsyncLocalStorage,
   );
 }
 
@@ -170,7 +171,7 @@ describe('P-003 calibrated in-memory registry counterexamples', () => {
 
 function functionSource(source: string, name: string): string {
   const match = source.match(
-    new RegExp(`^ {2}function ${name}\\([^)]*\\) \\{[\\s\\S]+?^ {2}\\}`, 'm'),
+    new RegExp(`^ {2}(?:async )?function ${name}\\([^)]*\\) \\{[\\s\\S]+?^ {2}\\}`, 'm'),
   );
   expect(match, `postgres source must declare ${name}`).toBeTruthy();
   return match![0];
@@ -345,10 +346,11 @@ describe('P011 exact decoded-object weak diagnostic guards', () => {
       .replace(/^import .*;\s*$/gm, '').replace(/^export /gm, '');
     const program = `
       const { randomUUID } = require('node:crypto');
+      const { AsyncLocalStorage } = require('node:async_hooks');
       const pinned = new Map();
-      const registry = new Function('pinModuleState', 'randomUUID', 'readBuildStamp',
+      const registry = new Function('pinModuleState', 'randomUUID', 'readBuildStamp', 'AsyncLocalStorage',
         ${JSON.stringify(javascript)} + '\\nreturn { createPgDiagnosticHooks, pgResultDiagnosticSnapshot, recordPgDiagnosticResponse, pgDiagnosticIdentity, setPgDiagnosticContextResolver };'
-      )((key, init) => { if (!pinned.has(key)) pinned.set(key, init()); return pinned.get(key); }, randomUUID, () => null);
+      )((key, init) => { if (!pinned.has(key)) pinned.set(key, init()); return pinned.get(key); }, randomUUID, () => null, AsyncLocalStorage);
       const context = { ...registry.pgDiagnosticIdentity(), rowId: null,
         attemptId: randomUUID(), hopId: null, stage: null, boundary: null, requestId: randomUUID() };
       registry.setPgDiagnosticContextResolver(() => context);
@@ -594,6 +596,57 @@ describe('postgres.js terminal result diagnostics patch', () => {
     expect(query.simple()).toBe(query);
     await broken.end();
     expect(socket).not.toHaveBeenCalled();
+  });
+
+  it.each(BUILD_ROOTS)('records pool, query-origin and end-caller diagnostics when end timeout rejects a queued query (%s)', async (runtime) => {
+    const index = fs.readFileSync(path.join(PG_ROOT, runtime, 'index.js'), 'utf8');
+    const hooks = createPgDiagnosticHooks('end-timeout-fixture');
+    const query = {
+      strings: ['select 2'],
+      diagnosticContext: hooks.onquerycontext(),
+      diagnosticHandleStartedAt: performance.now(),
+      origin: `Error\\n    at queued query (${import.meta.url}:1:1)`,
+      rejection: null as unknown,
+      reject(error: unknown) { this.rejection = error; },
+    };
+    const queries = [query];
+    const connections = [{
+      end: () => new Promise<void>(() => {}),
+      terminate: () => undefined,
+    }];
+    class PendingQuery {}
+    Object.setPrototypeOf(query, PendingQuery.prototype);
+    const end = new Function(
+      'connections', 'queries', 'Errors', 'options', 'Query',
+      `
+        let ending = false;
+        const listen = { sql: null }, subscribe = { sql: null };
+        ${functionSource(index, 'end')}
+        ${functionSource(index, 'destroy')}
+        return end;
+      `,
+    )(
+      connections,
+      queries,
+      { connection(code: string) { return Object.assign(new Error(code), { code }); } },
+      hooks,
+      PendingQuery,
+    ) as (options: { timeout: number }) => Promise<void>;
+
+    await end({ timeout: 0.01 });
+
+    expect(query.rejection).toMatchObject({ code: 'CONNECTION_DESTROYED' });
+    const snapshot = pgResultDiagnosticSnapshot('end-timeout-fixture');
+    expect(snapshot.failures).toHaveLength(1);
+    expect(snapshot.failures[0]).toMatchObject({
+      pool: 'end-timeout-fixture',
+      queryFamily: 'other',
+      status: 'error',
+      errorCode: 'connection_destroyed',
+      queryOrigin: expect.stringContaining('postgres-result-diagnostics.test.ts'),
+      endCaller: expect.stringContaining('postgres-result-diagnostics.test.ts'),
+    });
+    expect(JSON.stringify(snapshot)).not.toContain('select 2');
   });
 
   it.each(BUILD_ROOTS)('runs the real build/retry/reporter functions with creation-time context (%s; hermetic, not wire proof)', async (runtime) => {
