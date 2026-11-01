@@ -9112,6 +9112,26 @@ export const planClosureObservationsInHarnessShared = harnessShared.table("plan_
 	check("plan_closure_observations_fingerprint_check", sql`jsonb_typeof(fingerprint) = 'object'::text`),
 ]);
 
+export const planClosureObservationsByBuildInHarnessShared = harnessShared.table("plan_closure_observations_by_build", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	planSlug: text("plan_slug").notNull(),
+	buildSha: text("build_sha").notNull(),
+	satisfied: boolean().notNull(),
+	code: text(),
+	skipped: text(),
+	message: text(),
+	rubricId: text("rubric_id"),
+	gradedBy: text("graded_by"),
+	fingerprint: jsonb().notNull(),
+	observedAt: timestamp("observed_at", { withTimezone: true, mode: 'string' }).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.buildSha, table.harnessSlug, table.planSlug, table.workspaceId], name: "plan_closure_observations_by_build_pkey"}),
+	pgPolicy("plan_closure_observations_by_build_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("plan_closure_observations_by_build_build_sha_check", sql`build_sha ~ '^[a-f0-9]{7,64}$'::text`),
+	check("plan_closure_observations_by_build_fingerprint_check", sql`jsonb_typeof(fingerprint) = 'object'::text`),
+]);
+
 export const planContractTriageInHarnessShared = harnessShared.table("plan_contract_triage", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -9204,6 +9224,7 @@ export const planItemAnchorsInHarnessShared = harnessShared.table("plan_item_anc
 	lastCheckOk: boolean("last_check_ok"),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	createdBy: text("created_by").notNull(),
+	changeIntent: jsonb("change_intent"),
 }, (table) => [
 	index("plan_item_anchors_plan_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.itemId.asc().nullsLast().op("text_ops")),
 	index("plan_item_anchors_recheck_idx").using("btree", table.lastCheckedAt.asc().nullsFirst().op("timestamptz_ops")).where(sql`(anchor_kind = 'symbol'::text)`),
@@ -12907,6 +12928,7 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_activity_session_lookup_idx").using("btree", sql`workspace_id`, sql`COALESCE((args_json ->> 'session_id'::text), (args_json ->> 'sessionId'::text))`, sql`invoked_at`, sql`id`).where(sql`((tool_name = ANY (ARRAY['activity:report'::text, 'activity_report'::text])) AND ((args_json ? 'session_id'::text) OR (args_json ? 'sessionId'::text)))`),
 	index("tool_invocations_app_principal_activity_idx").using("btree", sql`workspace_id`, sql`split_part(coord_owner_id, '/'::text, 1)`, sql`invoked_at`, sql`id`).where(sql`(coord_owner_id ~~ 'app:%'::text)`),
 	index("tool_invocations_campaign_owner_cover_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.harnessSlug.asc().nullsLast(), table.status.asc().nullsLast()).where(sql`(coord_owner_id IS NOT NULL)`),
+	index("tool_invocations_code_familiarity_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.coordOwnerId.asc().nullsLast().op("text_ops")).where(sql`((status = 'ok'::text) AND (coord_owner_id IS NOT NULL))`),
 	index("tool_invocations_code_run_time_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(tool_name = 'code:run'::text)`),
 	index("tool_invocations_coord_owner_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
 	index("tool_invocations_error_code_idx").using("btree", table.errorCode.asc().nullsLast().op("text_ops"), table.invokedAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(error_code IS NOT NULL)`),
