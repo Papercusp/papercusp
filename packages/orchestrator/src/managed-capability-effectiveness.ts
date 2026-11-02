@@ -5,7 +5,7 @@
  * before constructing these inputs. Fixture tests do not establish a live trial.
  */
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import type { TaskRunResult } from '@papercusp/bench-metrics';
+import { classifyAttemptOutcome, type TaskRunResult } from '@papercusp/bench-metrics';
 import { CAPABILITY_CLIENT_ENFORCEMENT, type CapabilityClientFamily } from './managed-capability-policy';
 import type { ManagedCapabilityFamilyId } from './managed-capability-contract';
 
@@ -92,7 +92,8 @@ function isIsolated(checkout: string, shared: string): boolean {
 }
 
 function metrics(rows: readonly ManagedTrialRun[]): ManagedTrialMetrics {
-  const successful = rows.filter(row => row.result.generationStatus === 'completed' && row.result.resolved === true);
+  const successful = rows.filter(row =>
+    ['scored', 'budget_exhausted'].includes(classifyAttemptOutcome(row.result)) && row.result.resolved === true);
   const sum = (read: (row: ManagedTrialRun) => number) => rows.reduce((total, row) => total + read(row), 0);
   return {
     successes: successful.length,
@@ -136,7 +137,7 @@ export function evaluateManagedCapabilityEffectiveness(manifest: ManagedTrialMan
   const byCell = new Map<string, ManagedTrialRun>();
   const rolloutIds = new Set<string>();
   for (const run of runs) {
-    const { result: result, witness } = run;
+    const { result, witness } = run;
     const assignmentId = key(witness.client, result.taskId, result.seed);
     const id = key(witness.client, result.taskId, result.seed, result.arm);
     const assignment = expected.get(assignmentId);
@@ -161,9 +162,10 @@ export function evaluateManagedCapabilityEffectiveness(manifest: ManagedTrialMan
     if (![result.tokensIn, result.tokensOut, result.tokensTotal, result.tokensCacheRead, result.tokensCacheWrite,
       result.wallClockMs, witness.toolCalls, witness.errors, witness.retries, witness.refusals].every(count) ||
       result.tokensTotal !== result.tokensIn + result.tokensOut) issues.push(`metrics-unmeasured:${id}`);
+    const outcome = classifyAttemptOutcome(result);
     if (!['completed', 'error', 'timeout'].includes(result.generationStatus) ||
-        (result.generationStatus === 'completed' &&
-          (typeof result.resolved !== 'boolean' || !['passed', 'failed'].includes(result.graderStatus)))) {
+        ['invalid', 'grader_error'].includes(outcome) ||
+        (outcome !== 'generation_failed' && typeof result.resolved !== 'boolean')) {
       issues.push(`grading-unmeasured:${id}`);
     }
   }
