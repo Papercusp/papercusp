@@ -104,6 +104,7 @@ describe('tryAcquire', () => {
 
   it('keeps an earlier same-owner waiter out of busy and reports the actual holder lease', async () => {
     const waiterUntil = new Date('2026-10-02T03:44:01.010Z');
+    const holderAcquired = new Date('2026-10-02T03:00:00.000Z');
     const holderExpires = new Date('2026-10-02T03:59:29.604Z');
     const statements: string[] = [];
     const tx = ((strings: TemplateStringsArray) => {
@@ -121,12 +122,13 @@ describe('tryAcquire', () => {
           expires_ts: waiterUntil,
         }];
       }
-      if (statement.includes('SELECT path, owner, owner_label, intent, expires_ts FROM agent_file_locks')) {
+      if (statement.includes('SELECT path, owner, owner_label, intent, acquired_ts, expires_ts FROM agent_file_locks')) {
         return [{
           path: 'src/contended.ts',
           owner: 'active-holder',
           owner_label: 'Active holder',
           intent: 'write file',
+          acquired_ts: holderAcquired,
           expires_ts: holderExpires,
         }];
       }
@@ -150,11 +152,12 @@ describe('tryAcquire', () => {
         owner: 'active-holder',
         owner_label: 'Active holder',
         intent: 'write file',
+        acquired_ts: holderAcquired,
         expires_ts: holderExpires,
       }],
     });
     expect(statements.some((statement) => statement.includes('FROM agent_lock_waiters w'))).toBe(true);
-    expect(statements.some((statement) => statement.includes('SELECT path, owner, owner_label, intent, expires_ts FROM agent_file_locks'))).toBe(true);
+    expect(statements.some((statement) => statement.includes('SELECT path, owner, owner_label, intent, acquired_ts, expires_ts FROM agent_file_locks'))).toBe(true);
   });
 });
 
