@@ -18,6 +18,18 @@
  */
 
 import type { Sql } from 'postgres';
+import type { ResourceExpiryRelease } from './config';
+
+// Only resource sweeps need the receipt query; file-lock transactions pay none.
+const expiryTransactions = new WeakSet<Sql>();
+
+export async function takeResourceExpiryReleases(tx: Sql): Promise<ResourceExpiryRelease[]> {
+  if (!expiryTransactions.delete(tx)) return [];
+  const rows = await tx<Array<{ coordination_domain: string; resource: string }>>`
+    SELECT * FROM resource_take_expiry_releases()
+  `;
+  return rows.map(row => ({ coordinationDomain: row.coordination_domain, resource: row.resource }));
+}
 
 export type ResourceMode = 'shared' | 'exclusive';
 export type ResourceLockStatus = 'held' | 'draining';
@@ -85,6 +97,7 @@ async function sweepExpiredInScope(
 ): Promise<void> {
   if (scope === 'resource') {
     await tx`SELECT resource_sweep_expired_scoped(${coordinationDomain}, ${resource})`;
+    expiryTransactions.add(tx);
     return;
   }
   await sweepResourceExpired(tx, coordinationDomain);
@@ -296,12 +309,17 @@ export async function sweepResourceExpired(
   tx: Sql,
   coordinationDomain: string,
 ): Promise<boolean> {
-  const rows = await tx<Array<{ resource: string }>>`
+  const rows = await tx<Array<{ resource: string; mode: ResourceMode }>>`
     DELETE FROM agent_resource_locks
      WHERE coordination_domain = ${coordinationDomain}
        AND expires_ts <= clock_timestamp()
-    RETURNING resource
+    RETURNING resource, mode
   `;
+  const exclusive = [...new Set(rows.filter(row => row.mode === 'exclusive').map(row => row.resource))];
+  if (exclusive.length > 0) {
+    await tx`SELECT resource_note_expired_exclusives(${coordinationDomain}, ${exclusive}::text[])`;
+    expiryTransactions.add(tx);
+  }
   const queueRows = await sweepResourceExclusiveQueue(tx, coordinationDomain);
   return rows.length > 0 || queueRows > 0;
 }

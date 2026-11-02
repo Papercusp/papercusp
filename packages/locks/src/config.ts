@@ -52,6 +52,11 @@ export interface AcquireDiagnostics {
  */
 export const DEFAULT_TXN_TIMEOUTS: TxnTimeouts = { lockTimeoutMs: 5000, statementTimeoutMs: 5000 };
 
+export interface ResourceExpiryRelease {
+  coordinationDomain: string;
+  resource: string;
+}
+
 export interface LocksHost {
   /**
    * Resolve the embedded-pg admin URL for the host's MAIN database (the
@@ -77,6 +82,8 @@ export interface LocksHost {
    * never change lock behavior.
    */
   acquireDiagnostics?: AcquireDiagnostics;
+  /** Committed expiry deletions which left no live exclusive successor. */
+  onResourceExpired?: (release: ResourceExpiryRelease) => void | Promise<void>;
 }
 
 let _host: LocksHost | null = null;
@@ -98,6 +105,18 @@ export function locksHost(): LocksHost {
     );
   }
   return _host;
+}
+
+/** Called only after COMMIT (or a successful atomic statement response). */
+export async function notifyResourceExpiries(releases: ResourceExpiryRelease[]): Promise<void> {
+  for (const release of releases) {
+    try {
+      await _host?.onResourceExpired?.(release);
+    } catch (error) {
+      // Notification failure must not turn a committed lock operation into a retry.
+      console.warn('[su-locks] resource expiry notification failed', error);
+    }
+  }
 }
 
 /**

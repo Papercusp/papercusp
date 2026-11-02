@@ -21,9 +21,11 @@
  * are the SAME function tryAcquireResource's shared branch calls.
  */
 
-import { txnTimeouts } from './config';
+import { notifyResourceExpiries, txnTimeouts, type ResourceExpiryRelease } from './config';
 import { RESOURCE_WAITER_TTL_SEC, type SharedAcquireRpcResult } from './resource-lock-store';
 import { ensureBootstrap, getTxPool, SU_LOCKS_FEATURE_KEY } from './su-lock-store';
+
+interface ExpiryResult<T> { value: T; expiredResources: ResourceExpiryRelease[] }
 
 export interface AtomicSharedAcquireParams {
   coordinationDomain: string;
@@ -60,14 +62,15 @@ export async function acquireSharedResourceAtomic(
 ): Promise<AtomicSharedAcquireResult> {
   await ensureBootstrap();
   const sql = getTxPool();
-  const [row] = await sql<Array<{ result: SharedAcquireRpcResult }>>`
-    SELECT resource_acquire_shared(
+  const [row] = await sql<Array<{ result: ExpiryResult<SharedAcquireRpcResult> }>>`
+    SELECT resource_with_expiry_receipts(resource_acquire_shared(
       ${SU_LOCKS_FEATURE_KEY}::integer, ${params.coordinationDomain}, ${params.resource},
       ${params.owner}, ${params.ownerLabel}, ${params.reason}, ${params.ttlSec}::integer,
       ${RESOURCE_WAITER_TTL_SEC}::integer, true, ${lockTimeout(params.lockTimeoutMs)}::integer
-    ) AS result
+    )) AS result
   `;
-  const result = row.result;
+  await notifyResourceExpiries(row.result.expiredResources);
+  const result = row.result.value;
   if (!result.ok) return { ok: false, reason: result.reason };
   return { ok: true, lock_id: result.lock_id, expires_ts: new Date(result.expires_ts), reused: result.reused === true };
 }
@@ -79,14 +82,15 @@ export async function heartbeatSharedResourceAtomic(
 ): Promise<{ extended: boolean; expires_ts: Date | null }> {
   await ensureBootstrap();
   const sql = getTxPool();
-  const [row] = await sql<Array<{ expires_ts: Date | null }>>`
-    SELECT resource_heartbeat_shared(
+  const [row] = await sql<Array<{ result: ExpiryResult<string | null> }>>`
+    SELECT resource_with_expiry_receipts(to_jsonb(resource_heartbeat_shared(
       ${SU_LOCKS_FEATURE_KEY}::integer, ${params.coordinationDomain}, ${params.resource},
       ${params.owner}, ${params.lockId}::uuid, ${params.ttlSec}::integer,
       ${lockTimeout(params.lockTimeoutMs)}::integer
-    ) AS expires_ts
+    ))) AS result
   `;
-  const expires = row.expires_ts;
+  await notifyResourceExpiries(row.result.expiredResources);
+  const expires = row.result.value == null ? null : new Date(row.result.value);
   return expires == null ? { extended: false, expires_ts: null } : { extended: true, expires_ts: new Date(expires) };
 }
 
@@ -98,11 +102,12 @@ export async function releaseSharedResourceAtomic(
 ): Promise<{ released: number; expired: boolean }> {
   await ensureBootstrap();
   const sql = getTxPool();
-  const [row] = await sql<Array<{ result: { released: number; expired: boolean } }>>`
-    SELECT resource_release_shared(
+  const [row] = await sql<Array<{ result: ExpiryResult<{ released: number; expired: boolean }> }>>`
+    SELECT resource_with_expiry_receipts(resource_release_shared(
       ${SU_LOCKS_FEATURE_KEY}::integer, ${params.coordinationDomain}, ${params.resource},
       ${params.owner}, ${params.lockId}::uuid, ${lockTimeout(params.lockTimeoutMs)}::integer
-    ) AS result
+    )) AS result
   `;
-  return { released: Number(row.result.released), expired: row.result.expired === true };
+  await notifyResourceExpiries(row.result.expiredResources);
+  return { released: Number(row.result.value.released), expired: row.result.value.expired === true };
 }

@@ -26,10 +26,13 @@ import {
   beginAcquireDiagnostic,
   locksHost,
   recordPoolMaxDiagnostic,
+  notifyResourceExpiries,
+  type ResourceExpiryRelease,
 } from './config';
 import {
   sweepResourceExpired,
   sweepResourceWaitersExpired,
+  takeResourceExpiryReleases,
 } from './resource-lock-store';
 
 /**
@@ -95,11 +98,15 @@ export async function beginSuLockTransaction<T>(
   run: (tx: SuTransactionSql) => Promise<T>,
 ): Promise<T> {
   const ticket = beginAcquireDiagnostic(SU_LOCK_TX_POOL_LABEL);
+  let expiries: ResourceExpiryRelease[] = [];
   try {
     const result = await sql.begin(async (tx) => {
       ticket?.acquired();
-      return run(tx as SuTransactionSql);
+      const result = await run(tx as SuTransactionSql);
+      expiries = await takeResourceExpiryReleases(tx as unknown as Sql);
+      return result;
     });
+    await notifyResourceExpiries(expiries);
     return result as unknown as T;
   } finally {
     ticket?.release();
