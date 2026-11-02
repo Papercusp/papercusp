@@ -605,7 +605,7 @@ describe('postgres.js terminal result diagnostics patch', () => {
       strings: ['select 2'],
       diagnosticContext: hooks.onquerycontext(),
       diagnosticHandleStartedAt: performance.now(),
-      origin: `Error\\n    at queued query (${import.meta.url}:1:1)`,
+      origin: `Error\n    at queued query (${import.meta.url}:1:1)`,
       rejection: null as unknown,
       reject(error: unknown) { this.rejection = error; },
     };
@@ -642,7 +642,7 @@ describe('postgres.js terminal result diagnostics patch', () => {
       pool: 'end-timeout-fixture',
       queryFamily: 'other',
       status: 'error',
-      errorCode: 'connection_destroyed',
+      errorCode: 'connection_destr',
       queryOrigin: expect.stringContaining('postgres-result-diagnostics.test.ts'),
       endCaller: expect.stringContaining('postgres-result-diagnostics.test.ts'),
     });
