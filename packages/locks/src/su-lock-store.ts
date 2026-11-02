@@ -657,6 +657,8 @@ export interface AcquireBusy {
   owner: string;
   owner_label: string | null;
   intent: string;
+  /** Actual lock acquisition time; omitted for queued-waiter snapshots. */
+  acquired_ts?: Date;
   expires_ts: Date;
 }
 
@@ -934,10 +936,11 @@ async function readBusySnapshot(
       owner: string;
       owner_label: string | null;
       intent: string;
+      acquired_ts: Date;
       expires_ts: Date;
     }>
   >`
-    SELECT path, owner, owner_label, intent, expires_ts
+    SELECT path, owner, owner_label, intent, acquired_ts, expires_ts
       FROM agent_file_locks
      WHERE coordination_domain = ${coordinationDomain}
        AND ${filePathOverlap(tx, paths)}
