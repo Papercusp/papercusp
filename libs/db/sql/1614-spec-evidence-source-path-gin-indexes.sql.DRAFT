@@ -1,0 +1,23 @@
+-- 1614 — index the two durable repo-file path representations used by first-touch context.
+--
+-- The sourcePaths and measurementPin.files JSONB arrays are append-only evidence metadata.
+-- GIN indexes keep path lookup bounded to candidate bindings instead of expanding every
+-- live binding in a workspace/harness. These are additive indexes; retracted evidence is
+-- excluded because readers already ignore it.
+
+CREATE INDEX IF NOT EXISTS spec_evidence_bindings_current_source_paths_gin
+  ON harness_shared.spec_evidence_bindings
+  USING gin ((details->'currentMeasurement'->'sourcePaths'))
+  WHERE retracted_at IS NULL
+    AND details->'currentMeasurement'->>'kind' = 'repo-files';
+
+COMMENT ON INDEX harness_shared.spec_evidence_bindings_current_source_paths_gin IS
+  'GIN jsonb_ops index for currentMeasurement.sourcePaths membership lookups on live repo-files evidence.';
+
+CREATE INDEX IF NOT EXISTS spec_evidence_bindings_measurement_pin_files_gin
+  ON harness_shared.spec_evidence_bindings
+  USING gin ((details->'measurementPin'->'files') jsonb_path_ops)
+  WHERE retracted_at IS NULL;
+
+COMMENT ON INDEX harness_shared.spec_evidence_bindings_measurement_pin_files_gin IS
+  'GIN jsonb_path_ops index for measurementPin.files array containment lookups on live evidence.';
