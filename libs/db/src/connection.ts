@@ -25,6 +25,7 @@
  *   $HARNESS_DATABASE_URL  (defaults to harness_app role on localhost)
  */
 import postgres, { type Sql } from 'postgres';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { readOperatorDbEnvLocal, resetOperatorDbEnvLocalCacheForTests } from './operator-db-env';
 import { pinModuleState } from '@papercusp/module-singleton';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -1757,6 +1758,22 @@ export interface OrgPgHandle {
   schema: typeof sharedSchema;
 }
 
+interface PriorityOrgPgScope {
+  url: string; handle: OrgPgHandle; appUrl: string; appHandle: OrgPgHandle; active: boolean;
+}
+const priorityOrgPg = pinModuleState<{
+  scope: AsyncLocalStorage<PriorityOrgPgScope>;
+  client: Sql | null;
+  url: string | null;
+  handle: OrgPgHandle | null;
+  appClient: Sql | null;
+  appUrl: string | null;
+  appHandle: OrgPgHandle | null;
+}>('@papercusp/db.priority-org-pg', () => ({
+  scope: new AsyncLocalStorage<PriorityOrgPgScope>(), client: null, url: null, handle: null,
+  appClient: null, appUrl: null, appHandle: null,
+}));
+
 /**
  * Typed-result wrapper around a raw postgres-js template tag. Use when
  * you want to keep the raw SQL (search-path tricks, custom CTEs,
@@ -1882,6 +1899,11 @@ export function getOrgPg(): OrgPgHandle {
   // booted before the desktop wrote a new embedded-pg.json caught
   // the old port forever (E2E round-13 bug #33).
   const url = maybePgbouncer(adminUrl());
+  const priority = priorityOrgPg.scope.getStore();
+  if (priority?.active) {
+    if (priority.url !== url) throw new Error('Priority org database target changed during request');
+    return priority.handle;
+  }
   // …and then compare it to what the LIVE pool was actually built with, which
   // is what finally closes that same bug class for good (EI-19285027465993737).
   if (endStalePool(_adminClient, _adminClientUrl, url, 'org-admin')) {
@@ -1958,6 +1980,59 @@ export function createDedicatedOrgPg(
     checkSchema: !explicitUrl && _resolvedAdminUrlSource === 'discovery',
   });
   return { sql, url };
+}
+
+/**
+ * Reserve two connections per database role for synchronous authority reads. Existing readers
+ * still evaluate current policy through getOrgPg; only their queue changes.
+ * Ordinary tool transactions cannot consume this capacity.
+ */
+export async function withPriorityOrgPg<T>(run: () => Promise<T>): Promise<T> {
+  const url = maybePgbouncer(adminUrl());
+  const appTarget = maybePgbouncer(appUrl());
+  if (endStalePool(priorityOrgPg.client, priorityOrgPg.url, url, 'org-admin-priority')) {
+    priorityOrgPg.client = null;
+    priorityOrgPg.handle = null;
+    priorityOrgPg.url = null;
+  }
+  if (!priorityOrgPg.handle) {
+    const dedicated = createDedicatedOrgPg('priority', { max: 2 });
+    priorityOrgPg.client = dedicated.sql;
+    priorityOrgPg.url = dedicated.url;
+    priorityOrgPg.handle = {
+      sql: dedicated.sql,
+      drizzle: drizzle(dedicated.sql, { schema: sharedTables }),
+      db: drizzle(dedicated.sql, { schema: fullSchema }),
+      schema: sharedSchema,
+    };
+  }
+  if (endStalePool(priorityOrgPg.appClient, priorityOrgPg.appUrl, appTarget, 'org-app-priority')) {
+    priorityOrgPg.appClient = null;
+    priorityOrgPg.appHandle = null;
+    priorityOrgPg.appUrl = null;
+  }
+  if (!priorityOrgPg.appHandle) {
+    const client = buildClient(appTarget, ['harness_shared', 'papercusp_shared', 'public'], 2, 'org-app-priority', pgbouncerEnabled());
+    priorityOrgPg.appClient = client;
+    priorityOrgPg.appUrl = appTarget;
+    priorityOrgPg.appHandle = {
+      sql: client, drizzle: drizzle(client, { schema: sharedTables }),
+      db: drizzle(client, { schema: fullSchema }), schema: sharedSchema,
+    };
+    validateDiscoveryTargetOnce(client, 'app-priority', {
+      url: appTarget, checkSchema: _resolvedAppUrlSource === 'discovery',
+    });
+  }
+  const scope: PriorityOrgPgScope = {
+    url, handle: priorityOrgPg.handle, appUrl: appTarget, appHandle: priorityOrgPg.appHandle, active: true,
+  };
+  return priorityOrgPg.scope.run(scope, async () => {
+    try { return await run(); }
+    finally {
+      // Detached work must not retain reserved capacity after its request ends.
+      scope.active = false;
+    }
+  });
 }
 
 /**
@@ -2380,6 +2455,11 @@ let _appOrgClientUrl: string | null = null;
 export function getOrgPgApp(): OrgPgHandle {
   // Call appUrl() on every invocation — see comment in getOrgPg().
   const url = maybePgbouncer(appUrl());
+  const priority = priorityOrgPg.scope.getStore();
+  if (priority?.active) {
+    if (priority.appUrl !== url) throw new Error('Priority app database target changed during request');
+    return priority.appHandle;
+  }
   // …and then COMPARE it to what the live pool was built with. Without this the
   // recomputed `url` was dead code on the cache-hit path: appUrl()'s own teardown
   // (connection.ts:480) lives inside `if (disc)`, so it fires only on
@@ -2478,7 +2558,9 @@ export function processConnectionCeiling(): {
   const fixedOverhead =
     8 /* admin-pg-cache */ +
     6 /* LISTEN buses, incl. agent-mcp principal invalidation */ +
-    2 /* org-admin-lossless-bigint pool */;
+    2 /* org-admin-lossless-bigint pool */ +
+    2 /* org-admin-priority authority pool */ +
+    2 /* org-app-priority RLS authority pool */;
   return { poolMax, orgPools, harnessPools, fixedOverhead, total: orgPools + harnessPools + fixedOverhead };
 }
 
@@ -2601,6 +2683,14 @@ export async function _resetForTests() {
   // can run. Reset all test-only identity state with the pools it describes.
   _resetStoreIdentityForTests();
   _resetUrlCacheForTests();
+  if (priorityOrgPg.client) await priorityOrgPg.client.end({ timeout: 1 }).catch(() => {});
+  priorityOrgPg.client = null;
+  priorityOrgPg.url = null;
+  priorityOrgPg.handle = null;
+  if (priorityOrgPg.appClient) await priorityOrgPg.appClient.end({ timeout: 1 }).catch(() => {});
+  priorityOrgPg.appClient = null;
+  priorityOrgPg.appUrl = null;
+  priorityOrgPg.appHandle = null;
   if (_adminClient) {
     await _adminClient.end({ timeout: 1 }).catch(() => {});
   }
