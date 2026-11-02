@@ -1,0 +1,39 @@
+-- Successful local start proof, with no backfill from the retired op_status.
+ALTER TABLE harness_shared.harness_plans ADD COLUMN IF NOT EXISTS execution_start_revision_seq integer;
+
+CREATE OR REPLACE FUNCTION harness_shared.fence_plan_execution_start()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE preserved jsonb; issued jsonb; old_inputs jsonb; new_inputs jsonb;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.execution_start_revision_seq := NULL;
+    RETURN NEW;
+  END IF;
+  preserved := COALESCE(NULLIF(current_setting('papercusp.execution_progress', true), ''), 'null')::jsonb;
+  issued := COALESCE(NULLIF(current_setting('papercusp.execution_start', true), ''), 'null')::jsonb;
+  old_inputs := to_jsonb(OLD) - ARRAY['execution_start_revision_seq','content','content_hash',
+    'version','updated_at','updated','status','op_status','op_updated_at','op_started_at',
+    'items','decisions','title','now_state','now_next','now_note','now_note_version','now_note_updated_at','fed_ts','fed_hlc','origin'];
+  new_inputs := to_jsonb(NEW) - ARRAY['execution_start_revision_seq','content','content_hash',
+    'version','updated_at','updated','status','op_status','op_updated_at','op_started_at',
+    'items','decisions','title','now_state','now_next','now_note','now_note_version','now_note_updated_at','fed_ts','fed_hlc','origin'];
+  IF old_inputs IS DISTINCT FROM new_inputs
+     OR (OLD.status IS DISTINCT FROM NEW.status AND NOT
+       (OLD.status IN ('ready','active','awaiting-acceptance') AND NEW.status IN ('ready','active','awaiting-acceptance')))
+     OR (NEW.op_status IN ('paused','done') AND OLD.op_status IS DISTINCT FROM NEW.op_status)
+     OR (OLD.content IS DISTINCT FROM NEW.content AND preserved IS DISTINCT FROM
+       jsonb_build_array(NEW.workspace_id,NEW.harness_slug,NEW.plan_slug,OLD.content_hash,NEW.content_hash))
+  THEN
+    NEW.execution_start_revision_seq := NULL;
+  ELSIF NEW.execution_start_revision_seq IS DISTINCT FROM OLD.execution_start_revision_seq
+    AND NEW.execution_start_revision_seq IS NOT NULL
+    AND issued IS DISTINCT FROM jsonb_build_array(NEW.workspace_id,NEW.harness_slug,NEW.plan_slug,
+      NEW.content_hash,NEW.execution_start_revision_seq)
+  THEN
+    NEW.execution_start_revision_seq := NULL;
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS fence_plan_execution_start ON harness_shared.harness_plans;
+CREATE TRIGGER fence_plan_execution_start BEFORE INSERT OR UPDATE
+  ON harness_shared.harness_plans FOR EACH ROW EXECUTE FUNCTION harness_shared.fence_plan_execution_start();
