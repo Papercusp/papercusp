@@ -147,6 +147,7 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
+    "@papercusp/bench-metrics": "*",
     "@papercusp/file-claim": "*",
     "@papercusp/model-pricing": "*",
     "@papercusp/locks": "*",
