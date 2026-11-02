@@ -32,6 +32,7 @@ import plugin, {
   decorateResult,
   looksLikeEmptyResult,
   repoPolicyFromEnv,
+  scopeRepoInputSchema,
   applyRepoPolicy,
   describeChildExit,
   resolveGitnexusChildCwd,
@@ -590,6 +591,31 @@ describe('applyRepoPolicy (P-004)', () => {
   it('admits a repo added to the allowlist, so the rail is configurable not hardcoded', () => {
     const wide = repoPolicyFromEnv({ PAPERCUSP_GITNEXUS_ALLOWED_REPOS: 'sidecar' });
     expect(applyRepoPolicy('query', { repo: 'sidecar' }, wide).repo).toBe('sidecar');
+  });
+});
+
+describe('scopeRepoInputSchema (P-004)', () => {
+  it('advertises the bridge allowlist instead of upstream path support', () => {
+    const upstream = {
+      type: 'object',
+      properties: {
+        repo: { type: 'string', description: 'Repository name or path.' },
+        query: { type: 'string' },
+      },
+      required: ['query'],
+    };
+
+    const scoped = scopeRepoInputSchema(upstream) as typeof upstream;
+    expect(scoped.properties.repo.description).toContain('Repository name in the bridge allowlist only');
+    expect(scoped.properties.repo.description).toContain('Filesystem paths and `@group` selectors are refused');
+    expect(scoped.properties.query).toBe(upstream.properties.query);
+    expect(scoped.required).toEqual(['query']);
+    expect(upstream.properties.repo.description).toBe('Repository name or path.');
+  });
+
+  it('leaves schemas without a repo property untouched', () => {
+    const schema = { type: 'object', properties: { query: { type: 'string' } } };
+    expect(scopeRepoInputSchema(schema)).toBe(schema);
   });
 });
 

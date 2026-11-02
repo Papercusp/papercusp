@@ -612,6 +612,33 @@ export interface RepoPolicy {
   allowed: ReadonlySet<string>;
 }
 
+const REPO_INPUT_DESCRIPTION =
+  'Repository name in the bridge allowlist only. Filesystem paths and `@group` selectors are refused by the P-004 scope policy. Omit `repo` to use the configured default.';
+
+/** Replace the upstream path claim with the bridge's enforced repo-name scope. */
+export function scopeRepoInputSchema(inputSchema: unknown): ToolDefinition['inputSchema'] {
+  if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) {
+    return inputSchema as ToolDefinition['inputSchema'];
+  }
+  const schema = inputSchema as Record<string, unknown>;
+  const properties = schema.properties;
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) {
+    return inputSchema as ToolDefinition['inputSchema'];
+  }
+  const propertyMap = properties as Record<string, unknown>;
+  const repo = propertyMap.repo;
+  if (!repo || typeof repo !== 'object' || Array.isArray(repo)) {
+    return inputSchema as ToolDefinition['inputSchema'];
+  }
+  return {
+    ...schema,
+    properties: {
+      ...propertyMap,
+      repo: { ...(repo as Record<string, unknown>), description: REPO_INPUT_DESCRIPTION },
+    },
+  } as ToolDefinition['inputSchema'];
+}
+
 export function repoPolicyFromEnv(env: NodeJS.ProcessEnv = process.env): RepoPolicy {
   const defaultRepo = (env.PAPERCUSP_GITNEXUS_REPO_NAME ?? '').trim() || 'papercusp';
   const extra = (env.PAPERCUSP_GITNEXUS_ALLOWED_REPOS ?? '')
@@ -976,10 +1003,15 @@ const plugin: Plugin = {
       // member. Surfaced by EI-19305781578043773 giving this plugin a tsconfig.
       const cap: Capability = `tools:gitnexus:${t.name}`;
       const override = TOOL_OVERRIDES[t.name];
+      const upstreamInputSchema = t.inputSchema ?? { type: 'object', properties: {} };
+      const acceptsRepo = Boolean(
+        (upstreamInputSchema.properties as Record<string, unknown> | undefined)?.repo,
+      );
+      const inputSchema = acceptsRepo ? scopeRepoInputSchema(upstreamInputSchema) : upstreamInputSchema;
       const def: ToolDefinition = {
         name: t.name,
         description: override?.description ?? t.description ?? `gitnexus.${t.name}`,
-        inputSchema: t.inputSchema ?? { type: 'object', properties: {} },
+        inputSchema,
         capabilities: [cap, 'compute:exec:gitnexus'],
         roles: rolesFor(t.name),
         rolesQuota: quotaFor(t.name),
@@ -992,9 +1024,6 @@ const plugin: Plugin = {
       };
       definitions.push(def);
       // Derived from the UPSTREAM schema, never a hardcoded list — see applyRepoPolicy.
-      const acceptsRepo = Boolean(
-        (t.inputSchema?.properties as Record<string, unknown> | undefined)?.repo,
-      );
       handlers[t.name] = makeHandler(t.name, acceptsRepo);
     }
     return { definitions, handlers };
