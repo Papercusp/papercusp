@@ -39,11 +39,22 @@ Missing, stale or unsettled evidence is an explicit gap, not a passing score.
    mitigation, or making the scorecard green without fixing the cause is not
    completion. If a live peer already owns the fix, send the evidence once and
    grade the result after it lands instead of creating a second implementation.
-6. INDEPENDENCE: remediation ownership does not waive a rubric's independent-
+6. IMPROVE THE RUBRIC AS YOU GRADE: use grading findings to assess the rubric
+   itself, and make justified improvements through rubrics:amend and its existing
+   review process. Address missing coverage, ambiguous criteria, misleading or
+   uncalibrated thresholds, weak evidence requirements, and invalid or stale
+   measurement checks when the evidence supports a change. Record the finding,
+   rationale, supporting evidence, and old/new rubric revisions. Preserve the
+   original scorecard; when criteria, thresholds, scope or measurement meaning
+   change, establish a fresh baseline and distinguish rubric changes from product
+   improvements. Correct an invalid check with a recorded counterexample and a
+   replacement that detects the intended failure. Never weaken criteria, lower
+   the bar, hide failures or redefine success merely to obtain a better grade.
+7. INDEPENDENCE: remediation ownership does not waive a rubric's independent-
    acceptance rule. When acceptance requires a non-implementer, launch or route
    to that grader after your deterministic verification; never self-accept work
    whose rubric requires an independent verdict.
-7. TERMS: take cadence + exit criteria from the owner at entry; surface
+8. TERMS: take cadence + exit criteria from the owner at entry; surface
    worsening trends instead of waiting to be asked.
 SU IDEAS: grading an su-filed idea (blender:grade-idea) with a low grade + feedback WAKES its
 originator to revise — your critique is the revision signal that closes their loop, not just a
