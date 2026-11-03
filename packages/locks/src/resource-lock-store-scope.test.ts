@@ -140,10 +140,81 @@ describe('resource-scoped lock-store operations', () => {
     expect(calls.filter(domainWide)).toEqual([]);
   });
 
+  it('reports an exclusive release even when the cascade immediately grants a successor', async () => {
+    const successor = {
+      resource: 'git-sync:alpha',
+      owner: 'fire-2',
+      owner_label: 'fire-2',
+      mode: 'exclusive',
+      status: 'held',
+      lock_id: 'successor-lock',
+      reason: 'test successor',
+      acquired_ts: new Date(0),
+      expires_ts: new Date(60_000),
+      fence_seq: 2,
+    };
+    const { tx } = fakeTx((query) => {
+      if (query.startsWith('DELETE FROM agent_resource_locks')) {
+        return [{ mode: 'exclusive', resource: 'git-sync:alpha' }];
+      }
+      if (query.startsWith('SELECT resource, owner, owner_label, mode, status, lock_id::text')) {
+        return [successor];
+      }
+      return [];
+    });
+
+    const result = await releaseOwnerResourcesScoped(tx, DOMAIN, 'fire-1', ['git-sync:alpha']);
+
+    expect(result).toMatchObject({
+      released: 1,
+      releasedExclusiveResources: ['git-sync:alpha'],
+      exclusiveResources: [],
+      waiters: {},
+    });
+  });
+
+  it('keeps exact release history separate from availability for a single-lock release', async () => {
+    const successor = {
+      resource: 'git-sync:alpha',
+      owner: 'fire-2',
+      owner_label: 'fire-2',
+      mode: 'exclusive',
+      status: 'held',
+      lock_id: 'successor-lock',
+      reason: 'test successor',
+      acquired_ts: new Date(0),
+      expires_ts: new Date(60_000),
+      fence_seq: 2,
+    };
+    const { tx } = fakeTx((query) => {
+      if (query.startsWith('DELETE FROM agent_resource_locks')) {
+        return [{ mode: 'exclusive', resource: 'git-sync:alpha' }];
+      }
+      if (query.startsWith('SELECT resource, owner, owner_label, mode, status, lock_id::text')) {
+        return [successor];
+      }
+      return [];
+    });
+
+    const result = await tryReleaseResource(tx, {
+      coordinationDomain: DOMAIN,
+      owner: 'fire-1',
+      resource: 'git-sync:alpha',
+    });
+
+    expect(result).toMatchObject({
+      released: 1,
+      releasedExclusiveResources: ['git-sync:alpha'],
+      exclusiveResources: [],
+      waiters: {},
+    });
+  });
+
   it('scoped owner release with no names touches nothing', async () => {
     const { tx, calls } = fakeTx();
     expect(await releaseOwnerResourcesScoped(tx, DOMAIN, 'fire-1', [])).toEqual({
       released: 0,
+      releasedExclusiveResources: [],
       exclusiveResources: [],
       waiters: {},
     });
