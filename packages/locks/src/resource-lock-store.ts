@@ -681,6 +681,10 @@ export async function tryReleaseResource(
 ): Promise<{
   released: number;
   releasedModes: ResourceMode[];
+  /** Exclusive rows deleted by this call, even when the cascade immediately
+   * grants an exclusive successor. Use for exact release-boundary events. */
+  releasedExclusiveResources: string[];
+  /** Exclusive resources that are currently available after the grant cascade. */
   exclusiveResources: string[];
   /** Holds matching this release that expired before the call could release
    * them. Captured before the expiry sweep removes the rows. */
@@ -793,6 +797,9 @@ export async function tryReleaseResource(
       ...expiredRows.filter((row) => row.mode === 'exclusive').map((row) => row.resource),
     ]),
   ];
+  const releasedExclusiveResources = [
+    ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
+  ];
   const exclusiveResources = await resourcesReadyForBackUp(tx, cd, exclusiveCandidates);
   // Read + clear the waiters on each freed exclusive — they're the targeted
   // back-up audience (A4), replacing the old ['*'] broadcast.
@@ -809,6 +816,7 @@ export async function tryReleaseResource(
   return {
     released: deleted.length,
     releasedModes: deleted.map((d) => d.mode),
+    releasedExclusiveResources,
     exclusiveResources,
     expired,
     heldResourceSuggestions,
@@ -821,13 +829,19 @@ export async function tryReleaseResource(
  * the session-end cleanup (P-019). Mirrors tryRelease's all_mine for file
  * locks; the locks:release tool calls both on `all_mine: true` so one
  * session-end call frees files AND resources (TTL is the backstop for a
- * crashed session). Returns the exclusiveResources for the back-up broadcast.
+ * crashed session). Returns both the deleted exclusive rows and the resources
+ * still available for back-up broadcasts.
  */
 export async function releaseAllResourcesForOwner(
   tx: Sql,
   coordinationDomain: string,
   owner: string,
-): Promise<{ released: number; exclusiveResources: string[]; waiters: Record<string, string[]> }> {
+): Promise<{
+  released: number;
+  releasedExclusiveResources: string[];
+  exclusiveResources: string[];
+  waiters: Record<string, string[]>;
+}> {
   await tx`SET LOCAL statement_timeout = '5s'`;
   const deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
     DELETE FROM agent_resource_locks
@@ -841,6 +855,7 @@ export async function releaseAllResourcesForOwner(
   const exclusiveCandidates = [
     ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
   ];
+  const releasedExclusiveResources = exclusiveCandidates;
   const exclusiveResources = await resourcesReadyForBackUp(
     tx,
     coordinationDomain,
@@ -850,7 +865,7 @@ export async function releaseAllResourcesForOwner(
   for (const res of exclusiveResources) {
     waiters[res] = await readAndClearResourceWaiters(tx, coordinationDomain, res);
   }
-  return { released: deleted.length, exclusiveResources, waiters };
+  return { released: deleted.length, releasedExclusiveResources, exclusiveResources, waiters };
 }
 
 /**
@@ -866,9 +881,16 @@ export async function releaseOwnerResourcesScoped(
   coordinationDomain: string,
   owner: string,
   resources: readonly string[],
-): Promise<{ released: number; exclusiveResources: string[]; waiters: Record<string, string[]> }> {
+): Promise<{
+  released: number;
+  releasedExclusiveResources: string[];
+  exclusiveResources: string[];
+  waiters: Record<string, string[]>;
+}> {
   const names = Array.from(new Set(resources.filter((resource) => resource.length > 0))).sort();
-  if (names.length === 0) return { released: 0, exclusiveResources: [], waiters: {} };
+  if (names.length === 0) {
+    return { released: 0, releasedExclusiveResources: [], exclusiveResources: [], waiters: {} };
+  }
   await tx`SET LOCAL statement_timeout = '5s'`;
   const deleted = await tx<Array<{ mode: ResourceMode; resource: string }>>`
     DELETE FROM agent_resource_locks
@@ -890,12 +912,13 @@ export async function releaseOwnerResourcesScoped(
   const exclusiveCandidates = [
     ...new Set(deleted.filter((d) => d.mode === 'exclusive').map((d) => d.resource)),
   ];
+  const releasedExclusiveResources = exclusiveCandidates;
   const exclusiveResources = await resourcesReadyForBackUp(tx, coordinationDomain, exclusiveCandidates);
   const waiters: Record<string, string[]> = {};
   for (const res of exclusiveResources) {
     waiters[res] = await readAndClearResourceWaiters(tx, coordinationDomain, res);
   }
-  return { released: deleted.length, exclusiveResources, waiters };
+  return { released: deleted.length, releasedExclusiveResources, exclusiveResources, waiters };
 }
 
 /**
