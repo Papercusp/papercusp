@@ -969,6 +969,7 @@ describe('buildSpawnCodexConfigToml', () => {
     expect(toml).toContain('[mcp_servers.papercusp]');
     expect(toml).toContain('url = "http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a\\"b"');
     expect(parseToml(toml).mcp_servers).toEqual({ papercusp: {
+      required: true,
       url: 'http://127.0.0.1:3270/api/mcp?harness=papercusp&sig=a"b',
       tools: { 'tools:invoke': { approval_mode: 'approve' } },
     } });

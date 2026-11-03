@@ -582,6 +582,8 @@ export function buildSpawnCodexConfigToml(
     ...gatewayConfig.tables,
     '[mcp_servers.papercusp]',
     `url = "${tomlEscape(mcpUrl)}"`,
+    // Managed workers need their coordination tools before the first model step.
+    'required = true',
     ...CODEX_MANAGED_DISPATCHER_APPROVAL_TOML,
     '',
   ].join('\n');
