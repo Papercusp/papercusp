@@ -25,7 +25,7 @@ beforeAll(async () => {
   db = await createFreshPgDb('managedtrial');
   sql = db.sql as unknown as OrgSql;
   repo = mkdtempSync(join(tmpdir(), 'managed-trial-prereg-'));
-  for (const file of ['291-benchmark-reproducibility.sql', '302-bench-run-score.sql',
+  for (const file of ['291-benchmark-reproducibility.sql', '292-benchmark-hive-layer.sql', '302-bench-run-score.sql',
     '1615-benchmark-frozen-arm-identities.sql']) {
     const source = readFileSync(resolve(import.meta.dirname,
       '../../../libs/db/sql', file), 'utf8').split('\n')
@@ -46,7 +46,7 @@ async function seed(runId: string, items = 30) {
     itemId: `P-${String(i + 1).padStart(3, '0')}`, preImplementationCommit: 'c'.repeat(40),
     graderTestPaths: ['fixture/own.test.ts'], families: ['shell-ssh-interpreters'] as const,
   })));
-  const config = { managedCapabilityTrial: { sharedCheckoutRealpath: '/shared/papercusp', assignments } };
+  const config = { runId, managedCapabilityTrial: { sharedCheckoutRealpath: '/shared/papercusp', assignments } };
   const { preregHash } = await preregister({ ...scope(), runId, suites: [suite], config, repoRoot: repo });
   // Simulate the existing verification writer's stamp in this disposable DB.
   // This does not attest an actual preregistration commit or a real trial.
