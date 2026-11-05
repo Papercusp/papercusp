@@ -1419,7 +1419,7 @@ export const benchmarkRunResultInHarnessShared = harnessShared.table("benchmark_
 		}).onDelete("cascade"),
 	unique("benchmark_run_result_workspace_id_run_id_suite_task_id_arm__key").on(table.arm, table.runId, table.seed, table.suite, table.taskId, table.workspaceId),
 	pgPolicy("benchmark_run_result_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
-	check("benchmark_run_result_arm_check", sql`arm = ANY (ARRAY['papercusp'::text, 'baseline-a-ablation'::text, 'baseline-b-native'::text, 'baseline-c-bestofn'::text])`),
+	check("benchmark_run_result_arm_check", sql`arm ~ '[^[:space:]]'::text`),
 	check("benchmark_run_result_generation_status_check", sql`generation_status = ANY (ARRAY['completed'::text, 'error'::text, 'timeout'::text])`),
 	check("benchmark_run_result_grader_status_check", sql`grader_status = ANY (ARRAY['passed'::text, 'failed'::text, 'error'::text, 'timeout'::text, 'invalid'::text])`),
 	check("benchmark_run_result_modality_check", sql`modality = ANY (ARRAY['diff'::text, 'in-container'::text])`),
@@ -5862,6 +5862,7 @@ origin: scout
 	nowNote: jsonb("now_note"),
 	verificationProfile: text("verification_profile"),
 	verificationProfileSource: text("verification_profile_source"),
+	executionStartRevisionSeq: integer("execution_start_revision_seq"),
 }, (table) => [
 	index("harness_plans_acceptance_bar_unseeded").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`((acceptance_bar_epoch IS NOT NULL) AND (acceptance_bar_set_hash IS NULL))`),
 	index("harness_plans_bm25").using("bm25", sql`(((COALESCE(title, ''::text) || ' '::text) || COALESCE(content, ''::text)))`).with({text_config: "english",compaction: "manual"}),
@@ -10784,6 +10785,23 @@ export const reportLibraryChunksInHarnessShared = harnessShared.table("report_li
 	primaryKey({ columns: [table.chunkIdx, table.reportId, table.workspaceId], name: "report_library_chunks_pkey"}),
 ]);
 
+export const reportLibrarySharesInHarnessShared = harnessShared.table("report_library_shares", {
+	workspaceId: text("workspace_id").notNull(),
+	reportId: text("report_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	githubUserId: bigint("github_user_id", { mode: "number" }).notNull(),
+	share: jsonb().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.workspaceId, table.reportId],
+			foreignColumns: [reportLibraryInHarnessShared.workspaceId, reportLibraryInHarnessShared.reportId],
+			name: "report_library_shares_workspace_id_report_id_fkey"
+		}),
+	primaryKey({ columns: [table.githubUserId, table.reportId, table.workspaceId], name: "report_library_shares_pkey"}),
+	check("report_library_shares_share_check", sql`jsonb_typeof(share) = 'object'::text`),
+]);
+
 export const resourceAllotmentsInHarnessShared = harnessShared.table("resource_allotments", {
 	workspaceId: text("workspace_id").notNull(),
 	fleetSlug: text("fleet_slug"),
@@ -11512,6 +11530,7 @@ export const sessionIngestStateInHarnessShared = harnessShared.table("session_in
 	partsBackfilledAt: timestamp("parts_backfilled_at", { withTimezone: true, mode: 'string' }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	shortUserTurnsOffset: bigint("short_user_turns_offset", { mode: "number" }),
+	byteOffsetChangedAt: timestamp("byte_offset_changed_at", { withTimezone: true, mode: 'string' }).defaultNow(),
 }, (table) => [
 	primaryKey({ columns: [table.filePath, table.sourceKind], name: "session_ingest_state_pkey"}),
 ]);
