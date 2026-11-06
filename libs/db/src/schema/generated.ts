@@ -1762,7 +1762,6 @@ export const carryNotesInHarnessShared = harnessShared.table("carry_notes", {
 	bodyTs: bigint("body_ts", { mode: "number" }),
 	attestedCount: integer("attested_count").default(0).notNull(),
 }, (table) => [
-	index("carry_notes_bm25").using("bm25", sql`COALESCE(note, ''::text)`).with({text_config: "english",compaction: "manual"}),
 	index("carry_notes_tsv_idx").using("gin", table.noteTsv.asc().nullsLast().op("tsvector_ops")),
 	primaryKey({ columns: [table.scope, table.workspaceId], name: "carry_notes_pkey"}),
 	pgPolicy("carry_notes_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
