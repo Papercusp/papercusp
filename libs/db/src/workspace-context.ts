@@ -130,13 +130,21 @@ export async function withWorkspace<T>(
       const statementTimeoutMs = opts.statementTimeoutMs == null
         ? undefined
         : String(Math.max(100, Math.trunc(opts.statementTimeoutMs))) + 'ms';
+      // Capture physical server identity/time in the existing setup round trips.
+      // Text preserves server microseconds independently of client date parsers.
       if (lockTimeoutMs !== undefined && statementTimeoutMs !== undefined) {
         await txSql`SELECT set_config('lock_timeout', ${lockTimeoutMs}, true),
-                            set_config('statement_timeout', ${statementTimeoutMs}, true)`;
+                            set_config('statement_timeout', ${statementTimeoutMs}, true),
+                            pg_backend_pid() AS diagnostic_pg_pid,
+                            statement_timestamp()::text AS diagnostic_statement_at`;
       } else if (lockTimeoutMs !== undefined) {
-        await txSql`SELECT set_config('lock_timeout', ${lockTimeoutMs}, true)`;
+        await txSql`SELECT set_config('lock_timeout', ${lockTimeoutMs}, true),
+                            pg_backend_pid() AS diagnostic_pg_pid,
+                            statement_timestamp()::text AS diagnostic_statement_at`;
       } else if (statementTimeoutMs !== undefined) {
-        await txSql`SELECT set_config('statement_timeout', ${statementTimeoutMs}, true)`;
+        await txSql`SELECT set_config('statement_timeout', ${statementTimeoutMs}, true),
+                            pg_backend_pid() AS diagnostic_pg_pid,
+                            statement_timestamp()::text AS diagnostic_statement_at`;
       }
       // C1-2 of backend-connection-scaling-2026-06-17: under PgBouncer transaction
       // pooling the connect-time search_path is NOT preserved (server connections are
@@ -151,13 +159,19 @@ export async function withWorkspace<T>(
         // the transaction-local RLS scope. Set both in one round trip when
         // they are both required; the two settings are independent.
         if (opts.bypassRlsForAdmin) {
-          await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true)`;
+          await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true),
+                             pg_backend_pid() AS diagnostic_pg_pid,
+                             statement_timestamp()::text AS diagnostic_statement_at`;
         } else {
           await txSql`SELECT set_config('search_path', 'harness_shared, papercusp_shared, public', true),
-                             set_config('app.workspace_id', ${workspaceId}, true)`;
+                             set_config('app.workspace_id', ${workspaceId}, true),
+                             pg_backend_pid() AS diagnostic_pg_pid,
+                             statement_timestamp()::text AS diagnostic_statement_at`;
         }
       } else if (!opts.bypassRlsForAdmin) {
-        await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true)`;
+        await txSql`SELECT set_config('app.workspace_id', ${workspaceId}, true),
+                           pg_backend_pid() AS diagnostic_pg_pid,
+                           statement_timestamp()::text AS diagnostic_statement_at`;
       }
       // Promise.race does NOT cancel the losing promise: if the acquisition
       // deadline already fired, the caller has its DbCallDeadlineError and is
@@ -231,7 +245,9 @@ export async function withHarnessSchema<T>(slug: string, fn: (tx: Sql) => Promis
       // Mirror withWorkspace's options-pointer fix so drizzle(tx) (if ever used) works.
       const txOpts = txSql as unknown as { options?: unknown };
       txOpts.options ??= (sql as unknown as { options?: unknown }).options;
-      await txSql`SELECT set_config('search_path', ${searchPath}, true)`;
+      await txSql`SELECT set_config('search_path', ${searchPath}, true),
+                         pg_backend_pid() AS diagnostic_pg_pid,
+                         statement_timestamp()::text AS diagnostic_statement_at`;
       if (expired()) {
         throw new DbCallDeadlineError(
           acquireLabel,

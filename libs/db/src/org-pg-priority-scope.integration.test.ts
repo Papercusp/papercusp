@@ -8,6 +8,7 @@ import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 import { getOrgPg, getOrgPgApp, withPriorityOrgPg, _resetForTests, _resetUrlCacheForTests } from './connection';
 import { withWorkspace } from './workspace-context';
+import { pgResultDiagnosticSnapshot } from './acquire-registry';
 
 let db: MigratedTestDb;
 const keys = ['HARNESS_ADMIN_DATABASE_URL', 'HARNESS_DATABASE_URL', 'PAPERCUSP_DB_POOL_MAX', 'PAPERCUSP_PGBOUNCER'] as const;
@@ -178,6 +179,36 @@ describe('priority client slots behind a real transaction pooler', () => {
   const readPolicy = (role: typeof roles[number]) => role === 'admin'
     ? getOrgPg().sql`SELECT revision FROM harness_shared.priority_policy WHERE workspace_id = 'scope-a'`
     : withWorkspace('scope-a', tx => tx`SELECT revision FROM priority_policy`);
+
+  it.each(['scope-a', 'scope-b'])('retains same-SELECT physical server scalars through PgBouncer for %s', async workspace => {
+    await withWorkspace(workspace, async tx => {
+      // The existing opt-in WeakRef provides the exact server-returned tuple;
+      // query_start is a different clock boundary, not an equality oracle.
+      const setup = pgResultDiagnosticSnapshot('org-app').results.at(-1)!;
+      const observed = pgResultDiagnosticSnapshot('org-app', 1, { includeObjectRefs: true })
+        .results[0]!.objectRefs?.decodedResult?.deref() as Array<Record<string, unknown>>;
+      expect(observed[0]).toMatchObject({ diagnostic_pg_pid: setup.physicalBackendPid,
+        diagnostic_statement_at: setup.serverStatementAt });
+      expect(setup.physicalBackendPid).toBeGreaterThan(0);
+      expect(setup.serverStatementAt).toMatch(/\.\d{1,6}[+-]/);
+      const activity = await direct`SELECT pid, state,
+        ${setup.serverStatementAt}::timestamptz BETWEEN xact_start AND clock_timestamp() AS in_transaction
+        FROM pg_stat_activity WHERE pid = ${setup.physicalBackendPid}`;
+      expect(activity).toHaveLength(1);
+      expect(activity[0]).toMatchObject({ pid: setup.physicalBackendPid,
+        state: 'idle in transaction', in_transaction: true });
+      const rows = await tx`SELECT pg_backend_pid() AS physical_pid,
+        current_setting('app.workspace_id') AS workspace, revision FROM priority_policy`;
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ physical_pid: setup.physicalBackendPid, workspace,
+        revision: workspace === 'scope-a' ? 1 : 99 });
+      // Existing protocol PID stays a separate field, and default snapshots
+      // expose neither result rows nor the workspace/GUC values.
+      expect(typeof setup.backendPid).toBe('number');
+      expect(JSON.stringify(setup)).not.toContain(workspace);
+      expect(setup).not.toHaveProperty('objectRefs');
+    });
+  });
 
   it.each(roles)('keeps %s priority policy reads available when only an ordinary client slot is held', async role => {
     const ordinary = client(role);

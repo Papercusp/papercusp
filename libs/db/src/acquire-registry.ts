@@ -309,6 +309,10 @@ export interface PgResultDiagnostic {
   queryId: number;
   backendPid: number | null;
   queryFamily: string;
+  /** Same setup SELECT's physical PG backend, distinct from protocol-peer backendPid. */
+  physicalBackendPid: number | null;
+  /** Server statement receipt/start, with microseconds; not completion or local recordedAt. */
+  serverStatementAt: string | null;
   command: string | null;
   rowCount: number;
   wireBytes: number;
@@ -656,6 +660,38 @@ function classifyPgFailurePhase(
   return query.trim() ? 'statement' : 'unknown';
 }
 
+/** Extract only the two source-authored setup scalars; never retain a result row. */
+function setupServerCorrelation(input: PgResultDiagnosticInput): {
+  physicalBackendPid: number | null;
+  serverStatementAt: string | null;
+} {
+  const absent = { physicalBackendPid: null, serverStatementAt: null };
+  if (input.status !== 'ok' || input.rowCount !== 1 ||
+      !/^select\s+set_config\(/i.test(input.query.trim()) ||
+      !/pg_backend_pid\(\)\s+AS\s+diagnostic_pg_pid,\s*statement_timestamp\(\)::text\s+AS\s+diagnostic_statement_at\s*$/i.test(input.query)) {
+    return absent;
+  }
+  try {
+    if (!Array.isArray(input.result) || input.result.length !== 1) return absent;
+    const row = Object.getOwnPropertyDescriptor(input.result, '0')?.value;
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return absent;
+    // Own data properties only: diagnostic extraction must not invoke row getters.
+    const pid = Object.getOwnPropertyDescriptor(row, 'diagnostic_pg_pid')?.value;
+    const at = Object.getOwnPropertyDescriptor(row, 'diagnostic_statement_at')?.value;
+    if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0 || pid > 2_147_483_647 ||
+        typeof at !== 'string' ||
+        !/^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]) (?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?[+-](?:0\d|1[0-5])(?::[0-5]\d)?$/.test(at) ||
+        !Number.isFinite(Date.parse(at))) return absent;
+    const [year, month, day] = at.slice(0, 10).split('-').map(Number);
+    const leap = year! % 4 === 0 && (year! % 100 !== 0 || year! % 400 === 0);
+    const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if (day! > days[month! - 1]!) return absent;
+    return { physicalBackendPid: pid, serverStatementAt: at };
+  } catch {
+    return absent;
+  }
+}
+
 /**
  * Record one terminal result from postgres-js. All fields are normalized and
  * the retained FIFO is bounded. This function is intentionally synchronous and
@@ -680,6 +716,7 @@ export function recordPgResult(
     backendPid:
       input.backendPid === null ? null : boundedWholeNumber(input.backendPid, true),
     queryFamily,
+    ...setupServerCorrelation(input),
     command: safeToken(input.command, 32),
     rowCount: boundedWholeNumber(input.rowCount) ?? 0,
     wireBytes: boundedWholeNumber(input.wireBytes) ?? 0,

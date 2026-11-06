@@ -30,7 +30,7 @@ vi.mock('./connection', async (importOriginal) => {
   };
 });
 
-import { withWorkspace } from './workspace-context';
+import { withHarnessSchema, withWorkspace } from './workspace-context';
 import { DEFAULT_TX_ACQUIRE_DEADLINE_MS } from './connection';
 import { beginAcquire, recordPoolMax, resetAcquireRegistryForTest } from './acquire-registry';
 
@@ -93,6 +93,43 @@ describe('withWorkspace — EI-9279 connect-retry wiring', () => {
     } finally {
       h.pgbouncerEnabled.mockReturnValue(false);
     }
+  });
+
+  it.each([
+    { pooled: false, admin: false, bounds: {}, count: 1, values: [['ws-scalars']] },
+    { pooled: false, admin: true, bounds: {}, count: 0, values: [] },
+    { pooled: true, admin: false, bounds: {}, count: 1, values: [['ws-scalars']] },
+    { pooled: true, admin: true, bounds: {}, count: 1, values: [[]] },
+    { pooled: false, admin: false, bounds: { lockTimeoutMs: 1000 }, count: 2, values: [['1000ms'], ['ws-scalars']] },
+    { pooled: false, admin: false, bounds: { statementTimeoutMs: 2000 }, count: 2, values: [['2000ms'], ['ws-scalars']] },
+    { pooled: true, admin: false, bounds: { lockTimeoutMs: 1000, statementTimeoutMs: 2000 }, count: 2, values: [['1000ms', '2000ms'], ['ws-scalars']] },
+  ])('keeps exact setup count/parameters with server scalars: %j', async ({ pooled, admin, bounds, count, values }) => {
+    h.pgbouncerEnabled.mockReturnValue(pooled);
+    try {
+      const tx = vi.fn(async (..._args: unknown[]) => []);
+      h.begin.mockImplementation(async (cb: (sql: Sql) => Promise<unknown>) => cb(tx as unknown as Sql));
+      await withWorkspace('ws-scalars', async () => 'ok', { ...bounds, bypassRlsForAdmin: admin });
+      expect(tx).toHaveBeenCalledTimes(count);
+      expect(tx.mock.calls.map(call => call.slice(1))).toEqual(values);
+      for (const [template] of tx.mock.calls) {
+        const statement = (template as TemplateStringsArray).join('?');
+        expect(statement).toMatch(/^SELECT set_config\(/);
+        expect(statement.match(/pg_backend_pid\(\)/g)).toHaveLength(1);
+        expect(statement).toMatch(/statement_timestamp\(\)::text AS diagnostic_statement_at$/);
+      }
+    } finally {
+      h.pgbouncerEnabled.mockReturnValue(false);
+    }
+  });
+
+  it('keeps harness search-path setup in its existing single SELECT with server scalars', async () => {
+    const tx = vi.fn(async (..._args: unknown[]) => []);
+    h.begin.mockImplementation(async (cb: (sql: Sql) => Promise<unknown>) => cb(tx as unknown as Sql));
+    await withHarnessSchema('scalar-harness', async () => 'ok');
+    expect(tx).toHaveBeenCalledTimes(1);
+    const [template, searchPath] = tx.mock.calls[0]!;
+    expect((template as TemplateStringsArray).join('?')).toMatch(/^SELECT set_config\('search_path'.*true\),\s*pg_backend_pid\(\) AS diagnostic_pg_pid,/);
+    expect(searchPath).toContain('harness_shared');
   });
 
   it('retries a BEGIN-phase CONNECTION_CLOSED (callback never invoked) and eventually succeeds', async () => {
