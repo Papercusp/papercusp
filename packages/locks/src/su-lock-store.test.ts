@@ -8,8 +8,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readQueue, resolveLocksSqlDir, tryAcquire, tryHeartbeat } from './su-lock-store';
-import { tryHeartbeatResource } from './resource-lock-store';
+import { beginSuLockTransaction, readQueue, resolveLocksSqlDir, tryAcquire, tryHeartbeat } from './su-lock-store';
+import { sweepResourceExpired, tryHeartbeatResource } from './resource-lock-store';
+import { configureLocks, type ResourceExpiryRelease } from './config';
 
 const roots: string[] = [];
 
@@ -183,17 +184,51 @@ describe.each([
 });
 
 describe('readQueue', () => {
-  function fakePool() {
+  function fakePool(route: (statement: string) => unknown[] = () => []) {
     const statements: string[] = [];
     const sql = Object.assign(
       (strings: TemplateStringsArray) => {
-        statements.push(strings.join(' '));
-        return Promise.resolve([]);
+        const statement = strings.join(' ');
+        statements.push(statement);
+        return Promise.resolve(route(statement));
       },
       { begin: async (run: (tx: unknown) => Promise<unknown>) => run(sql) },
     );
     return { sql: sql as never, statements };
   }
+
+  it.each([false, true])('keeps queue reads free of resource-expiry notices (diagnostics=%s)', async (diagnostics) => {
+    const notices: ResourceExpiryRelease[] = [];
+    configureLocks({
+      getAdminBaseUrl: () => 'postgres://unused',
+      onResourceExpired: release => { notices.push(release); },
+    });
+    const pool = fakePool();
+
+    await readQueue(pool.sql, { coordinationDomain: null, includeCompleted: true },
+      diagnostics ? { onPhase: () => {} } : {});
+
+    expect(notices).toEqual([]);
+    expect(pool.statements.some(statement => /resource_(?:sweep|note|take)_|DELETE|UPDATE|INSERT/.test(statement))).toBe(false);
+  });
+
+  it('delivers a resource sweep receipt through the shared transaction wrapper', async () => {
+    const notices: ResourceExpiryRelease[] = [];
+    configureLocks({
+      getAdminBaseUrl: () => 'postgres://unused',
+      onResourceExpired: release => { notices.push(release); },
+    });
+    const pool = fakePool(statement => {
+      if (statement.includes('DELETE FROM agent_resource_locks')) return [{ resource: 'git-sync:test', mode: 'exclusive' }];
+      if (statement.includes('resource_take_expiry_releases')) return [{ resource: 'git-sync:test', coordination_domain: 'test-domain' }];
+      return [];
+    });
+
+    await beginSuLockTransaction(pool.sql, tx => sweepResourceExpired(tx as never, 'test-domain'));
+
+    expect(notices).toEqual([{ resource: 'git-sync:test', coordinationDomain: 'test-domain' }]);
+    expect(pool.statements.some(statement => statement.includes('resource_take_expiry_releases'))).toBe(true);
+  });
 
   it('skips the waiter query when a caller only needs active locks', async () => {
     const pool = fakePool();
