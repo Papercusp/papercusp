@@ -1,0 +1,52 @@
+-- Migration 1622: carry-note checkpoints have no BM25 reader. The index was
+-- maintained by every checkpoint UPSERT despite no current lexical call site.
+-- Keep note_tsv and its GIN index available to the legacy fallback.
+
+CREATE OR REPLACE FUNCTION harness_shared.bm25_corpus_indexes()
+RETURNS TABLE (index_name text, table_name text, text_expr text, text_config text)
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS $fn$
+  VALUES
+    ('work_items_bm25', 'work_items', $e$coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(notes, '')$e$, 'english'),
+    ('harness_plans_bm25', 'harness_plans', $e$coalesce(title, '') || ' ' || coalesce(content, '')$e$, 'english'),
+    ('goals_bm25', 'goals', $e$coalesce(title, '') || ' ' || coalesce(body, '')$e$, 'english'),
+    ('report_library_bm25', 'report_library', $e$coalesce(title, '') || ' ' || coalesce(summary, '') || ' ' || coalesce(subject_label, '') || ' ' || left(coalesce(body_md, ''), 200000)$e$, 'english'),
+    ('session_turns_bm25', 'session_turns', $e$left(coalesce(text, ''), 20000)$e$, 'english'),
+    ('documents_bm25', 'documents', $e$coalesce(title, '') || ' ' || coalesce(text, '')$e$, 'english'),
+    ('coord_thread_posts_bm25', 'coord_thread_posts', $e$coalesce(body, '')$e$, 'english'),
+    ('code_recipes_bm25', 'code_recipes', $e$coalesce(title, '') || ' ' || coalesce(description, '')$e$, 'english'),
+    ('datatype_registry_bm25', 'datatype_registry', $e$coalesce(title, '') || ' ' || coalesce(description, '')$e$, 'english'),
+    ('event_key_registry_bm25', 'event_key_registry', $e$coalesce(title, '') || ' ' || coalesce(description, '')$e$, 'english'),
+    ('capability_class_registry_bm25', 'capability_class_registry', $e$coalesce(title, '') || ' ' || coalesce(description, '')$e$, 'english'),
+    ('audit_log_bm25', 'audit_log', $e$coalesce(subject, '') || ' ' || coalesce(action, '') || ' ' || coalesce(actor, '')$e$, 'simple'),
+    ('harness_escalations_bm25', 'harness_escalations', $e$coalesce(escalation, '') || ' ' || coalesce(supervisor_notes, '')$e$, 'english'),
+    ('harness_decisions_bm25', 'harness_decisions', $e$coalesce(verb, '') || ' ' || coalesce(args, '')$e$, 'english'),
+    ('harness_brainstorm_bm25', 'harness_brainstorm', $e$coalesce(content, '')$e$, 'english')
+$fn$;
+
+COMMENT ON FUNCTION harness_shared.bm25_corpus_indexes() IS
+  'BM25 corpora used by current lexical readers; must match packages/operator-core/lib/search/lexical/corpora.ts.';
+
+CREATE OR REPLACE FUNCTION harness_shared.bm25_legacy_tsv_columns()
+RETURNS TABLE (table_name text, column_name text, trigger_expr text, kept_for text)
+LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS $fn$
+  VALUES
+    ('work_items', '_search', NULL::text, 'exact-list'::text),
+    ('harness_plans', '_search', NULL, 'exact-list'),
+    ('goals', '_search', NULL, NULL),
+    ('report_library', 'search_tsv', NULL, NULL),
+    ('session_turns', 'text_tsv', NULL, 'exact-list'),
+    ('documents', 'text_tsv', NULL, NULL),
+    ('coord_thread_posts', 'body_tsv', NULL, NULL),
+    ('code_recipes', 'title_tsv', NULL, NULL),
+    ('datatype_registry', 'title_tsv', NULL, NULL),
+    ('event_key_registry', 'title_tsv', NULL, NULL),
+    ('capability_class_registry', 'title_tsv', NULL, NULL),
+    ('audit_log', '_search', NULL, NULL),
+    ('harness_escalations', 'body_tsv', $e$setweight(to_tsvector('english'::regconfig, COALESCE(escalation, ''::text)), 'A'::"char") || setweight(to_tsvector('english'::regconfig, COALESCE(supervisor_notes, ''::text)), 'B'::"char")$e$, NULL),
+    ('harness_decisions', 'body_tsv', $e$to_tsvector('english'::regconfig, (COALESCE(verb, ''::text) || ' '::text) || COALESCE(args, ''::text))$e$, NULL),
+    ('harness_brainstorm', 'content_tsv', $e$to_tsvector('english'::regconfig, COALESCE(content, ''::text))$e$, NULL)
+$fn$;
+
+DROP INDEX IF EXISTS harness_shared.carry_notes_bm25;
