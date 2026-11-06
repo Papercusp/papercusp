@@ -65,7 +65,6 @@ AS $fn$
     ('session_turns', 'text_tsv', NULL, 'exact-list'),
     ('documents', 'text_tsv', NULL, NULL),
     ('coord_thread_posts', 'body_tsv', NULL, NULL),
-    ('carry_notes', 'note_tsv', NULL, NULL),
     ('code_recipes', 'title_tsv', NULL, NULL),
     ('datatype_registry', 'title_tsv', NULL, NULL),
     ('event_key_registry', 'title_tsv', NULL, NULL),
