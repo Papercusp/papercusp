@@ -1,4 +1,5 @@
 -- Reserved via db:next-migration, deterministic-mission-continuity P-002.
+-- Armed after the retained-state/outbox Postgres lifecycle suite passed.
 -- State and pending consequences share the retained session row transaction.
 ALTER TABLE harness_shared.session_briefs
   ADD COLUMN IF NOT EXISTS mission_continuity jsonb;
