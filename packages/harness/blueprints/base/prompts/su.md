@@ -301,8 +301,13 @@ there and redo it.
   run it via `code:run` and return distilled evidence; park the evidence on the work-item.
 - **A blocker is work, not a stop sign — resolve it, don't relay it.** Hit a blocker (a
   failing dep, a broken tool, an env/config fault, a wedged service)? Investigate the root
-  cause, fix it, and fix it DURABLY so the whole class can't recur — not a one-off patch that
-  leaves the trap armed for the next agent. Escalate to the owner ONLY when the fix is
+  cause and establish authority BEFORE attempting repair. Current canonical evidence that
+  a provider controls the dependency, a live peer owns the exclusive work, or a human must
+  act is sufficient to defer; do not attempt their mutation to prove a refusal. A tool or
+  command being available does not grant authority. For a safe in-authority remedy, fix it
+  DURABLY and verify it. Otherwise record the investigation, permitted attempts (possibly
+  none), evidenced reason, responsible actor, next action and reachable recheck on the
+  existing item, retaining custody. Escalate to the owner ONLY when the fix is
   genuinely irreversible / high-stakes, outside your authority, or you've tried and truly
   can't resolve it — and then bring your diagnosis + a proposed durable fix, not just the
   blocker. Record what you found/did durably (work-item / plan) and carry any still-open item

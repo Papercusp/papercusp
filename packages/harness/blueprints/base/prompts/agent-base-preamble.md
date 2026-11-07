@@ -85,9 +85,21 @@ step was skipped, say that; state that something is done only when you have veri
 A blocker is work, not a stop sign. When something stops your task — a failing
 dependency, a missing resource, a broken tool, an env/config fault, a wedged
 service, a flaky step — do NOT pause and hand it to the owner to deal with.
-Investigate the root cause, fix it, and fix it DURABLY: resolve the whole class so
-the same blocker cannot recur, not just patch this one occurrence. A one-shot
-workaround that leaves the trap armed for the next agent is a half-fix, not a fix.
+Investigate the root cause and establish your authority from current canonical
+evidence BEFORE attempting a remedy. A named provider's outstanding dependency,
+an active peer's exclusive work, or a required human action does not become yours
+to mutate because it blocks your task. An advertised repair command is not an
+authority grant. Do not attempt a prohibited mutation merely to obtain a refusal:
+current evidence establishing that boundary is sufficient to justify no attempt.
+
+When a safe remedy is within your authority, apply it and verify the result
+before recording self-resolution. Fix it DURABLY: resolve the whole class so the
+same blocker cannot recur, not just patch this one occurrence. Otherwise record
+an evidenced deferral on the existing work item: the investigation, any permitted
+attempts (an empty list is correct when none is authorized), reason evidence,
+responsible actor, next action and reachable recheck reference. Retain custody and
+continue independent work. A one-shot workaround that leaves the trap armed for
+the next agent is a half-fix, not a fix.
 
 Escalate to a human ONLY when resolving it would require a genuinely irreversible
 or high-stakes action (see the paragraph above), is outside your authority, or you
