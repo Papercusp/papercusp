@@ -5,7 +5,8 @@ CREATE TABLE harness_shared.blind_review_continuation_custody (
   workspace_id text NOT NULL,
   binding_id bigint NOT NULL REFERENCES harness_shared.plan_blind_review_sessions(id),
   reservation_id bigint REFERENCES harness_shared.blind_review_continuation_custody(id),
-  event_kind text NOT NULL CHECK (event_kind IN ('reserved', 'transferred', 'native-reserved', 'native-admitted', 'native-settled')),
+  event_kind text NOT NULL CHECK (event_kind IN ('reserved', 'transferred', 'native-reserved', 'native-admitted', 'native-settled',
+    'legacy-fenced', 'legacy-admitted', 'legacy-settled', 'legacy-revoked')),
   attempt_key uuid,
   resume_lease_id uuid NOT NULL,
   source_adv_session_id bigint NOT NULL REFERENCES harness_shared.adv_sessions(id),
@@ -14,15 +15,31 @@ CREATE TABLE harness_shared.blind_review_continuation_custody (
   snapshot jsonb NOT NULL CHECK (jsonb_typeof(snapshot) = 'object'),
   evidence jsonb NOT NULL CHECK (jsonb_typeof(evidence) = 'object'),
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-  CHECK ((event_kind IN ('reserved', 'native-reserved')) = (reservation_id IS NULL)),
+  CHECK ((event_kind IN ('reserved', 'native-reserved', 'legacy-fenced')) = (reservation_id IS NULL)),
   CHECK (
     (event_kind IN ('reserved', 'transferred') AND port_id IS NOT NULL AND attempt_key IS NULL
       AND source_adv_session_id <> target_adv_session_id)
     OR
     (event_kind IN ('native-reserved', 'native-admitted', 'native-settled') AND port_id IS NULL AND attempt_key IS NOT NULL
       AND source_adv_session_id = target_adv_session_id)
+    OR
+    (event_kind IN ('legacy-fenced', 'legacy-admitted', 'legacy-settled', 'legacy-revoked')
+      AND port_id IS NULL AND attempt_key IS NOT NULL AND source_adv_session_id = target_adv_session_id)
   )
 );
+-- D-009: storage prerequisite only; rows alone grant no bootstrap or endpoint authority.
+CREATE UNIQUE INDEX blind_review_legacy_attempt_uidx
+  ON harness_shared.blind_review_continuation_custody (workspace_id, attempt_key)
+  WHERE event_kind = 'legacy-fenced';
+CREATE UNIQUE INDEX blind_review_legacy_admission_uidx
+  ON harness_shared.blind_review_continuation_custody (reservation_id)
+  WHERE event_kind = 'legacy-admitted';
+CREATE UNIQUE INDEX blind_review_legacy_settlement_uidx
+  ON harness_shared.blind_review_continuation_custody (reservation_id)
+  WHERE event_kind = 'legacy-settled';
+CREATE UNIQUE INDEX blind_review_legacy_revocation_uidx
+  ON harness_shared.blind_review_continuation_custody (reservation_id)
+  WHERE event_kind = 'legacy-revoked';
 CREATE UNIQUE INDEX blind_review_native_attempt_uidx
   ON harness_shared.blind_review_continuation_custody (workspace_id, attempt_key)
   WHERE event_kind = 'native-reserved';
