@@ -1051,31 +1051,39 @@ export async function startEmbeddedPostgresServer(opts = {}) {
     // Create the target database if missing. embedded-postgres always
     // creates `postgres` as superuser; we add `papercusp` separately so
     // it has the same name across web + desktop deployments.
-    const sysSql = hostCredentials
-      ? await openOwnerClient({
-          port,
-          database: 'postgres',
-          password: secrets.owner,
-          fallback: DEFAULT_OWNER_PWD,
-          log,
-        })
-      : postgres({
-          host: 'localhost',
-          port,
-          user: DEFAULT_OWNER,
-          password: secrets.owner,
-          database: 'postgres',
-          max: 1,
-        });
-    try {
-      const exists = await sysSql`SELECT 1 FROM pg_database WHERE datname = ${dbName}`;
-      if (exists.length === 0) {
-        log(`creating database ${dbName}`);
-        await sysSql.unsafe(`CREATE DATABASE ${dbName}`);
-      }
-    } finally {
-      await sysSql.end({ timeout: 2 }).catch(() => {});
-    }
+    await startPostgresWithDiagnostics({
+      phase: 'bootstrap-query',
+      port,
+      dataDir,
+      recentLines: pgLogWindow.lines,
+      start: async () => {
+        const sysSql = hostCredentials
+          ? await openOwnerClient({
+              port,
+              database: 'postgres',
+              password: secrets.owner,
+              fallback: DEFAULT_OWNER_PWD,
+              log,
+            })
+          : postgres({
+              host: 'localhost',
+              port,
+              user: DEFAULT_OWNER,
+              password: secrets.owner,
+              database: 'postgres',
+              max: 1,
+            });
+        try {
+          const exists = await sysSql`SELECT 1 FROM pg_database WHERE datname = ${dbName}`;
+          if (exists.length === 0) {
+            log(`creating database ${dbName}`);
+            await sysSql.unsafe(`CREATE DATABASE ${dbName}`);
+          }
+        } finally {
+          await sysSql.end({ timeout: 2 }).catch(() => {});
+        }
+      },
+    });
 
     // Connect to the target DB to set up framework roles + apply migrations.
     const sql = postgres({

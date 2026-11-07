@@ -19,31 +19,37 @@ export function createPostgresLogWindow(size?: number): {
  * Add actionable context when embedded-postgres fails before the postmaster is ready.
  * Its start promise can reject with a non-Error value, including undefined, so the
  * captured postmaster output is part of the only useful diagnostic in that case.
- * @param {{ cause: unknown, port: number, dataDir: string, recentLines: readonly string[] }} opts
+ * @param {{ cause: unknown, port: number, dataDir: string, recentLines: readonly string[], diagnostics?: PostgresStartupDiagnostics }} opts
  * @returns {Error}
  */
-export function createPostgresStartupError({ cause, port, dataDir, recentLines }: {
+export function createPostgresStartupError({ cause, port, dataDir, recentLines, diagnostics }: {
     cause: unknown;
     port: number;
     dataDir: string;
     recentLines: readonly string[];
+    diagnostics?: PostgresStartupDiagnostics;
 }): Error;
 /**
- * Normalize embedded-postgres startup failures while preserving the original cause.
+ * Observe connection phases without replacing the transport or consuming socket data.
+ * Async context keeps concurrent bootstraps and unrelated clients out of the trace.
+ * Listeners and the channel subscription live only as long as this operation.
+ * @template T
  * @param {{
- *   start: () => Promise<void>,
+ *   start: () => Promise<T>,
  *   port: number,
  *   dataDir: string,
  *   recentLines: () => readonly string[],
+ *   phase?: 'postmaster' | 'bootstrap-query',
  * }} opts
- * @returns {Promise<void>}
+ * @returns {Promise<T>}
  */
-export function startPostgresWithDiagnostics({ start, port, dataDir, recentLines }: {
-    start: () => Promise<void>;
+export function startPostgresWithDiagnostics<T>({ start, port, dataDir, recentLines, phase }: {
+    start: () => Promise<T>;
     port: number;
     dataDir: string;
     recentLines: () => readonly string[];
-}): Promise<void>;
+    phase?: "postmaster" | "bootstrap-query";
+}): Promise<T>;
 /**
  * True when a child process has already exited, so waiting for its 'exit' event
  * would hang forever (node emits 'exit' once and never replays it).
@@ -110,6 +116,16 @@ export function superviseEmbeddedPostgres(deps: {
     stop(): Promise<void>;
 };
 /**
+ * @typedef {{
+ *   phase: 'postmaster' | 'bootstrap-query',
+ *   elapsedMs: number,
+ *   sockets: Array<{ id: number, connecting: boolean, destroyed: boolean,
+ *     bytesRead: number, bytesWritten: number, remoteAddress?: string, remotePort?: number }>,
+ *   events: Array<{ socket: number, event: string, atMs: number,
+ *     code?: string, address?: string, port?: number, family?: string | number }>,
+ * }} PostgresStartupDiagnostics
+ */
+/**
  * Restart delays (ms) for a postmaster that exited on its own. The last step repeats.
  */
 export const PG_RESTART_BACKOFF_MS: readonly number[];
@@ -134,4 +150,26 @@ export type PostgresSupervisorHealth = {
         cause: string;
         freeBytes: number | null;
     };
+};
+export type PostgresStartupDiagnostics = {
+    phase: "postmaster" | "bootstrap-query";
+    elapsedMs: number;
+    sockets: Array<{
+        id: number;
+        connecting: boolean;
+        destroyed: boolean;
+        bytesRead: number;
+        bytesWritten: number;
+        remoteAddress?: string;
+        remotePort?: number;
+    }>;
+    events: Array<{
+        socket: number;
+        event: string;
+        atMs: number;
+        code?: string;
+        address?: string;
+        port?: number;
+        family?: string | number;
+    }>;
 };

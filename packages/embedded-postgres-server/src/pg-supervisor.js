@@ -12,6 +12,26 @@
 // recover until space is freed; when it is, the next attempt must succeed without an
 // operator restart.
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { channel } from 'node:diagnostics_channel';
+import { errorMonitor } from 'node:events';
+
+const startupOperation = new AsyncLocalStorage();
+const clientSocketChannel = channel('net.client.socket');
+const MAX_STARTUP_SOCKETS = 8;
+const MAX_STARTUP_SOCKET_EVENTS = 32;
+
+/**
+ * @typedef {{
+ *   phase: 'postmaster' | 'bootstrap-query',
+ *   elapsedMs: number,
+ *   sockets: Array<{ id: number, connecting: boolean, destroyed: boolean,
+ *     bytesRead: number, bytesWritten: number, remoteAddress?: string, remotePort?: number }>,
+ *   events: Array<{ socket: number, event: string, atMs: number,
+ *     code?: string, address?: string, port?: number, family?: string | number }>,
+ * }} PostgresStartupDiagnostics
+ */
+
 /**
  * Restart delays (ms) for a postmaster that exited on its own. The last step repeats.
  */
@@ -55,10 +75,10 @@ export function createPostgresLogWindow(size = PG_DEATH_LOG_WINDOW) {
  * Add actionable context when embedded-postgres fails before the postmaster is ready.
  * Its start promise can reject with a non-Error value, including undefined, so the
  * captured postmaster output is part of the only useful diagnostic in that case.
- * @param {{ cause: unknown, port: number, dataDir: string, recentLines: readonly string[] }} opts
+ * @param {{ cause: unknown, port: number, dataDir: string, recentLines: readonly string[], diagnostics?: PostgresStartupDiagnostics }} opts
  * @returns {Error}
  */
-export function createPostgresStartupError({ cause, port, dataDir, recentLines }) {
+export function createPostgresStartupError({ cause, port, dataDir, recentLines, diagnostics }) {
   let causeDescription;
   if (cause instanceof Error) {
     causeDescription = cause.message
@@ -86,32 +106,93 @@ export function createPostgresStartupError({ cause, port, dataDir, recentLines }
   const logContext = lines.length > 0
     ? `\nRecent PostgreSQL startup output (last ${lines.length} lines):\n${lines.join('\n')}`
     : '\nNo PostgreSQL startup output was captured.';
-  return new Error(
-    `PostgreSQL failed to start on localhost:${port} using data directory ${JSON.stringify(dataDir)}: ${causeDescription}${logContext}`,
+  const phase = diagnostics?.phase === 'bootstrap-query' ? 'failed during bootstrap-query' : 'failed to start';
+  const socketContext = diagnostics
+    ? `\nPostgreSQL startup phases: ${JSON.stringify(diagnostics)}`
+    : '';
+  return Object.assign(new Error(
+    `PostgreSQL ${phase} on localhost:${port} using data directory ${JSON.stringify(dataDir)}: ${causeDescription}${socketContext}${logContext}`,
     { cause },
-  );
+  ), { postgresStartup: diagnostics });
 }
 
 /**
- * Normalize embedded-postgres startup failures while preserving the original cause.
+ * Observe connection phases without replacing the transport or consuming socket data.
+ * Async context keeps concurrent bootstraps and unrelated clients out of the trace.
+ * Listeners and the channel subscription live only as long as this operation.
+ * @template T
  * @param {{
- *   start: () => Promise<void>,
+ *   start: () => Promise<T>,
  *   port: number,
  *   dataDir: string,
  *   recentLines: () => readonly string[],
+ *   phase?: 'postmaster' | 'bootstrap-query',
  * }} opts
- * @returns {Promise<void>}
+ * @returns {Promise<T>}
  */
-export async function startPostgresWithDiagnostics({ start, port, dataDir, recentLines }) {
+export async function startPostgresWithDiagnostics({ start, port, dataDir, recentLines, phase = 'postmaster' }) {
+  const operation = Symbol('postgres-startup');
+  const startedAt = Date.now();
+  /** @type {PostgresStartupDiagnostics['events']} */
+  const events = [];
+  /** @type {Map<import('node:net').Socket, number>} */
+  const sockets = new Map();
+  /** @type {Array<() => void>} */
+  const cleanup = [];
+  let active = true;
+  /** @param {unknown} message */
+  const observeSocket = (message) => {
+    if (!active || startupOperation.getStore() !== operation || sockets.size >= MAX_STARTUP_SOCKETS) return;
+    const socket = /** @type {{ socket: import('node:net').Socket }} */ (message).socket;
+    if (!socket || sockets.has(socket)) return;
+    const id = sockets.size + 1;
+    sockets.set(socket, id);
+    /** @param {string} event @param {Partial<PostgresStartupDiagnostics['events'][number]>} [detail] */
+    const record = (event, detail = {}) => {
+      if (active && events.length < MAX_STARTUP_SOCKET_EVENTS) {
+        events.push({ socket: id, event, atMs: Date.now() - startedAt, ...detail });
+      }
+    };
+    /** @param {string | symbol} event @param {(...args: any[]) => void} listener */
+    const listen = (event, listener) => {
+      socket.on(event, listener);
+      cleanup.push(() => socket.removeListener(event, listener));
+    };
+    record('created');
+    listen('lookup', (error, address, family) => record('lookup', { code: error?.code, address, family }));
+    listen('connectionAttempt', (address, port, family) => record('connectionAttempt', { address, port, family }));
+    listen('connectionAttemptFailed', (address, port, family, error) => record('connectionAttemptFailed', { address, port, family, code: error?.code }));
+    listen('connectionAttemptTimeout', (address, port, family) => record('connectionAttemptTimeout', { address, port, family }));
+    listen('connect', () => record('connect'));
+    // errorMonitor observes failures without turning an unhandled socket error into a handled one.
+    listen(errorMonitor, (error) => record('error', { code: error?.code }));
+    listen('timeout', () => record('timeout'));
+    listen('close', () => record('close'));
+  };
+  clientSocketChannel.subscribe(observeSocket);
   try {
-    await start();
+    return await startupOperation.run(operation, start);
   } catch (cause) {
     throw createPostgresStartupError({
       cause,
       port,
       dataDir,
       recentLines: recentLines(),
+      diagnostics: {
+        phase,
+        elapsedMs: Date.now() - startedAt,
+        events,
+        sockets: [...sockets].map(([socket, id]) => ({
+          id, connecting: socket.connecting, destroyed: socket.destroyed,
+          bytesRead: socket.bytesRead, bytesWritten: socket.bytesWritten,
+          remoteAddress: socket.remoteAddress, remotePort: socket.remotePort,
+        })),
+      },
     });
+  } finally {
+    active = false;
+    clientSocketChannel.unsubscribe(observeSocket);
+    for (const remove of cleanup) remove();
   }
 }
 
