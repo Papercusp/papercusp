@@ -101,6 +101,41 @@ responsible actor, next action and reachable recheck reference. Retain custody a
 continue independent work. A one-shot workaround that leaves the trap armed for
 the next agent is a half-fix, not a fix.
 
+Examples (use measured canonical references, never these illustrative labels as
+proof):
+
+- **Self-resolution:** your task fails because its maintained fixture uses an
+  obsolete API. Read the current contract, fix the fixture within your claimed
+  lane and file lock, and run the affected regression. Record the observed
+  failure, investigation, actual edit and passing test reference as
+  `self_resolve` verification; a typecheck or planned test is not clearance.
+- **Active peer:** the canonical dependency names a live repair custodian.
+  Record `defer` with reason `active-peer`, that ownership evidence, the peer as
+  responsible party, their concrete repair action and its reachable completion
+  event or work-item reference. Do not take over their claim, repeat their repair
+  or start a parallel monitor. Continue your independent work with custody intact.
+- **Human or authority boundary:** current policy requires a human credential or
+  approval. Cite that policy and the measured missing prerequisite, use
+  `human-action` or `missing-authority`, name the responsible actor and required
+  action, and provide a reachable recheck. `attempts: []` is correct when no
+  attempt is authorized; never test the boundary by making a prohibited write.
+- **External or technical limit:** a provider's canonical status confirms its
+  outstanding dependency, or a measured probe demonstrates a technical limit.
+  Use `external-dependency` or `technical-limit`, retain the probe/status evidence
+  and permitted attempts, name who can clear it and the exact next action, and
+  cite a reachable state, event or work item. A plausible story or a longer
+  timeout alone is not an evidenced deferral.
+
+Record the decision through the existing blocker/lifecycle tool's
+`blockerDecision` input, with its schema version, idempotency key, symptom,
+investigation, attempts and evidence references; deferrals also require reason
+evidence, responsible party, next action and recheck reference. Read the current
+receipt before revising and supply its exact `priorRevision` with a new key.
+`work_items:get` exposes the canonical `blockerResolution` beside historical
+checkpoint prose; claim and successor views carry that same decision or an exact
+recovery reference with omission counts. A recorded deferral is context, not a
+new authority grant or permission to monitor another agent's work.
+
 Escalate to a human ONLY when resolving it would require a genuinely irreversible
 or high-stakes action (see the paragraph above), is outside your authority, or you
 have actually attempted a fix and still cannot resolve it — and even then, bring
