@@ -223,6 +223,63 @@ beforeEach(() => {
   resetAcquireRegistryForTest();
 });
 
+describe('same-SELECT physical PostgreSQL correlation', () => {
+  const query = "SELECT set_config('app.workspace_id', $1, true), pg_backend_pid() AS diagnostic_pg_pid, statement_timestamp()::text AS diagnostic_statement_at";
+  const at = '2026-11-06 11:00:00.123456+00';
+  const record = (result: object, overrides = {}) => {
+    const hooks = createPgDiagnosticHooks('setup-scalars');
+    hooks.onresult({ ...completedInput, status: 'ok', rowCount: 1, query, result,
+      backendPid: 91, queryId: 42, ...overrides });
+    return pgResultDiagnosticSnapshot('setup-scalars').results.at(-1)!;
+  };
+
+  it('copies only validated server scalars while preserving exact query/request identity', () => {
+    const correlation = { processInstanceId: randomUUID(), buildSha: 'a'.repeat(40),
+      rowId: null, attemptId: randomUUID(), hopId: null, stage: null, boundary: null,
+      requestId: randomUUID(), operation: 'workItems.byHarness' };
+    setPgDiagnosticContextResolver(() => correlation);
+    const row = { diagnostic_pg_pid: 4231, diagnostic_statement_at: at,
+      set_config: 'do-not-retain-workspace', secret: 'test-do-not-retain-secret' };
+    const diagnostic = record([row], { context: capturePgDiagnosticContext() });
+    row.diagnostic_pg_pid = 999;
+    row.diagnostic_statement_at = 'changed';
+    expect(diagnostic).toMatchObject({ physicalBackendPid: 4231, serverStatementAt: at,
+      backendPid: 91, connectionId: 1, queryId: 42, correlationState: 'linked', correlation });
+    expect(diagnostic.source.poolInstanceId).toEqual(expect.any(String));
+    expect(diagnostic.recordedAt).toEqual(expect.any(Number));
+    const rendered = JSON.stringify(pgResultDiagnosticSnapshot('setup-scalars'));
+    expect(rendered).not.toContain('do-not-retain');
+    expect(rendered).not.toContain('set_config');
+    expect(rendered).not.toContain('objectRefs');
+  });
+
+  it.each([
+    [0, at], [-1, at], [1.5, at], [NaN, at], [2_147_483_648, at], ['4231', at],
+    [4231, 'infinity'], [4231, '2026-02-30 11:00:00+00'],
+    [4231, '2026-11-06 25:00:00+00'], [4231, at + ' secret'],
+    [4231, new Date(at)], [4231, null], [null, at],
+  ])('keeps absence explicit for invalid tuple (%s, %s)', (pid, time) => {
+    expect(record([{ diagnostic_pg_pid: pid, diagnostic_statement_at: time }])).toMatchObject({
+      physicalBackendPid: null, serverStatementAt: null,
+    });
+  });
+
+  it('ignores arbitrary, failed, multi-row, missing and accessor-backed result values', () => {
+    const row = { diagnostic_pg_pid: 4231, diagnostic_statement_at: at };
+    const getter = vi.fn(() => 4231);
+    const accessor = { diagnostic_statement_at: at };
+    Object.defineProperty(accessor, 'diagnostic_pg_pid', { get: getter });
+    for (const [result, overrides] of [
+      [[row], { query: 'SELECT arbitrary FROM private_table' }],
+      [[row], { status: 'error' }], [[row, row], {}], [[], {}], [[{}], {}],
+      [[accessor], {}], [[row], { rowCount: 2 }],
+    ] as const) {
+      expect(record(result as object, overrides)).toMatchObject({ physicalBackendPid: null, serverStatementAt: null });
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+});
+
 describe('P011 exact decoded-object weak diagnostic guards', () => {
   it.each(BUILD_ROOTS)('observes the exact fulfilled single/multi-result object, never an error partial (%s)', (runtime) => {
     const connection = fs.readFileSync(path.join(PG_ROOT, runtime, 'connection.js'), 'utf8');
@@ -358,8 +415,10 @@ describe('P011 exact decoded-object weak diagnostic guards', () => {
       function record() {
         const hooks = registry.createPgDiagnosticHooks('org-app');
         const identity = hooks.onquerycontext();
-        const result = [{ id: 'released' }];
-        hooks.onresult({ connectionId: 1, queryId: 1, backendPid: null, query: 'select 1',
+        const result = [{ id: 'released', diagnostic_pg_pid: 4231,
+          diagnostic_statement_at: '2026-11-06 11:00:00.123456+00' }];
+        hooks.onresult({ connectionId: 1, queryId: 1, backendPid: null,
+          query: "SELECT set_config('app.workspace_id', $1, true), pg_backend_pid() AS diagnostic_pg_pid, statement_timestamp()::text AS diagnostic_statement_at",
           rowCount: 1, wireBytes: 1, status: 'ok', result, context: identity });
         registry.recordPgDiagnosticResponse(context, 'resolvedRows', [{ id: 'mapped' }]);
         registry.recordPgDiagnosticResponse(context, 'responseValue', { rows: result });
@@ -375,6 +434,9 @@ describe('P011 exact decoded-object weak diagnostic guards', () => {
         for (const ref of Object.values(refs)) if (ref.deref() !== undefined) throw new Error('diagnostic retained a released object');
         if (snapshot.results[1].objectRefs.decodedResult.deref() !== held) throw new Error('lost the positive retained control');
         if (registry.pgResultDiagnosticSnapshot('org-app').results.length !== 2) throw new Error('lost diagnostic metadata');
+        const retained = registry.pgResultDiagnosticSnapshot('org-app').results[0];
+        if (retained.physicalBackendPid !== 4231 || retained.serverStatementAt !== '2026-11-06 11:00:00.123456+00')
+          throw new Error('lost copied setup scalars after result collection');
         console.log('weak-lifetime-pass');
       })().catch(error => { console.error(error); process.exitCode = 1; });
     `;
