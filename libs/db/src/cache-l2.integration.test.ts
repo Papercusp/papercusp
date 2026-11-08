@@ -13,6 +13,7 @@
  *   cd libs/papercusp/libs/db && npx vitest run --config vitest.integration.config.ts src/cache-l2.integration.test.ts
  */
 import { dirname, join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import postgres, { type Sql } from 'postgres';
@@ -115,6 +116,28 @@ describe('migration 369 — cache_l2 + PgL2Store', () => {
     const got = await store.get<string>('ws1', 'k-upsert');
     expect(got!.value).toBe('second');
     expect(got!.tags).toEqual(['new']); // old tag gone, no lingering stale tags
+  });
+
+  it('reuses existing TOAST storage when refreshing an unchanged large value', async () => {
+    const value = randomBytes(512 * 1024).toString('base64');
+    const toastBytes = async (): Promise<number> => {
+      const rows = (await sql`
+        SELECT pg_relation_size(c.reltoastrelid)::bigint AS bytes
+        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='harness_shared' AND c.relname='cache_l2'
+      `) as { bytes: string }[];
+      return Number(rows[0]!.bytes);
+    };
+
+    await store.set('ws1', 'large-stable', value, { tags: ['stable'], hardTtlMs: 45_000 });
+    const initialToastBytes = await toastBytes();
+    for (let i = 0; i < 3; i++) {
+      nowMs += 1;
+      await store.set('ws1', 'large-stable', value, { tags: ['stable'], hardTtlMs: 45_000 });
+    }
+
+    expect(await toastBytes()).toBe(initialToastBytes);
+    expect((await store.get<string>('ws1', 'large-stable'))!.value).toBe(value);
   });
 
   it('invalidateByTag evicts every entry carrying the tag (array overlap)', async () => {
