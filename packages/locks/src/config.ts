@@ -1,3 +1,5 @@
+import type { ReleaseLockRow } from './su-lock-store';
+
 /**
  * Host seam for `@papercusp/locks`.
  *
@@ -84,6 +86,13 @@ export interface LocksHost {
   acquireDiagnostics?: AcquireDiagnostics;
   /** Committed expiry deletions which left no live exclusive successor. */
   onResourceExpired?: (release: ResourceExpiryRelease) => void | Promise<void>;
+  /** Preserve predecessor generations before release/expiry removes rows.
+   * Runs inside the lock transaction, before any successor can grant.
+   * Rejection retains the rows and prevents handoff. Non-Git hosts may omit. */
+  beforeFileLocksRelease?: (input: {
+    coordinationDomain: string;
+    rows: Array<ReleaseLockRow & { owner: string }>;
+  }) => Promise<void>;
 }
 
 let _host: LocksHost | null = null;

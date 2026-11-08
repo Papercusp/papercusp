@@ -423,12 +423,7 @@ export async function sweepWorkspaceExpired(
   tx: Sql,
   coordinationDomain: string,
 ): Promise<boolean> {
-  const expiredLocks = await tx<Array<{ path: string }>>`
-    DELETE FROM agent_file_locks
-     WHERE coordination_domain = ${coordinationDomain}
-       AND expires_ts <= clock_timestamp()
-    RETURNING path
-  `;
+  const expiredLocks = await deleteExpiredFileLocks(tx, coordinationDomain);
   // Orphaned 'waiting' waiters whose wait_until has passed but no one
   // marked them expired (bug #19). The head-waiter check now filters
   // waiters by wait_until so a stale row no longer BLOCKS acquires,
@@ -479,19 +474,58 @@ function filePathOverlap(sql: Sql, paths: readonly string[]) {
            OR agent_file_locks.path ^@ ANY(${descendants}::text[]))`;
 }
 
+export class FileLockPreservationError extends Error {
+  readonly reason = 'file_lock_preservation_failed';
+  constructor(cause: unknown) {
+    super(`file-lock preservation failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = 'FileLockPreservationError';
+  }
+}
+
+/** Preserve while predecessor rows still fence the next writer. Delete only
+ * that selection: a row expiring during capture has not yet been preserved.
+ * Stable lease identities reconcile custody committed before a txn failure. */
+async function deleteExpiredFileLocks(tx: Sql, coordinationDomain: string, paths?: string[]) {
+  const overlap = paths ? tx`AND ${filePathOverlap(tx, paths)}` : tx``;
+  const beforeExpire = locksHost().beforeFileLocksRelease;
+  if (!beforeExpire) {
+    return tx<Array<{ path: string }>>`
+      DELETE FROM agent_file_locks
+       WHERE coordination_domain = ${coordinationDomain} ${overlap}
+         AND expires_ts <= clock_timestamp()
+      RETURNING path
+    `;
+  }
+  const selected = await tx<Array<ReleaseLockRow & { owner: string }>>`
+    SELECT path, owner, lock_id::text, intent, goal_ref, acquired_ts,
+           extract(epoch FROM acquired_ts)::text AS acquired_identity
+      FROM agent_file_locks
+     WHERE coordination_domain = ${coordinationDomain} ${overlap}
+       AND expires_ts <= clock_timestamp()
+     ORDER BY path FOR UPDATE
+  `;
+  if (!selected.length) return [];
+  try {
+    await beforeExpire({ coordinationDomain, rows: selected });
+  } catch (cause) {
+    // Distinguish custody refusal from fail-open infrastructure diagnostics.
+    throw new FileLockPreservationError(cause);
+  }
+  return tx<Array<{ path: string }>>`
+    DELETE FROM agent_file_locks
+     WHERE coordination_domain = ${coordinationDomain}
+       AND path = ANY(${selected.map(row => row.path)}::text[])
+    RETURNING path
+  `;
+}
+
 export async function sweepPathsExpired(
   tx: Sql,
   coordinationDomain: string,
   paths: string[],
 ): Promise<boolean> {
   if (paths.length === 0) return false;
-  const expiredLocks = await tx<Array<{ path: string }>>`
-    DELETE FROM agent_file_locks
-     WHERE coordination_domain = ${coordinationDomain}
-       AND ${filePathOverlap(tx, paths)}
-       AND expires_ts <= clock_timestamp()
-    RETURNING path
-  `;
+  const expiredLocks = await deleteExpiredFileLocks(tx, coordinationDomain, paths);
   const orphanWaiters = await tx<Array<{ ticket_id: string }>>`
     UPDATE agent_lock_waiters
        SET status = 'expired'
@@ -835,8 +869,9 @@ export async function tryAcquire(
     return { ok: false, busy, reason: 'queued_waiter' };
   }
 
-  // Step 2b: pre-check that every NEW path (not already ours) is
-  // either free or expired. Otherwise an upsert that partially fails
+  // Step 2b: every NEW path must be free or owned by us. An expired row
+  // that survived the sweep still needs custody; it is not stealable.
+  // Otherwise an upsert that partially fails
   // would still refresh our existing rows as a side effect (extending
   // their TTL and clobbering their intent). We deliberately mutate
   // ONLY on full success.
@@ -845,11 +880,11 @@ export async function tryAcquire(
       SELECT path FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain}
          AND ${filePathOverlap(tx, newPaths)}
-         AND expires_ts > clock_timestamp()
-         AND owner != ${owner}
+         AND (owner != ${owner} OR expires_ts <= clock_timestamp())
     `;
     if (blockedRows.length > 0) {
       const busy = await readBusySnapshot(tx, coordinationDomain, paths, owner);
+      if (!busy.length) return { ok: false, busy, reason: 'upsert_race', retryable: true };
       return { ok: false, busy };
     }
   }
@@ -889,12 +924,10 @@ export async function tryAcquire(
           lock_id     = EXCLUDED.lock_id,
           acquired_ts = clock_timestamp(),
           expires_ts  = EXCLUDED.expires_ts
-      -- Refresh on two conditions:
-      --   1. Expired locks (anyone can steal a stale row).
-      --   2. Same-owner re-acquire (consecutive edits to the same
-      --      file must not lock the agent out of itself).
-      WHERE agent_file_locks.expires_ts <= clock_timestamp()
-         OR agent_file_locks.owner = EXCLUDED.owner
+      -- Expiry must pass through the protected sweep, even if it happened
+      -- during custody capture. Only refresh a live same-owner lease.
+      WHERE agent_file_locks.owner = EXCLUDED.owner
+        AND agent_file_locks.expires_ts > clock_timestamp()
     RETURNING path, lock_id, expires_ts
   `;
 
@@ -1131,7 +1164,11 @@ export async function tryFinishHookOperation(
     : data.captureReceipt;
   if (data.lockId && data.newlyHeld.length > 0) {
     const result = await tryRelease(tx, { coordinationDomain: params.coordinationDomain,
-      owner: params.owner, lockId: data.lockId, paths: data.newlyHeld });
+      owner: params.owner, lockId: data.lockId, paths: data.newlyHeld,
+      // Completion already preserved the exact native operation above;
+      // cancellation acknowledges no successful edit. Do not invent a second
+      // generation under the generic explicit-lease replay identity.
+      beforeRelease: async () => {} });
     released = result.released;
     heldBefore = result.heldBefore;
   }
@@ -1206,7 +1243,11 @@ export async function tryRelease(
   `;
   const heldBefore = heldBeforeRows[0]?.held ?? 0;
 
-  if (params.beforeRelease) {
+  const hostPreserve = locksHost().beforeFileLocksRelease;
+  const beforeRelease = params.beforeRelease ?? (hostPreserve
+    ? (rows: ReleaseLockRow[]) => hostPreserve({ coordinationDomain,
+      rows: rows.map(row => ({ ...row, owner })) }) : undefined);
+  if (beforeRelease) {
     const selection = allMine ? tx`` : lockId
       ? paths && paths.length > 0
         ? tx`AND lock_id = ${lockId}::uuid AND path = ANY(${paths}::text[])`
@@ -1221,7 +1262,7 @@ export async function tryRelease(
          AND expires_ts > clock_timestamp() ${selection}
        ORDER BY path FOR UPDATE
     `;
-    if (selected.length) await params.beforeRelease(selected);
+    if (selected.length) await beforeRelease(selected);
   }
 
   let released: Array<{ path: string }>;

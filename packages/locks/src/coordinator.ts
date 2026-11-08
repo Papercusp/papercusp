@@ -174,12 +174,8 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
   async reap(owner: string): Promise<number> {
     return inWorkspaceTxn(this.coordinationDomain, owner, async (tx) => {
       const reaped = await (tx as Sql)<Array<{ n: number }>>`
-        WITH d AS (
-          DELETE FROM agent_file_locks
-           WHERE coordination_domain = ${this.coordinationDomain} AND owner = ${owner}
-          RETURNING lock_id
-        )
-        SELECT COUNT(DISTINCT lock_id)::int AS n FROM d
+        SELECT COUNT(DISTINCT lock_id)::int AS n FROM agent_file_locks
+         WHERE coordination_domain = ${this.coordinationDomain} AND owner = ${owner}
       `;
       await (tx as Sql)`
         UPDATE agent_lock_waiters
@@ -190,7 +186,9 @@ export class SuLocksCoordinator implements FileClaimCoordinator {
       `;
       const n = reaped[0]?.n ?? 0;
       if (n > 0) {
-        await (tx as Sql)`SELECT grant_cascade(${this.coordinationDomain}, clock_timestamp())`;
+        // Reuse protected release and its host preservation/cascade. A dead
+        // owner must not make its last bytes disappear before the next grant.
+        await tryRelease(tx, { coordinationDomain: this.coordinationDomain, owner, allMine: true });
       }
       return n;
     });
