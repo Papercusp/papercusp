@@ -1152,6 +1152,18 @@ export interface ReleaseParams {
   /** Omit to read every path; an explicit empty array intentionally matches no paths. */
   paths?: string[];
   allMine?: boolean;
+  /** Host preservation runs with the exact live selection still fenced.
+   * Throwing rolls back release and cascade; stable host ids reconcile any
+   * external custody already written before the transaction failed. */
+  beforeRelease?: (rows: ReleaseLockRow[]) => Promise<void>;
+}
+
+export interface ReleaseLockRow {
+  path: string;
+  lock_id: string;
+  intent: string;
+  goal_ref: string | null;
+  acquired_ts: Date;
 }
 
 export async function tryRelease(
@@ -1191,6 +1203,23 @@ export async function tryRelease(
        AND owner = ${owner}
   `;
   const heldBefore = heldBeforeRows[0]?.held ?? 0;
+
+  if (params.beforeRelease) {
+    const selection = allMine ? tx`` : lockId
+      ? paths && paths.length > 0
+        ? tx`AND lock_id = ${lockId}::uuid AND path = ANY(${paths}::text[])`
+        : tx`AND lock_id = ${lockId}::uuid`
+      : null;
+    if (!selection) throw new Error('locks:release requires lock_id or all_mine');
+    const selected = await tx<ReleaseLockRow[]>`
+      SELECT path, lock_id::text, intent, goal_ref, acquired_ts
+        FROM agent_file_locks
+       WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
+         AND expires_ts > clock_timestamp() ${selection}
+       ORDER BY path FOR UPDATE
+    `;
+    if (selected.length) await params.beforeRelease(selected);
+  }
 
   let released: Array<{ path: string }>;
 
