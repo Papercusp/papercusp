@@ -1164,6 +1164,8 @@ export interface ReleaseLockRow {
   intent: string;
   goal_ref: string | null;
   acquired_ts: Date;
+  /** PostgreSQL timestamp precision retained for replay identity. */
+  acquired_identity?: string;
 }
 
 export async function tryRelease(
@@ -1212,7 +1214,8 @@ export async function tryRelease(
       : null;
     if (!selection) throw new Error('locks:release requires lock_id or all_mine');
     const selected = await tx<ReleaseLockRow[]>`
-      SELECT path, lock_id::text, intent, goal_ref, acquired_ts
+      SELECT path, lock_id::text, intent, goal_ref, acquired_ts,
+             extract(epoch FROM acquired_ts)::text AS acquired_identity
         FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
          AND expires_ts > clock_timestamp() ${selection}
