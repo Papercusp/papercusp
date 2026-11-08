@@ -7,12 +7,18 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { beginSuLockTransaction, readQueue, resolveLocksSqlDir, tryAcquire, tryHeartbeat } from './su-lock-store';
 import { sweepResourceExpired, tryHeartbeatResource } from './resource-lock-store';
 import { configureLocks, type ResourceExpiryRelease } from './config';
 
 const roots: string[] = [];
+
+beforeEach(() => {
+  // Store calls consult the host's preservation seam even with a fake SQL
+  // transaction. Configure that seam before the first acquisition test.
+  configureLocks({ getAdminBaseUrl: () => 'postgres://unused' });
+});
 
 function fixtureRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'locks-sql-dir-'));

@@ -77,10 +77,13 @@ function suUrl(): string {
   return main.replace(/\/[^/?]+(\?|$)/, '/papercusp_su$1');
 }
 
-function mainUrl(): string {
-  // For bootstrap (CREATE DATABASE) we must NOT be connected to the
-  // db we're creating. The injected admin URL targets the main db.
-  return locksHost().getAdminBaseUrl();
+function bootstrapUrl(): string {
+  // Advisory locks are database-local. Hosts with different main databases
+  // must rendezvous in the same maintenance database before creating the
+  // shared side database. Preserve the injected role, endpoint and options.
+  const url = new URL(locksHost().getAdminBaseUrl());
+  url.pathname = '/postgres';
+  return url.toString();
 }
 
 let txPool: Sql | null = null;
@@ -122,7 +125,7 @@ export async function beginSuLockTransaction<T>(
  * application_name so it is attributable in `pg_stat_activity` / `dev:pg_health`
  * (postgres-js always overrides a database-level `ALTER DATABASE ... SET
  * application_name` default with its own startup parameter, so that alone —
- * see `mainUrl()`'s ALTER DATABASE elsewhere in this codebase — does not
+ * see `ensureBootstrap()`'s ALTER DATABASE below — does not
  * work); (2) applies the WI-3816 dead-client zombie-detection GUC
  * (`client_connection_check_interval`) + tightened TCP keepalives, so a
  * long-lived pool whose OWNING PROCESS dies without a clean `.end()` (crash,
@@ -302,19 +305,27 @@ const SQL_DIR = resolveLocksSqlDir(
  * Called lazily on the first locks:* invocation per process.
  *
  * Steps:
- *   1. Probe `papercusp_su` existence via the main db. If missing, run
+ *   1. Reserve a maintenance connection and take a session advisory lock
+ *      across database creation, initial su_meta creation and migrations.
+ *   2. Probe `papercusp_su` existence. If missing, run
  *      `001-bootstrap.sql` (CREATE DATABASE — outside any txn).
- *   2. Connect to papercusp_su; take SHARE UPDATE EXCLUSIVE on su_meta
+ *   3. Connect to papercusp_su; take SHARE UPDATE EXCLUSIVE on su_meta
  *      (creating it first if needed); apply every NNN-*.sql whose
  *      number isn't in su_meta yet.
- *   3. Stamp the schema_version key in su_meta.
+ *   4. Close the maintenance connection, releasing its session lock even
+ *      when bootstrap fails. Only a successful bootstrap is memoized.
  */
 export async function ensureBootstrap(): Promise<void> {
   if (bootstrapped) return;
 
-  // Step 1: probe the side db, create if absent.
-  const main = postgres(mainUrl(), { max: 1, prepare: false });
+  const admin = postgres(bootstrapUrl(), { max: 1, prepare: false });
   try {
+    // Pin the session: a pool reconnect must not silently lose the lock and
+    // continue bootstrap on another connection. CREATE DATABASE cannot use
+    // a transaction advisory lock because it must run outside a transaction.
+    const main = await admin.reserve();
+    await main`SELECT pg_advisory_lock(${SU_LOCKS_FEATURE_KEY}, hashtext('su:bootstrap'))`;
+
     const rows = await main<Array<{ exists: boolean }>>`
       SELECT EXISTS(
         SELECT 1 FROM pg_database WHERE datname = 'papercusp_su'
@@ -334,55 +345,55 @@ export async function ensureBootstrap(): Promise<void> {
         "ALTER DATABASE papercusp_su SET application_name = 'papercusp-su'",
       ).simple();
     }
-  } finally {
-    await main.end({ timeout: 1 });
-  }
+    // Keep the maintenance lock through the initial table creation too:
+    // concurrent CREATE TABLE IF NOT EXISTS can still race in pg_type.
+    const sql = getTxPool();
 
-  // Step 2 + 3: connect to papercusp_su and apply migrations.
-  const sql = getTxPool();
-
-  // su_meta must exist before we can take SHARE UPDATE EXCLUSIVE on it.
-  // Bootstrap it outside the lock — CREATE TABLE IF NOT EXISTS is safe
-  // concurrently (the loser just no-ops).
-  await sql`
-    CREATE TABLE IF NOT EXISTS su_meta (
-      key   text PRIMARY KEY,
-      value text NOT NULL
-    )
-  `;
-
-  // Now serialize the migration runner across processes.
-  await beginSuLockTransaction(sql, async (tx) => {
-    await tx`LOCK TABLE su_meta IN SHARE UPDATE EXCLUSIVE MODE`;
-
-    const appliedRows = await tx<Array<{ key: string }>>`
-      SELECT key FROM su_meta WHERE key LIKE 'migration:%'
+    // su_meta must exist before its migration table lock can be acquired.
+    await sql`
+      CREATE TABLE IF NOT EXISTS su_meta (
+        key   text PRIMARY KEY,
+        value text NOT NULL
+      )
     `;
-    const applied = new Set(appliedRows.map((r) => r.key));
 
-    const files = fs
-      .readdirSync(SQL_DIR)
-      .filter((f) => /^\d{3}-.*\.sql$/.test(f))
-      .filter((f) => !f.endsWith('-bootstrap.sql'))
-      .sort();
+    // Retain the migration transaction's existing table-lock contract.
+    await beginSuLockTransaction(sql, async (tx) => {
+      await tx`LOCK TABLE su_meta IN SHARE UPDATE EXCLUSIVE MODE`;
 
-    for (const file of files) {
-      const key = `migration:${file}`;
-      if (applied.has(key)) continue;
-
-      const sqlText = fs.readFileSync(path.join(SQL_DIR, file), 'utf8');
-      // postgres-js `unsafe` runs as a single multi-statement script.
-      // We're inside a txn so any failure rolls back the whole file.
-      await tx.unsafe(sqlText);
-
-      await tx`
-        INSERT INTO su_meta (key, value) VALUES (${key}, ${new Date().toISOString()})
-        ON CONFLICT (key) DO NOTHING
+      const appliedRows = await tx<Array<{ key: string }>>`
+        SELECT key FROM su_meta WHERE key LIKE 'migration:%'
       `;
-    }
-  });
+      const applied = new Set(appliedRows.map((r) => r.key));
 
-  bootstrapped = true;
+      const files = fs
+        .readdirSync(SQL_DIR)
+        .filter((f) => /^\d{3}-.*\.sql$/.test(f))
+        .filter((f) => !f.endsWith('-bootstrap.sql'))
+        .sort();
+
+      for (const file of files) {
+        const key = `migration:${file}`;
+        if (applied.has(key)) continue;
+
+        const sqlText = fs.readFileSync(path.join(SQL_DIR, file), 'utf8');
+        // postgres-js `unsafe` runs as a single multi-statement script.
+        // We're inside a txn so any failure rolls back the whole file.
+        await tx.unsafe(sqlText);
+
+        await tx`
+          INSERT INTO su_meta (key, value) VALUES (${key}, ${new Date().toISOString()})
+          ON CONFLICT (key) DO NOTHING
+        `;
+      }
+    });
+
+    bootstrapped = true;
+  } finally {
+    // Closing the dedicated reserved session releases the advisory lock on
+    // success and every failure path, including a rejected migration.
+    await admin.end({ timeout: 1 });
+  }
   // The background expiry sweep (file-locking #4) is armed by
   // inWorkspaceTxn on the first mutating locks:* op — its timer lives
   // in workspace-listener.ts, the module that owns the locks
