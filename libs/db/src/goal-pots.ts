@@ -346,10 +346,49 @@ export async function goalSpend(
  */
 export async function portfolioSpend(
   sql: Sql,
-  opts: { workspaceId: string; goalIds?: string[]; sinceMs?: number },
-): Promise<{ costUsd: number; pots: number; byPot: PotSpend[] }> {
+  opts: { workspaceId: string; goalIds?: string[]; summaryOnly: true },
+): Promise<{ costUsd: number; pots: number }>;
+export async function portfolioSpend(
+  sql: Sql,
+  opts: { workspaceId: string; goalIds?: string[]; sinceMs?: number; summaryOnly?: false },
+): Promise<{ costUsd: number; pots: number; byPot: PotSpend[] }>;
+export async function portfolioSpend(
+  sql: Sql,
+  opts: { workspaceId: string; goalIds?: string[]; sinceMs?: number; summaryOnly?: boolean },
+): Promise<{ costUsd: number; pots: number; byPot?: PotSpend[] }> {
   const since = opts.sinceMs ?? 0;
   const goalIds = opts.goalIds ?? null;
+  if (opts.summaryOnly && opts.sinceMs === undefined) {
+    // The board needs totals, not a count of every historical sample. Reuse
+    // migration 1605's transactionally maintained totals. Existence excludes
+    // retained zero totals after deletion; the negative-time correction
+    // preserves the detailed reader's ts >= 0 boundary for legacy rows.
+    const [row] = await sql<Array<{ cost: number; pots: string }>>`
+      WITH linked AS (
+        SELECT DISTINCT harness_slug
+          FROM harness_shared.goal_pots
+         WHERE workspace_id = ${opts.workspaceId}
+           AND removed_at IS NULL
+           AND (${goalIds}::text[] IS NULL OR goal_id = ANY(${goalIds}::text[]))
+      )
+      SELECT COALESCE(SUM(t.total_cost_usd - COALESCE((
+               SELECT SUM(s.cost_usd)
+                 FROM harness_shared.agent_usage_samples s
+                WHERE s.workspace_id = t.workspace_id
+                  AND s.harness_slug = t.harness_slug AND s.ts < 0
+             ), 0)), 0) AS cost,
+             COUNT(*) AS pots
+        FROM harness_shared.agent_usage_harness_spend_totals t
+        JOIN linked l ON l.harness_slug = t.harness_slug
+       WHERE t.workspace_id = ${opts.workspaceId}
+         AND EXISTS (
+           SELECT 1 FROM harness_shared.agent_usage_samples s
+            WHERE s.workspace_id = t.workspace_id
+              AND s.harness_slug = t.harness_slug AND s.ts >= 0
+         )
+    `;
+    return { costUsd: Number(row?.cost ?? 0), pots: Number(row?.pots ?? 0) };
+  }
   const rows = await sql<Array<{ harness_slug: string; cost: string | null; samples: string }>>`
     WITH linked AS (
       -- DISTINCT is load-bearing: without it a pot linked to two of the named

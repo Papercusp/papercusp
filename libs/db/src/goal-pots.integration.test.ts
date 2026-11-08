@@ -253,6 +253,62 @@ describe('D-021 — goal meters DO NOT SUM', () => {
     const portfolio = await portfolioSpend(sql, { workspaceId: WS });
     expect(portfolio.costUsd).toBeCloseTo(2, 6);
   });
+
+  it('summarizes shared, unpriced and credited pots with the detailed reader boundaries', async () => {
+    await makeGoal('goal-a');
+    await makeGoal('goal-b');
+    for (const harnessSlug of ['shared', 'empty', 'unpriced', 'pre-epoch']) {
+      await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug });
+    }
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'shared' });
+    await linkPot(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'credit' });
+    await spend('shared', 10, 1);
+    await spend('unpriced', null, 2);
+    await spend('credit', -2, 3);
+    await spend('pre-epoch', 7, -1);
+    await spend('unlinked', 99, 4);
+    await sql`
+      INSERT INTO harness_shared.agent_usage_samples
+        (workspace_id, ts, bucket_key, provider, model_class, source, cost_usd, harness_slug)
+      VALUES ('other-workspace', 1, 'b', 'anthropic', 'sonnet', 'test', 1000, 'shared')
+    `;
+    const scope = { workspaceId: WS, goalIds: ['goal-a', 'goal-b'] };
+    const detailed = await portfolioSpend(sql, scope);
+    expect(detailed).toMatchObject({ costUsd: 8, pots: 3 });
+    expect(detailed.byPot.find(p => p.harnessSlug === 'unpriced')?.samples).toBe(1);
+    expect(await portfolioSpend(sql, { ...scope, summaryOnly: true })).toEqual({ costUsd: 8, pots: 3 });
+    expect(await portfolioSpend(sql, { workspaceId: WS, summaryOnly: true })).toEqual({ costUsd: 8, pots: 3 });
+    expect(await portfolioSpend(sql, { workspaceId: WS, goalIds: [], summaryOnly: true }))
+      .toEqual({ costUsd: 0, pots: 0 });
+    expect(await portfolioSpend(sql, { workspaceId: WS, goalIds: ['goal-a'], summaryOnly: true }))
+      .toEqual({ costUsd: 10, pots: 2 });
+    expect(await portfolioSpend(sql, { ...scope, sinceMs: 2 })).toMatchObject({ costUsd: -2, pots: 2 });
+    await unlinkPot(sql, { workspaceId: WS, goalId: 'goal-b', harnessSlug: 'credit' });
+    expect(await portfolioSpend(sql, { ...scope, summaryOnly: true })).toEqual({ costUsd: 10, pots: 2 });
+  });
+
+  it('keeps portfolio summaries exact after cost, harness, timestamp and deletion changes', async () => {
+    await makeGoal('goal-a');
+    for (const harnessSlug of ['original', 'moved', 'pre-epoch']) {
+      await linkPot(sql, { workspaceId: WS, goalId: 'goal-a', harnessSlug });
+    }
+    await spend('original', 5, 1);
+    await spend('pre-epoch', 7, -1);
+    const summary = () => portfolioSpend(sql, { workspaceId: WS, summaryOnly: true });
+    expect(await summary()).toEqual({ costUsd: 5, pots: 1 });
+    await sql`UPDATE harness_shared.agent_usage_samples SET cost_usd = 8
+      WHERE workspace_id = ${WS} AND harness_slug = 'original'`;
+    expect(await summary()).toEqual({ costUsd: 8, pots: 1 });
+    await sql`UPDATE harness_shared.agent_usage_samples SET harness_slug = 'moved'
+      WHERE workspace_id = ${WS} AND harness_slug = 'original'`;
+    expect(await summary()).toEqual({ costUsd: 8, pots: 1 });
+    await sql`UPDATE harness_shared.agent_usage_samples SET ts = 2
+      WHERE workspace_id = ${WS} AND harness_slug = 'pre-epoch'`;
+    expect(await summary()).toEqual({ costUsd: 15, pots: 2 });
+    await sql`DELETE FROM harness_shared.agent_usage_samples WHERE workspace_id = ${WS}`;
+    // The trigger retains zero-total rows; they are not pots with samples.
+    expect(await summary()).toEqual({ costUsd: 0, pots: 0 });
+  });
 });
 
 describe('one main owner per pot — enforced by the schema, not by convention', () => {
