@@ -1111,6 +1111,20 @@ export async function tryFinishHookOperation(
   const data = row.hook_operation!;
   let released: string[] = [];
   let heldBefore = 0;
+  if (params.outcome === 'completed' && params.beforeRelease && !data.captureReceipt) {
+    // The operation row survives TTL and handoff. Its historical 'granted'
+    // state alone is not authority to sample the current working version.
+    if (data.state !== 'granted' || !data.lockId || !data.held || data.held.length !== row.paths.length) {
+      throw new Error('operation_preservation_fence_lost');
+    }
+    const live = await tx<Array<{ path: string }>>`
+      SELECT path FROM agent_file_locks
+       WHERE coordination_domain = ${params.coordinationDomain} AND owner = ${params.owner}
+         AND path = ANY(${data.held}::text[]) AND expires_ts > clock_timestamp()
+         AND (NOT (path = ANY(${data.newlyHeld}::text[])) OR lock_id = ${data.lockId}::uuid)
+    `;
+    if (live.length !== data.held.length) throw new Error('operation_preservation_fence_lost');
+  }
   const captureReceipt = params.outcome === 'completed' && params.beforeRelease
     ? await params.beforeRelease({ requestedPaths: row.paths, goalRef: row.goal_ref,
       state: data.state, captureReceipt: data.captureReceipt })
