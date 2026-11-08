@@ -613,6 +613,9 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
         DELETE FROM agent_lock_waiters
          WHERE status IN ('granted','expired','cancelled')
            AND queued_ts < clock_timestamp() - interval '24 hours'
+           -- Pending preserved versions outlive the lease/session. Their host
+           -- settles the receipt before ordinary terminal-ticket collection.
+           AND (hook_operation->'captureReceipt'->>'pending') IS DISTINCT FROM 'true'
       `;
     });
   } catch (err) {
@@ -654,6 +657,8 @@ interface HookOperationData {
   held?: string[];
   lockId?: string;
   expiresTs?: string;
+  /** Host-owned preservation proof; never inferred from a terminal lease. */
+  captureReceipt?: Record<string, unknown>;
 }
 
 export type HookOperationRefusal = 'operation_conflict' | 'operation_expired' | 'operation_finished';
@@ -1078,13 +1083,25 @@ async function tryAcquireHookOperation(tx: Sql, params: AcquireParams): Promise<
 export type FinishHookOperationResult =
   | { ok: false; reason: 'operation_conflict' }
   | { ok: true; released: string[]; requestedPaths: string[]; goalRef: string | null;
-      heldBefore: number; state: 'cancelled' | 'completed' };
+      heldBefore: number; state: 'cancelled' | 'completed'; captureReceipt?: Record<string, unknown> };
 
 /** Same authority/domain/path transaction as acquire. A terminal ticket is
  * intentional: cancellation/completion may arrive BEFORE the acquire. */
 export async function tryFinishHookOperation(
   tx: Sql,
-  params: AcquireParams & { operation: HookLockOperation; outcome: 'cancelled' | 'completed' },
+  params: AcquireParams & {
+    operation: HookLockOperation;
+    outcome: 'cancelled' | 'completed';
+    /** Runs under the existing path transaction BEFORE release/cascade. The
+     * host must verify durable custody, including on replay. Throwing keeps
+     * the original lease and operation state; external effects need stable ids. */
+    beforeRelease?: (operation: {
+      requestedPaths: string[];
+      goalRef: string | null;
+      state: HookOperationState;
+      captureReceipt?: Record<string, unknown>;
+    }) => Promise<Record<string, unknown>>;
+  },
 ): Promise<FinishHookOperationResult> {
   if (!(params.automatic ?? params.intent.startsWith('PreToolUse:'))) {
     return { ok: false, reason: 'operation_conflict' };
@@ -1094,6 +1111,10 @@ export async function tryFinishHookOperation(
   const data = row.hook_operation!;
   let released: string[] = [];
   let heldBefore = 0;
+  const captureReceipt = params.outcome === 'completed' && params.beforeRelease
+    ? await params.beforeRelease({ requestedPaths: row.paths, goalRef: row.goal_ref,
+      state: data.state, captureReceipt: data.captureReceipt })
+    : data.captureReceipt;
   if (data.lockId && data.newlyHeld.length > 0) {
     const result = await tryRelease(tx, { coordinationDomain: params.coordinationDomain,
       owner: params.owner, lockId: data.lockId, paths: data.newlyHeld });
@@ -1102,8 +1123,10 @@ export async function tryFinishHookOperation(
   }
   // Positive completion may enrich cancellation but can never reopen it.
   const state = data.state === 'completed' ? 'completed' : params.outcome;
-  await saveHookOperation(tx, params, { ...data, state });
-  return { ok: true, released, requestedPaths: row.paths, goalRef: row.goal_ref, heldBefore, state };
+  await saveHookOperation(tx, params, { ...data, state,
+    ...(captureReceipt ? { captureReceipt } : {}) });
+  return { ok: true, released, requestedPaths: row.paths, goalRef: row.goal_ref, heldBefore, state,
+    ...(captureReceipt ? { captureReceipt } : {}) };
 }
 
 // ───────── Release ─────────
