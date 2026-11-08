@@ -1259,9 +1259,12 @@ export async function tryRelease(
              extract(epoch FROM acquired_ts)::text AS acquired_identity
         FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain} AND owner = ${owner}
-         AND expires_ts > clock_timestamp() ${selection}
+         ${selection}
        ORDER BY path FOR UPDATE
     `;
+    // A row may expire while the initial sweep preserves a different row.
+    // Release deletes that predecessor too, so expiry must not exclude it
+    // from the protected capture selection.
     if (selected.length) await beforeRelease(selected);
   }
 
