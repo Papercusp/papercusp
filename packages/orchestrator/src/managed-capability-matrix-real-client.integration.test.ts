@@ -406,3 +406,15 @@ describe('R-5 — offline recovery is a RECORDED deliberate exclusion, not unbui
     ).toEqual([]);
   });
 });
+
+describe('R-118 — bounded excluded-recovery requests through the production MCP path', () => {
+  it('refuses the named local recovery routes before an effect, with a successful managed read control', async context => {
+    // Keep this expensive runtime out of version/help and record-only selections.
+    const { recordIsolatedIntegrationProof } = await import('../../../../../packages/operator-core/test/isolated-integration-proof');
+    const { managedCapabilityApiProofOptions } = await import('../../../../../packages/operator-core/lib/agent-tools/capability/_managed-capability-api-proof');
+    const runId = await recordIsolatedIntegrationProof(managedCapabilityApiProofOptions(
+      'libs/papercusp/packages/orchestrator/src/managed-capability-matrix-real-client.integration.test.ts', 'offline-recovery'));
+    Object.assign(context.task.meta, { papercuspIsolatedRuntimeRunId: runId });
+    console.info('ISOLATED_EXCLUDED_RECOVERY_PROOF_RUN ' + runId);
+  }, 600_000);
+});
