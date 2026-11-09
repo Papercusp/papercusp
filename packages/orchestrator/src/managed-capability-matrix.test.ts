@@ -22,17 +22,135 @@ import {
   declareRealClientMatrix,
   realClientMatrixReport,
   scenarioResultFingerprint,
+  compareManagedCapabilityInventory,
+  type ManagedCapabilityMeasuredControl,
   type CapabilityDefaultEnablementRecord,
   type RealClientScenario,
   type RealClientScenarioResult,
 } from './managed-capability-matrix';
-import { MANAGED_CAPABILITY_DISPOSITIONS } from './managed-capability-contract';
+import { MANAGED_CAPABILITY_DISPOSITIONS, type ManagedCapabilityInventoryClaim } from './managed-capability-contract';
 import { CAPABILITY_CLIENT_ENFORCEMENT, MANAGED_CAPABILITY_RESTRICTIONS } from './managed-capability-policy';
 
 const NOW = new Date('2026-09-21T12:00:00.000Z');
 const FRESH = new Date(NOW.getTime() - 60_000).toISOString();
 const ANCIENT = new Date(NOW.getTime() - DEFAULT_SCENARIO_FRESHNESS_MS - 60_000).toISOString();
 const VERSION = '2.1.275';
+
+describe('inventory claim comparison against selected recorded controls', () => {
+  function fixture() {
+    const scenario = declareRealClientMatrix(undefined, { purpose: 'replacement-acceptance' })[0]!;
+    const identity = { planSlug: 'native-cutover', specId: 'exact-atom', specRevision: 4,
+      specFingerprint: 'spec-digest', barHash: 'bar-digest', sourceFingerprint: 'source-digest',
+      clientVersion: VERSION, runtimeFingerprint: 'runtime-digest', environmentFingerprint: 'environment-digest' };
+    const observations: ManagedCapabilityMeasuredControl[] = (['positive', 'refusal'] as const).map((role, i) => ({
+      ref: { bindingId: i + 1, file: 'canonical.test.ts', caseTitle: `journey ${role}`, occurrence: 0 },
+      evidenceRef: `spec-evidence:${i + 1}`, scenarioId: scenario.id, family: scenario.family,
+      client: scenario.client, identity: { ...identity }, role, outcome: 'pass', observedAt: FRESH,
+      currentness: 'current', withdrawn: false, live: true,
+    }));
+    const claim: ManagedCapabilityInventoryClaim = { scenarioId: scenario.id, identity, outcome: 'pass',
+      controls: { positive: observations[0]!.ref, refusal: observations[1]!.ref },
+      retainedEvidenceRefs: observations.map(o => o.evidenceRef) };
+    const inventory = [{ ...MANAGED_CAPABILITY_DISPOSITIONS.find(d => d.family === scenario.family)!,
+      gaps: [], cutoverReady: false, parityClaims: [claim] }];
+    const options = { scenarios: [scenario], inventory, observations,
+      previousInventory: [{ family: scenario.family, gapIds: [] as string[] }],
+      clientVersions: { [scenario.client]: VERSION }, now: NOW };
+    return { scenario, identity, claim, observations, inventory, options,
+      compare: () => compareManagedCapabilityInventory(options) };
+  }
+
+  it('calibrates on an exact current live positive/refusal pair with complete history', () => {
+    const f = fixture(), report = f.compare();
+    expect(report.verdict).toBe('pass');
+    expect(report.coverage).toEqual({ population: [f.scenario.id], checked: [f.scenario.id],
+      notChecked: [], notApplicable: [], residue: [] });
+  });
+
+  it('records an honestly claimed functional failure without a second functional grade', () => {
+    const f = fixture(); f.observations[0]!.outcome = 'fail'; f.claim.outcome = 'fail';
+    expect(f.compare().verdict).toBe('pass');
+    f.claim.outcome = 'pass';
+    expect(f.compare().integrityIssues).toContain(`unsupported-claim:${f.scenario.id}:pass:fail`);
+  });
+
+  it.each(['planSlug', 'specId', 'specRevision', 'specFingerprint', 'barHash', 'sourceFingerprint',
+    'clientVersion', 'runtimeFingerprint', 'environmentFingerprint'] as const)('rejects a %s mismatch', key => {
+    const f = fixture();
+    Object.assign(f.observations[0]!.identity, { [key]: key === 'specRevision' ? 5 : 'different' });
+    expect(f.compare().integrityIssues).toContain(`misbound-control:${f.scenario.id}:positive`);
+  });
+
+  it.each(['file', 'caseTitle', 'occurrence', 'bindingId'] as const)('does not borrow another selected %s', key => {
+    const f = fixture();
+    f.claim.controls = { ...f.claim.controls!, positive: { ...f.claim.controls!.positive,
+      [key]: ['occurrence', 'bindingId'].includes(key) ? 7 : 'another' } };
+    expect(f.compare().integrityIssues).toContain(`missing-selected-case:${f.scenario.id}:positive`);
+  });
+
+  it.each(['stale', 'withdrawn', 'future', 'expired'] as const)('rejects %s evidence', mode => {
+    const f = fixture();
+    if (mode === 'stale') f.observations[0]!.currentness = 'stale';
+    if (mode === 'withdrawn') f.observations[0]!.withdrawn = true;
+    if (mode === 'future') f.observations[0]!.observedAt = new Date(NOW.getTime() + 1).toISOString();
+    if (mode === 'expired') f.observations[0]!.observedAt = ANCIENT;
+    expect(f.compare().integrityIssues).toContain(`stale-control:${f.scenario.id}:positive`);
+  });
+
+  it('keeps missing, unknown, unsupported and automated-only observations explicitly notChecked', () => {
+    const f = fixture(); f.inventory[0]!.parityClaims = [];
+    expect(f.compare().coverage.notChecked).toEqual([f.scenario.id]);
+    expect(f.compare().verdict).toBe('unknown');
+    f.inventory[0]!.parityClaims = [f.claim]; f.observations[0]!.live = false; f.claim.outcome = 'unknown';
+    expect(f.compare().verdict).toBe('unknown');
+    expect(f.compare().integrityIssues).toEqual([]);
+    f.claim.outcome = 'unsupported';
+    expect(f.compare().verdict).toBe('unknown');
+  });
+
+  it('rejects always-accept, duplicate, orphan and same-control pairs', () => {
+    const f = fixture(); f.observations.splice(1);
+    expect(f.compare().verdict).toBe('fail');
+    const duplicate = fixture(); duplicate.inventory[0]!.parityClaims.push(duplicate.claim);
+    expect(duplicate.compare().integrityIssues).toContain(`duplicate-claim:${duplicate.scenario.id}`);
+    const orphan = fixture(); orphan.claim.scenarioId = 'not-selected';
+    expect(orphan.compare().integrityIssues).toContain('orphan-claim:not-selected');
+    const unpaired = fixture(); unpaired.claim.controls!.refusal = unpaired.claim.controls!.positive;
+    expect(unpaired.compare().integrityIssues).toContain(`unpaired-control:${unpaired.scenario.id}`);
+  });
+
+  it('retains failures/uncertainty and cannot cherry-pick an older pass', () => {
+    const f = fixture();
+    const later = { ...f.observations[0]!, ref: { ...f.observations[0]!.ref, bindingId: 3 },
+      evidenceRef: 'spec-evidence:3', outcome: 'fail' as const, observedAt: NOW.toISOString() };
+    f.observations.push(later);
+    expect(f.compare().integrityIssues).toContain('erased-observation:spec-evidence:3');
+    expect(f.compare().integrityIssues).toContain(`superseded-control:${f.scenario.id}:positive`);
+    f.claim.retainedEvidenceRefs = [...f.claim.retainedEvidenceRefs, later.evidenceRef];
+    f.claim.controls!.positive = later.ref; f.claim.outcome = 'fail';
+    expect(f.compare().verdict).toBe('pass');
+    expect(f.compare().observations).toHaveLength(3);
+  });
+
+  it('requires the exact passing pair before removing a previous gap or declaring readiness', () => {
+    const f = fixture(); f.options.previousInventory[0]!.gapIds.push('old-gap');
+    expect(f.compare().integrityIssues).toContain(`removed-unproved-gap:${f.scenario.family}:old-gap`);
+    f.claim.closesGaps = ['old-gap'];
+    expect(f.compare().verdict).toBe('pass');
+    f.inventory[0]!.cutoverReady = true; f.observations[0]!.outcome = 'fail'; f.claim.outcome = 'fail';
+    expect(f.compare().integrityIssues).toContain(`premature-readiness:${f.scenario.family}`);
+    expect(f.compare().integrityIssues).toContain(`unproved-gap-removal:${f.scenario.id}`);
+  });
+
+  it('never gives a vacuous healthy result for an empty population or absent previous inventory', () => {
+    const f = fixture(); f.options.previousInventory = [];
+    expect(f.compare().verdict).toBe('unknown');
+    f.options.scenarios = [];
+    expect(f.compare().verdict).toBe('fail'); // orphan claim remains visible
+    f.inventory[0]!.parityClaims = [];
+    expect(f.compare().unknownReasons).toContain('empty-population');
+  });
+});
 
 /** Every declared scenario passing, on `VERSION`, a minute ago. */
 function allGreen(scenarios: readonly RealClientScenario[]): RealClientScenarioResult[] {

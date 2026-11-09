@@ -47,6 +47,9 @@ import {
   MANAGED_CAPABILITY_DISPOSITIONS,
   type ManagedCapabilityDisposition,
   type ManagedCapabilityFamilyId,
+  type ManagedCapabilityClaimIdentity,
+  type ManagedCapabilityControlRef,
+  type ManagedCapabilityInventoryClaim,
 } from './managed-capability-contract';
 import {
   CAPABILITY_CLIENT_ENFORCEMENT,
@@ -523,4 +526,165 @@ export function realClientMatrixGateSource(
   options: RealClientMatrixReportOptions = {},
 ): CapabilityMatrixGateSource {
   return realClientMatrixReport(options).entries;
+}
+
+export interface ManagedCapabilityMeasuredControl {
+  ref: ManagedCapabilityControlRef;
+  evidenceRef: string;
+  scenarioId: string;
+  family: ManagedCapabilityFamilyId;
+  client: CapabilityClientFamily;
+  identity: ManagedCapabilityClaimIdentity;
+  role: 'positive' | 'refusal';
+  outcome: 'pass' | 'fail' | 'unknown';
+  observedAt: string;
+  currentness: 'current' | 'stale' | 'unknown';
+  withdrawn: boolean;
+  /** Automated contradiction checks cannot supply a reserved live observation. */
+  live: boolean;
+}
+
+export function managedCapabilityControlKey(ref: ManagedCapabilityControlRef): string {
+  return JSON.stringify([ref.bindingId, ref.file, ref.caseTitle, ref.occurrence]);
+}
+
+export interface ManagedCapabilityInventoryComparisonOptions {
+  /** Derived independently of claims; dropping a claim must not shrink the population. */
+  scenarios: readonly RealClientScenario[];
+  inventory: readonly ManagedCapabilityDisposition[];
+  observations: readonly ManagedCapabilityMeasuredControl[];
+  /** Immutable earlier inventory, resolved by the caller from retained evidence. */
+  previousInventory?: readonly { family: ManagedCapabilityFamilyId; gapIds: readonly string[] }[];
+  clientVersions: Readonly<Partial<Record<CapabilityClientFamily, string>>>;
+  now?: Date;
+  freshnessWindowMs?: number;
+}
+
+/**
+ * Claim integrity, not a second functional grade. A current, faithfully reported
+ * failing pair can pass this comparison. Missing/uncertain live observations
+ * remain unknown, and only a passing exact pair can discharge a named gap.
+ * No latest-result reduction: every historical observation remains in the census.
+ */
+export function compareManagedCapabilityInventory(options: ManagedCapabilityInventoryComparisonOptions) {
+  const issues: string[] = [];
+  const unknown: string[] = [];
+  const population = options.scenarios.map(s => s.id);
+  const selected = new Map(options.scenarios.map(s => [s.id, s]));
+  const duplicate = <T>(values: readonly T[], key: (value: T) => string, kind: string) => {
+    const seen = new Set<string>();
+    for (const value of values) {
+      const id = key(value);
+      if (seen.has(id)) issues.push(`duplicate-${kind}:${id}`);
+      seen.add(id);
+    }
+  };
+  duplicate(options.scenarios, s => s.id, 'scenario');
+  duplicate(options.inventory, d => d.family, 'family');
+  duplicate(options.observations, o => managedCapabilityControlKey(o.ref), 'control');
+  if (!population.length) unknown.push('empty-population');
+  const now = (options.now ?? new Date()).getTime();
+  const maxAge = options.freshnessWindowMs ?? DEFAULT_SCENARIO_FRESHNESS_MS;
+  if (!Number.isFinite(now) || !Number.isFinite(maxAge) || maxAge < 0) unknown.push('invalid-measurement-window');
+  const controls = new Map(options.observations.map(o => [managedCapabilityControlKey(o.ref), o]));
+  const claims = new Map<string, { family: ManagedCapabilityFamilyId; claim: ManagedCapabilityInventoryClaim }>();
+  for (const disposition of options.inventory) {
+    for (const claim of disposition.parityClaims ?? []) {
+      if (claims.has(claim.scenarioId)) issues.push(`duplicate-claim:${claim.scenarioId}`);
+      claims.set(claim.scenarioId, { family: disposition.family, claim });
+      if (!selected.has(claim.scenarioId)) issues.push(`orphan-claim:${claim.scenarioId}`);
+    }
+  }
+  const checked: string[] = [];
+  const notChecked: string[] = [];
+  const passing = new Set<string>();
+  const sameIdentity = (a: ManagedCapabilityClaimIdentity, b: ManagedCapabilityClaimIdentity) =>
+    (Object.keys(a) as Array<keyof ManagedCapabilityClaimIdentity>).length === 9 &&
+    (Object.keys(b) as Array<keyof ManagedCapabilityClaimIdentity>).length === 9 &&
+    Object.entries(a).every(([key, value]) => value === b[key as keyof ManagedCapabilityClaimIdentity]);
+  const validIdentity = (identity: ManagedCapabilityClaimIdentity) =>
+    Number.isSafeInteger(identity.specRevision) && identity.specRevision > 0 &&
+    ['planSlug', 'specId', 'specFingerprint', 'barHash', 'sourceFingerprint', 'clientVersion',
+      'runtimeFingerprint', 'environmentFingerprint'].every(key =>
+      typeof identity[key as keyof ManagedCapabilityClaimIdentity] === 'string' &&
+      String(identity[key as keyof ManagedCapabilityClaimIdentity]).trim().length > 0);
+  for (const scenario of options.scenarios) {
+    const entry = claims.get(scenario.id);
+    if (!entry) { notChecked.push(scenario.id); continue; }
+    const { claim } = entry;
+    const before = issues.length;
+    if (entry.family !== scenario.family) issues.push(`claim-family:${scenario.id}`);
+    if (!validIdentity(claim.identity) || !options.clientVersions[scenario.client] ||
+        claim.identity.clientVersion !== options.clientVersions[scenario.client]) issues.push(`claim-identity:${scenario.id}`);
+    const history = options.observations.filter(o => o.scenarioId === scenario.id);
+    for (const ref of claim.retainedEvidenceRefs) {
+      if (!history.some(o => o.evidenceRef === ref)) issues.push(`orphan-evidence-ref:${scenario.id}:${ref}`);
+    }
+    for (const observation of history) {
+      if (!claim.retainedEvidenceRefs.includes(observation.evidenceRef)) issues.push(`erased-observation:${observation.evidenceRef}`);
+    }
+    if (!claim.controls || ['notChecked', 'unsupported'].includes(claim.outcome)) {
+      notChecked.push(scenario.id);
+      if (claim.outcome === 'pass' || claim.outcome === 'fail') issues.push(`missing-control-pair:${scenario.id}`);
+      if (claim.closesGaps?.length) issues.push(`unproved-gap-removal:${scenario.id}`);
+      continue;
+    }
+    const pair: ManagedCapabilityMeasuredControl[] = [];
+    let incomplete = false;
+    for (const role of ['positive', 'refusal'] as const) {
+      const ref = claim.controls[role];
+      const observation = controls.get(managedCapabilityControlKey(ref));
+      if (!Number.isSafeInteger(ref.bindingId) || ref.bindingId <= 0 || !ref.file.trim() || !ref.caseTitle.trim() ||
+          !Number.isSafeInteger(ref.occurrence) || ref.occurrence < 0 || !observation) {
+        issues.push(`missing-selected-case:${scenario.id}:${role}`); incomplete = true; continue;
+      }
+      pair.push(observation);
+      if (observation.role !== role || observation.scenarioId !== scenario.id ||
+          observation.family !== scenario.family || observation.client !== scenario.client ||
+          !sameIdentity(claim.identity, observation.identity)) issues.push(`misbound-control:${scenario.id}:${role}`);
+      const age = now - Date.parse(observation.observedAt);
+      if (observation.withdrawn || observation.currentness !== 'current' || !Number.isFinite(age) ||
+          age < 0 || age > maxAge) issues.push(`stale-control:${scenario.id}:${role}`);
+      if (history.some(o => o.role === role && !o.withdrawn && sameIdentity(o.identity, observation.identity) &&
+          Date.parse(o.observedAt) > Date.parse(observation.observedAt))) issues.push(`superseded-control:${scenario.id}:${role}`);
+      if (!observation.live || observation.outcome === 'unknown') incomplete = true;
+    }
+    if (managedCapabilityControlKey(claim.controls.positive) === managedCapabilityControlKey(claim.controls.refusal)) {
+      issues.push(`unpaired-control:${scenario.id}`);
+    }
+    const measured = incomplete ? 'unknown' : pair.some(o => o.outcome === 'fail') ? 'fail' : 'pass';
+    if (claim.outcome !== measured) issues.push(`unsupported-claim:${scenario.id}:${claim.outcome}:${measured}`);
+    if (incomplete) notChecked.push(scenario.id);
+    else checked.push(scenario.id);
+    if (measured === 'pass' && before === issues.length) passing.add(scenario.id);
+    if (claim.closesGaps?.length && !passing.has(scenario.id)) issues.push(`unproved-gap-removal:${scenario.id}`);
+  }
+  const currentGaps = new Map(options.inventory.map(d => [d.family, new Set(d.gaps.map(g => g.id))]));
+  if (!options.previousInventory) unknown.push('previous-inventory-unavailable');
+  for (const disposition of options.inventory) {
+    if (!options.previousInventory?.some(d => d.family === disposition.family)) unknown.push(`previous-family-unavailable:${disposition.family}`);
+  }
+  duplicate(options.previousInventory ?? [], d => d.family, 'previous-family');
+  for (const previous of options.previousInventory ?? []) {
+    for (const gap of previous.gapIds) {
+      if (currentGaps.get(previous.family)?.has(gap)) continue;
+      const proved = [...claims.values()].some(({ family, claim }) => family === previous.family &&
+        claim.closesGaps?.includes(gap) && passing.has(claim.scenarioId));
+      if (!proved) issues.push(`removed-unproved-gap:${previous.family}:${gap}`);
+    }
+  }
+  for (const disposition of options.inventory) {
+    if (!disposition.cutoverReady) continue;
+    const owned = options.scenarios.filter(s => s.family === disposition.family);
+    if (!owned.length || owned.some(s => !passing.has(s.id)) || disposition.gaps.length) {
+      issues.push(`premature-readiness:${disposition.family}`);
+    }
+  }
+  const residue = [...new Set([...issues, ...unknown, ...notChecked.map(id => `notChecked:${id}`)])];
+  return {
+    verdict: issues.length ? 'fail' as const : residue.length ? 'unknown' as const : 'pass' as const,
+    integrityIssues: issues, unknownReasons: unknown,
+    coverage: { population, checked, notChecked, notApplicable: [] as string[], residue },
+    observations: options.observations,
+  };
 }

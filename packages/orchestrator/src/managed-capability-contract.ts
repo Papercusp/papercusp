@@ -55,6 +55,37 @@ export interface ManagedCapabilityGap {
   falsifier: string;
 }
 
+/** Exact binding/case identity; duplicate test titles are distinguished by occurrence. */
+export interface ManagedCapabilityControlRef {
+  bindingId: number;
+  file: string;
+  caseTitle: string;
+  occurrence: number;
+}
+
+/** A source pin is distinct from both the scenario fingerprint and the client version. */
+export interface ManagedCapabilityClaimIdentity {
+  planSlug: string;
+  specId: string;
+  specRevision: number;
+  specFingerprint: string;
+  barHash: string;
+  sourceFingerprint: string;
+  clientVersion: string;
+  runtimeFingerprint: string;
+  environmentFingerprint: string;
+}
+
+export interface ManagedCapabilityInventoryClaim {
+  scenarioId: string;
+  identity: ManagedCapabilityClaimIdentity;
+  outcome: 'pass' | 'fail' | 'unknown' | 'notChecked' | 'unsupported';
+  controls?: { positive: ManagedCapabilityControlRef; refusal: ManagedCapabilityControlRef };
+  /** Earlier observations remain addressable even after a replacement pair passes. */
+  retainedEvidenceRefs: readonly string[];
+  closesGaps?: readonly string[];
+}
+
 export interface ManagedCapabilityDisposition {
   family: ManagedCapabilityFamilyId;
   nativeSurface: string;
@@ -70,6 +101,8 @@ export interface ManagedCapabilityDisposition {
   /** Proven replacement parity; enabling a restriction is a separate rollout decision. */
   cutoverReady: boolean;
   cutoverReason: string;
+  /** Measured claims only. Omission leaves the derived scenario population notChecked. */
+  parityClaims?: readonly ManagedCapabilityInventoryClaim[];
 }
 
 /**
