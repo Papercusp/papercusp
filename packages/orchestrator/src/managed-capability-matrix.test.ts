@@ -166,16 +166,16 @@ describe('P-008 real-client matrix — the declared manifest is DERIVED', () => 
   it('declares one cell per managed-cutover family/client/scenario-kind', () => {
     const scenarios = declareRealClientMatrix();
 
-    // Traceable to the registry, not to a hand-written list: the only
-    // managed-cutover restriction is `managed-shell-cutover`
-    // (shell-ssh-interpreters @ claude, all three surfaces).
-    expect(scenarios.length).toBe(REAL_CLIENT_SCENARIO_KINDS.length);
+    const shell = MANAGED_CAPABILITY_RESTRICTIONS.find(r => r.id === 'managed-shell-cutover')!;
+    expect(scenarios.length).toBe(REAL_CLIENT_SCENARIO_KINDS.length * shell.clients.length);
     for (const scenario of scenarios) {
       expect(scenario.family).toBe('shell-ssh-interpreters');
-      expect(scenario.client).toBe('claude');
+      expect(shell.clients).toContain(scenario.client);
       expect(scenario.declaredBy).toContain('managed-shell-cutover');
     }
-    expect(scenarios.map((s) => s.kind).sort()).toEqual([...REAL_CLIENT_SCENARIO_KINDS].sort());
+    for (const client of shell.clients) {
+      expect(scenarios.filter(s => s.client === client).map(s => s.kind).sort()).toEqual([...REAL_CLIENT_SCENARIO_KINDS].sort());
+    }
   });
 
   it('declares NO scenario for an owner mandate — there is no replacement to accept', () => {
@@ -211,7 +211,7 @@ describe('P-008 real-client matrix — the declared manifest is DERIVED', () => 
 });
 
 describe('P-008 real-client matrix — the four falsifier modes, each isolated', () => {
-  const scenarios = declareRealClientMatrix();
+  const scenarios = declareRealClientMatrix().filter(s => s.client === 'claude');
 
   it('CALIBRATION: a complete, fresh, on-version, all-pass matrix is green', () => {
     const report = realClientMatrixReport({
@@ -329,7 +329,7 @@ describe('P-008 real-client matrix — an EMPTY matrix is never a passing one', 
 });
 
 describe('P-008 real-client matrix — fingerprints and the enablement record', () => {
-  const scenarios = declareRealClientMatrix();
+  const scenarios = declareRealClientMatrix().filter(s => s.client === 'claude');
 
   it('fingerprints the three facts that decide evidence, and ignores time', () => {
     const base = { scenarioId: 'f:claude:launch', clientVersion: VERSION, outcome: 'pass' } as const;
