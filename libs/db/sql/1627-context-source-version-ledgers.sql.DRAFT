@@ -9,6 +9,8 @@ ALTER TABLE harness_shared.corpus_session_surfaced
 
 -- Host metadata only: hashes, revision/passage and validity, never source prose.
 -- Revalidation scheduling is separate from confirmed emission/surfaced_at.
+ALTER TABLE harness_shared.memory_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_checked_at timestamptz;
 ALTER TABLE harness_shared.corpus_session_surfaced
   ADD COLUMN IF NOT EXISTS source_checked_at timestamptz;
 
