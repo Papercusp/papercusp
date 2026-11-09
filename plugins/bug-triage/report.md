@@ -29,6 +29,88 @@ decided this is a bug, so do not second-guess it. `ticket:file` takes the run id
 files at the installation's chosen project; a message outside the installation's channels cannot
 file.
 
+## Discovery
+
+```discovery
+{
+  "questions": [
+    {
+      "id": "Q-current",
+      "kind": "current-behavior",
+      "question": "How does a deliberate bug gesture reach one ticket at the chosen destination?",
+      "stopCondition": "Inspect the canonical payload reader, ticket filing implementation and its replay/classification integration cases.",
+      "outcome": "answered"
+    },
+    {
+      "id": "Q-start",
+      "kind": "gap",
+      "question": "Which discovery prerequisite must this installed template satisfy before an isolated run can start?",
+      "stopCondition": "Trace scheduled plan startup and the trigger-pack materializer to the current Discovery declaration and audit contract.",
+      "outcome": "answered"
+    },
+    {
+      "id": "Q-reuse",
+      "kind": "feasibility",
+      "question": "Can the existing workflow satisfy that contract without adding a worker, filing API or library?",
+      "stopCondition": "Map the existing payload and filing surfaces to P-001 and the unchanged R-1 outcome.",
+      "outcome": "answered"
+    }
+  ],
+  "findings": [
+    {
+      "id": "F-filing",
+      "questions": [
+        "Q-current",
+        "Q-reuse"
+      ],
+      "conclusion": "Reuse the canonical reported message and server-owned ticket filing path. The gesture already expresses bug intent; preserve filing at the installation destination and replay recovery.",
+      "evidenceRefs": [
+        "source:packages/operator-core/lib/agent-tools/triggers/read-payload.ts",
+        "source:packages/operator-core/lib/capability-verbs/ticket.ts",
+        "source:packages/operator-core/lib/capability-verbs/ticket.integration.test.ts"
+      ],
+      "dispositions": [
+        {
+          "target": "P-001",
+          "decision": "reuse",
+          "reason": "The existing worker calls the maintained payload and ticket capabilities; no parallel filing implementation is needed."
+        },
+        {
+          "target": "R-1",
+          "decision": "unchanged",
+          "reason": "Discovery adds startup evidence without changing the ticket outcome, destination constraint or replay contract."
+        },
+        {
+          "target": "D-001",
+          "decision": "unchanged",
+          "reason": "Keep the established treatment of the triggering message and installation-owned destination."
+        }
+      ]
+    },
+    {
+      "id": "F-start",
+      "questions": [
+        "Q-start"
+      ],
+      "conclusion": "The materializer reuses the canonical plan installer, and scheduled execution rechecks current Discovery before minting work. Keep the bounded discovery declaration with the portable template and finalize its current evidence through the existing plan audit after installation.",
+      "evidenceRefs": [
+        "source:packages/operator-core/lib/cupboard/trigger-pack-materialize.ts",
+        "source:packages/operator-core/lib/harness/routines/plan-run-action.ts",
+        "source:packages/operator-core/lib/agent-tools/plans/plan-declarations.ts"
+      ],
+      "dispositions": [
+        {
+          "target": "P-001",
+          "decision": "reuse",
+          "reason": "Retain the existing isolated trigger-run execution path and its current startup gates."
+        }
+      ]
+    }
+  ],
+  "notApplicable": null
+}
+```
+
 ## Phase 1 — File
 
 - **P-001** `todo` Read the event `payload` returned by `triggers:read-payload { planRunId: payload.plan_run.runId }`. Write a short `title` (at most 200 characters) naming the defect, `observed` (what the reported message says happened; for a thread mention, what `target.text` says, plus anything the mention adds; include the reporter's `gesture.note` when present) and `expected` (what should have happened, or "not stated"). Call `ticket:file` with `planRunId=payload.plan_run.runId`, `title`, `observed` and `expected`. Complete only after it reports `created:true` or `alreadyCreated:true`; on `pendingReconciliation:true` call it again with the same run id. If it refuses with `ticket_origin_invalid`, the message is outside the watched channels: complete without filing.
