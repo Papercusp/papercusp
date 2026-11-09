@@ -1,0 +1,8 @@
+-- NULL is an old, unversioned receipt, which must never suppress a candidate
+-- with a known canonical source version. Preserve the existing stable keys.
+ALTER TABLE harness_shared.memory_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_fingerprint text
+  CHECK (source_fingerprint IS NULL OR source_fingerprint ~ '^[a-f0-9]{64}$');
+ALTER TABLE harness_shared.corpus_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_fingerprint text
+  CHECK (source_fingerprint IS NULL OR source_fingerprint ~ '^[a-f0-9]{64}$');
