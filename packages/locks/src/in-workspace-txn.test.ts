@@ -23,7 +23,8 @@ vi.mock('./workspace-listener', () => ({
   startBackgroundJanitor: mocks.startBackgroundJanitor,
 }));
 
-vi.mock('./config', () => ({
+vi.mock('./config', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./config')>(),
   txnTimeouts: mocks.txnTimeouts,
   beginAcquireDiagnostic: mocks.beginAcquireDiagnostic,
 }));
@@ -31,8 +32,9 @@ vi.mock('./config', () => ({
 import { inWorkspaceTxn } from './in-workspace-txn';
 import type { WorkspaceTxnPhaseTiming } from './in-workspace-txn';
 
-function fakePool() {
-  const tx = vi.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => []);
+function fakePool(idleTimeoutMs = 0) {
+  const tx = vi.fn(async (strings: TemplateStringsArray, ..._values: unknown[]) =>
+    strings.join(' ').includes('idle_timeout_ms') ? [{ idle_timeout_ms: idleTimeoutMs }] : []);
   const sql = {
     begin: vi.fn(async (run: (transaction: Sql) => Promise<unknown>) =>
       run(tx as unknown as Sql),
@@ -55,7 +57,86 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it('keeps an active custody callback alive and stops probing after settlement', async () => {
+    vi.useFakeTimers();
+    const { sql, tx } = fakePool(90);
+    mocks.getTxPool.mockReturnValue(sql);
+    let finish!: () => void;
+    const work = new Promise<void>((resolve) => { finish = resolve; });
+    const result = inWorkspaceTxn('custody', 'owner', async () => { await work; return 'preserved'; });
+    await vi.advanceTimersByTimeAsync(120);
+    const probes = () => tx.mock.calls.filter(([strings]) => strings.join(' ').includes('transaction liveness'));
+    expect(probes().length).toBeGreaterThanOrEqual(3);
+    finish();
+    await expect(result).resolves.toBe('preserved');
+    const count = probes().length;
+    await vi.advanceTimersByTimeAsync(180);
+    expect(probes()).toHaveLength(count);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('drains an in-flight probe before the transaction can settle', async () => {
+    vi.useFakeTimers();
+    const { sql, tx } = fakePool(90);
+    let finishProbe!: () => void;
+    let finishWork!: () => void;
+    const probe = new Promise<void>((resolve) => { finishProbe = resolve; });
+    const work = new Promise<void>((resolve) => { finishWork = resolve; });
+    tx.mockImplementation(async (strings) => {
+      const query = strings.join(' ');
+      if (query.includes('idle_timeout_ms')) return [{ idle_timeout_ms: 90 }];
+      if (query.includes('transaction liveness')) await probe;
+      return [];
+    });
+    mocks.getTxPool.mockReturnValue(sql);
+    let settled = false;
+    const result = inWorkspaceTxn('custody', 'owner', async () => { await work; return 'done'; })
+      .then((value) => { settled = true; return value; });
+    await vi.advanceTimersByTimeAsync(30);
+    finishWork();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(settled).toBe(false);
+    expect(tx.mock.calls.filter(([s]) => s.join(' ').includes('transaction liveness'))).toHaveLength(1);
+    finishProbe();
+    await expect(result).resolves.toBe('done');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('fails closed on a probe error and stops after a failed capture', async () => {
+    vi.useFakeTimers();
+    const { sql, tx } = fakePool(90);
+    const lostConnection = new Error('connection lost');
+    tx.mockImplementation(async (strings) => {
+      if (strings.join(' ').includes('idle_timeout_ms')) return [{ idle_timeout_ms: 90 }];
+      if (strings.join(' ').includes('transaction liveness')) throw lostConnection;
+      return [];
+    });
+    mocks.getTxPool.mockReturnValue(sql);
+    let finish!: () => void;
+    const work = new Promise<void>((resolve) => { finish = resolve; });
+    const result = inWorkspaceTxn('custody', 'owner', async () => { await work; return 'must not commit'; });
+    const rejected = expect(result).rejects.toBe(lostConnection);
+    await vi.advanceTimersByTimeAsync(120);
+    finish();
+    await rejected;
+    expect(tx.mock.calls.filter(([s]) => s.join(' ').includes('transaction liveness'))).toHaveLength(1);
+    const captureFailure = new Error('capture failed');
+    await expect(inWorkspaceTxn('custody', 'owner', async () => { throw captureFailure; })).rejects.toBe(captureFailure);
+    await vi.advanceTimersByTimeAsync(180);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('does not probe when the effective idle timeout is disabled', async () => {
+    vi.useFakeTimers();
+    const { sql, tx } = fakePool(0);
+    mocks.getTxPool.mockReturnValue(sql);
+    await inWorkspaceTxn('custody', 'owner', async () => { await vi.advanceTimersByTimeAsync(120); });
+    expect(tx.mock.calls.some(([s]) => s.join(' ').includes('transaction liveness'))).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('reports each named transaction phase and preserves the callback result', async () => {

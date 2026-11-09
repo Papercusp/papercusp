@@ -167,6 +167,57 @@ async function measureAsyncPhase<T>(
   }
 }
 
+/**
+ * A custody callback can be doing bounded filesystem/Git work while retaining
+ * the transaction's row and advisory fences. PostgreSQL otherwise treats that
+ * work as idle and can kill the connection before preservation commits. Keep
+ * this SAME transaction active; never renew a lease or release its fence here.
+ * There is at most one probe in flight, and settlement joins it before COMMIT
+ * or ROLLBACK. A failed probe must make a successful callback roll back too.
+ */
+async function withTransactionLiveness<T>(
+  tx: Sql,
+  idleTimeoutMs: number,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) return operation();
+  const intervalMs = Math.max(1, Math.min(10_000, Math.floor(idleTimeoutMs / 3)));
+  let stopped = false;
+  let failed = false;
+  let failure: unknown;
+  let pending: Promise<void> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const schedule = (): void => {
+    timer = setTimeout(() => {
+      pending = (async () => {
+        try {
+          await tx`SELECT 1 /* workspace transaction liveness */`;
+        } catch (error) {
+          failed = true;
+          failure = error;
+        } finally {
+          if (!stopped && !failed) schedule();
+        }
+      })();
+    }, intervalMs);
+    timer.unref?.();
+  };
+  schedule();
+  try {
+    const result = await operation();
+    // The final probe may still be running when operation() returns.
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    await pending;
+    if (failed) throw failure;
+    return result;
+  } finally {
+    stopped = true;
+    if (timer) clearTimeout(timer);
+    await pending;
+  }
+}
+
 function pathAncestors(path: string): string[] {
   if (path.length === 0) return [];
   const parts = path.split('/');
@@ -315,10 +366,12 @@ export async function inWorkspaceTxn<T>(
       configuredTimeouts.statementTimeoutMs,
       options.minStatementTimeoutMs,
     );
-    await measureAsyncPhase(phaseObserver, 'transaction-settings', () =>
+    const settings = await measureAsyncPhase(phaseObserver, 'transaction-settings', () =>
       tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true),
                     set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true),
-                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`,
+                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true),
+                    EXTRACT(EPOCH FROM current_setting('idle_in_transaction_session_timeout')::interval)
+                      * 1000 AS idle_timeout_ms`,
     );
     await measureAsyncPhase(phaseObserver, 'advisory-scope', () =>
       acquireAdvisoryScope(
@@ -332,7 +385,10 @@ export async function inWorkspaceTxn<T>(
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type
     // rather than juggling a union that TS can't resolve as callable.
-    return measureAsyncPhase(phaseObserver, 'operation', () => fn(tx as unknown as Sql));
+    return measureAsyncPhase(phaseObserver, 'operation', () =>
+      withTransactionLiveness(tx as unknown as Sql, Number(settings[0]?.idle_timeout_ms),
+        () => fn(tx as unknown as Sql)),
+    );
     });
   } catch (err) {
     if (transactionStartedAt !== null && !transactionEntered) {
