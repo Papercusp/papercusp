@@ -22,7 +22,6 @@ import {
   declareRealClientMatrix,
   realClientMatrixReport,
   scenarioResultFingerprint,
-  compareManagedCapabilityInventory,
   type ManagedCapabilityMeasuredControl,
   type CapabilityDefaultEnablementRecord,
   type RealClientScenario,
@@ -30,6 +29,11 @@ import {
 } from './managed-capability-matrix';
 import { MANAGED_CAPABILITY_DISPOSITIONS, type ManagedCapabilityInventoryClaim } from './managed-capability-contract';
 import { CAPABILITY_CLIENT_ENFORCEMENT, MANAGED_CAPABILITY_RESTRICTIONS } from './managed-capability-policy';
+
+// The maintained copy-out probe substitutes only the comparator. Static sibling
+// imports must not accidentally exercise the original instead of the mutant.
+const comparatorSubject = process.env.PAPERCUSP_P032_COMPARATOR_SUBJECT ?? './managed-capability-matrix';
+const { compareManagedCapabilityInventory } = await import(comparatorSubject) as typeof import('./managed-capability-matrix');
 
 const NOW = new Date('2026-09-21T12:00:00.000Z');
 const FRESH = new Date(NOW.getTime() - 60_000).toISOString();
@@ -65,6 +69,46 @@ describe('inventory claim comparison against selected recorded controls', () => 
     expect(report.verdict).toBe('pass');
     expect(report.coverage).toEqual({ population: [f.scenario.id], checked: [f.scenario.id],
       notChecked: [], notApplicable: [], residue: [] });
+  });
+
+  // Exact MC-P032-UNSUPPORTED-CLAIM obligations. These synthetic controls
+  // calibrate claim integrity; they cannot discharge R-13's live observations.
+  it.each([
+    'client-mismatch', 'criterion-mismatch', 'environment-mismatch', 'missing-case',
+    'missing-refusal-control', 'not-checked-residue', 'removed-unproved-gap',
+    'runtime-mismatch', 'source-mismatch', 'stale-evidence', 'supported-measurement',
+    'truthful-failed-measurement', 'unknown-residue', 'unsupported-claim',
+  ] as const)('MC-P032 unit: %s', mode => {
+    const f = fixture();
+    const positive = f.observations[0]!;
+    const mismatch = {
+      'client-mismatch': 'clientVersion', 'criterion-mismatch': 'barHash',
+      'environment-mismatch': 'environmentFingerprint', 'runtime-mismatch': 'runtimeFingerprint',
+      'source-mismatch': 'sourceFingerprint',
+    } as const;
+    if (mode in mismatch) Object.assign(f.claim.identity, {
+      [mismatch[mode as keyof typeof mismatch]]: 'another-measurement',
+    });
+    if (mode === 'missing-case') f.claim.controls!.positive = { ...positive.ref, caseTitle: 'absent exact case' };
+    if (mode === 'missing-refusal-control') f.observations.splice(1);
+    if (mode === 'not-checked-residue') f.inventory[0]!.parityClaims = [];
+    if (mode === 'removed-unproved-gap') f.options.previousInventory[0]!.gapIds.push('unproved-gap');
+    if (mode === 'stale-evidence') positive.observedAt = ANCIENT;
+    if (mode === 'truthful-failed-measurement' || mode === 'unsupported-claim') positive.outcome = 'fail';
+    if (mode === 'truthful-failed-measurement') f.claim.outcome = 'fail';
+    if (mode === 'unknown-residue') { positive.outcome = 'unknown'; f.claim.outcome = 'unknown'; }
+    const report = f.compare();
+    const honest = mode === 'supported-measurement' || mode === 'truthful-failed-measurement';
+    const uncertain = mode === 'not-checked-residue' || mode === 'unknown-residue';
+    expect(report.verdict).toBe(honest ? 'pass' : uncertain ? 'unknown' : 'fail');
+    expect(report.coverage.population).toEqual([f.scenario.id]);
+    expect(report.coverage.notChecked).toEqual(uncertain || mode === 'missing-case' || mode === 'missing-refusal-control'
+      ? [f.scenario.id] : []);
+    if (honest) expect(report.coverage.residue).toEqual([]);
+    else expect(report.coverage.residue.length).toBeGreaterThan(0);
+    if (mode === 'truthful-failed-measurement' || mode === 'unsupported-claim' || mode === 'unknown-residue') {
+      expect(report.observations[0]!.outcome).toBe(mode === 'unknown-residue' ? 'unknown' : 'fail');
+    }
   });
 
   it('records an honestly claimed functional failure without a second functional grade', () => {
