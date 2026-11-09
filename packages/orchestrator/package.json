@@ -47,6 +47,11 @@
       "import": "./src/managed-capability-policy.ts",
       "default": "./src/managed-capability-policy.ts"
     },
+    "./managed-capability-matrix": {
+      "types": "./src/managed-capability-matrix.ts",
+      "import": "./src/managed-capability-matrix.ts",
+      "default": "./src/managed-capability-matrix.ts"
+    },
     "./native-scheduler-deny": {
       "types": "./src/native-scheduler-deny.ts",
       "import": "./src/native-scheduler-deny.ts",
