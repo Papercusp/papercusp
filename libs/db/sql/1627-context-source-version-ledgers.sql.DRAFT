@@ -8,6 +8,11 @@ ALTER TABLE harness_shared.corpus_session_surfaced
   CHECK (source_fingerprint IS NULL OR source_fingerprint ~ '^[a-f0-9]{64}$');
 
 -- Host metadata only: hashes, revision/passage and validity, never source prose.
+-- Revalidation scheduling is separate from confirmed emission/surfaced_at.
+ALTER TABLE harness_shared.corpus_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_checked_at timestamptz;
+
+-- Host metadata only: hashes, revision/passage and validity, never source prose.
 -- Retaining it on the existing receipts enables scoped lifecycle revalidation
 -- even after a previously delivered source disappears from ordinary search.
 ALTER TABLE harness_shared.memory_session_surfaced
