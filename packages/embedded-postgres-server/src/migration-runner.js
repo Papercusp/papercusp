@@ -24,7 +24,12 @@
 
 import { readFile, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { channel } from 'node:diagnostics_channel';
+
+// Private fixture observers retain the original inputs at the actual apply
+// boundary. Ordinary boots have no subscriber and do no extra database work.
+const migrationTransactionObservation = channel('papercusp:migration-transaction');
 
 const MIGRATION_TRANSACTION_PREFIX = 'BEGIN;\nSET LOCAL statement_timeout = 0;\n';
 // WI-41781: a fresh-schema replay applies hundreds of migrations while many
@@ -632,10 +637,18 @@ export async function applyPendingMigrations({ client, sqlDir, log = () => {}, s
           : '';
         const query = `${queryPrefix}${activeChunk};\n${ledgerWrite}COMMIT;`;
         for (let attempt = 1; attempt <= MIGRATION_LOCK_RETRY_MAX_ATTEMPTS; attempt += 1) {
+          const observation = migrationTransactionObservation.hasSubscribers
+            ? Object.freeze({ attemptId: randomUUID(), file: f, migrationPath,
+              rawSource: ddlRaw, rawSourceSha256: hash, query,
+              chunkIndex, chunkCount: chunks.length, attempt, isFinalChunk })
+            : null;
+          if (observation) migrationTransactionObservation.publish(Object.freeze({ ...observation, phase: 'planned' }));
           try {
             await client.unsafe(query);
+            if (observation) migrationTransactionObservation.publish(Object.freeze({ ...observation, phase: 'returned' }));
             break;
           } catch (err) {
+            if (observation) migrationTransactionObservation.publish(Object.freeze({ ...observation, phase: 'failed' }));
             // A failed BEGIN…COMMIT leaves the connection in an aborted
             // transaction. Reset it before deciding whether a raw 55P03 is
             // eligible for another fail-fast attempt.
