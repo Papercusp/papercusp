@@ -1,0 +1,36 @@
+-- EI-28301765053390719: readAuthorizedNativeDispatch renews the complete
+-- exact native-call population twice. Index its existing predicates rather
+-- than narrowing that census by workspace, owner, harness, tool or time.
+-- NULL fingerprints cannot match either equality, so omitting them preserves
+-- every possible conflict, including receipts from another scope.
+--
+-- The migration runner is transactional. On a populated host, pre-build this
+-- index CONCURRENTLY through the maintained index-build path before arming
+-- this file; IF NOT EXISTS then makes application metadata-only there.
+-- This DRAFT is deliberately not armed or applied to the shared database.
+CREATE INDEX IF NOT EXISTS tool_invocations_native_dispatch_fingerprint_idx
+  ON harness_shared.tool_invocations (
+    (metadata_json->'requestOrigin'->'nativeSession'->>'valueFingerprint'),
+    (metadata_json->'requestOrigin'->'nativeSession'->>'callIdFingerprint'),
+    id
+  )
+  WHERE metadata_json->'requestOrigin'->'nativeSession'->>'valueFingerprint' IS NOT NULL
+    AND metadata_json->'requestOrigin'->'nativeSession'->>'callIdFingerprint' IS NOT NULL;
+
+-- IF NOT EXISTS also skips an INVALID index left by an interrupted concurrent
+-- prebuild. Refuse to stamp that as successful; repair the online build first.
+DO $migration$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_index
+    WHERE indexrelid = 'harness_shared.tool_invocations_native_dispatch_fingerprint_idx'::regclass
+      AND (NOT indisvalid OR NOT indisready)
+  ) THEN
+    RAISE EXCEPTION 'native dispatch fingerprint index is invalid; complete online REINDEX before applying migration 1626'
+      USING ERRCODE = '55000';
+  END IF;
+END
+$migration$;
+
+COMMENT ON INDEX harness_shared.tool_invocations_native_dispatch_fingerprint_idx IS
+  'Exact native session/call census, including conflicting rows across workspace, owner, harness and tool boundaries; no authority or uniqueness grant.';
