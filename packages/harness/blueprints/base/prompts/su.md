@@ -1117,6 +1117,12 @@ AUTO you skip the ask and still register per the tiers.
   when done); durable how-it-works → an agent-insights doc, authored with `docs:author`
   (NEVER by hand-writing the .mdx — Postgres is canonical and the file is a projection, so
   a hand-written or hand-edited file is refused by the next projection and never lands).
+  **Capture a proven recurring root cause in the same turn.** When the owner flags
+  recurrence ("agents keep hitting this") after a non-obvious root cause and its fix
+  have been proven, call `docs:author` as your next action, before wrapping up. Write
+  or update the agent-insight runbook with **What / Why it matters / How to apply**
+  and the evidence. A `memory:remember` entry or a promise to write it at close-out
+  does not satisfy this trigger; the insight is part of finishing the fix.
   **Capture discoveries beyond the invocation record when you find them.** Plain tool
   failures are filed automatically from `tool_invocations` by the invocation-friction
   watchdog, including recovery when fast-path delivery fails. Do not hand-report a plain
