@@ -244,7 +244,7 @@ function uniqueSortedPaths(paths: readonly string[] | undefined): string[] {
   );
 }
 
-async function acquireAdvisoryScope(
+export async function acquireAdvisoryScope(
   tx: Sql,
   coordinationDomain: string,
   paths: readonly string[] | undefined,

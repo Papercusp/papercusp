@@ -1,4 +1,4 @@
-import type { ReleaseLockRow } from './su-lock-store';
+import type { ReleaseLockRow, ProtectReleasePaths } from './su-lock-store';
 
 /**
  * Host seam for `@papercusp/locks`.
@@ -92,6 +92,7 @@ export interface LocksHost {
   beforeFileLocksRelease?: (input: {
     coordinationDomain: string;
     rows: Array<ReleaseLockRow & { owner: string }>;
+    protectRepositoryPaths?: ProtectReleasePaths;
   }) => Promise<void>;
 }
 

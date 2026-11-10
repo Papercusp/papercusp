@@ -517,7 +517,8 @@ async function deleteExpiredFileLocks(tx: Sql, coordinationDomain: string, paths
   `;
   if (!selected.length) return [];
   try {
-    await beforeExpire({ coordinationDomain, rows: selected });
+    await beforeExpire({ coordinationDomain, rows: selected,
+      protectRepositoryPaths: releasePathProtection(tx, coordinationDomain) });
   } catch (cause) {
     // Distinguish custody refusal from fail-open infrastructure diagnostics.
     throw new FileLockPreservationError(cause);
@@ -1203,7 +1204,29 @@ export interface ReleaseParams {
   /** Host preservation runs with the exact live selection still fenced.
    * Throwing rolls back release and cascade; stable host ids reconcile any
    * external custody already written before the transaction failed. */
-  beforeRelease?: (rows: ReleaseLockRow[]) => Promise<void>;
+  beforeRelease?: (rows: ReleaseLockRow[], protectRepositoryPaths?: ProtectReleasePaths) => Promise<void>;
+}
+
+export type ProtectReleasePaths = (coordinationDomain: string, paths: string[]) => Promise<void>;
+
+/** Extend the existing transaction fence to a legacy alias's physical repository.
+ * Never grant/rewrite a lease: even another lease of the same owner is a distinct
+ * generation. The advisory fence also excludes acquire/cascade until settlement. */
+function releasePathProtection(tx: Sql, originalDomain: string): ProtectReleasePaths {
+  return async (coordinationDomain, paths) => {
+    if (coordinationDomain === originalDomain || paths.length === 0) {
+      throw new Error('edit-capture-refused:invalid-alias-protection');
+    }
+    const { acquireAdvisoryScope } = await import('./in-workspace-txn');
+    await acquireAdvisoryScope(tx, coordinationDomain, paths);
+    const conflicts = await tx<Array<{ path: string }>>`
+      SELECT path FROM agent_file_locks
+       WHERE coordination_domain = ${coordinationDomain}
+         AND expires_ts > clock_timestamp() AND ${filePathOverlap(tx, paths)}
+       LIMIT 1
+    `;
+    if (conflicts.length) throw new Error('edit-capture-refused:canonical-path-held');
+  };
 }
 
 export interface ReleaseLockRow {
@@ -1256,8 +1279,8 @@ export async function tryRelease(
 
   const hostPreserve = locksHost().beforeFileLocksRelease;
   const beforeRelease = params.beforeRelease ?? (hostPreserve
-    ? (rows: ReleaseLockRow[]) => hostPreserve({ coordinationDomain,
-      rows: rows.map(row => ({ ...row, owner })) }) : undefined);
+    ? (rows: ReleaseLockRow[], protectRepositoryPaths: ProtectReleasePaths) => hostPreserve({ coordinationDomain,
+      rows: rows.map(row => ({ ...row, owner })), protectRepositoryPaths }) : undefined);
   if (beforeRelease) {
     const selection = allMine ? tx`` : lockId
       ? paths && paths.length > 0
@@ -1276,7 +1299,7 @@ export async function tryRelease(
     // A row may expire while the initial sweep preserves a different row.
     // Release deletes that predecessor too, so expiry must not exclude it
     // from the protected capture selection.
-    if (selected.length) await beforeRelease(selected);
+    if (selected.length) await beforeRelease(selected, releasePathProtection(tx, coordinationDomain));
   }
 
   let released: Array<{ path: string }>;
