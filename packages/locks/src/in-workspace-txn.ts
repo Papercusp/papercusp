@@ -73,10 +73,10 @@ function isTestEnv(): boolean {
 
 export interface WorkspaceTxnOptions {
   /**
-   * TTL-only renewal of existing rows. Use the shared domain gate without
-   * path locks: the conditional UPDATE serializes on its own rows and cannot
-   * insert, delete, change ownership, or resurrect an expired lease. Global
-   * housekeeping still excludes renewals. Never use for acquire/release work.
+   * TTL-only renewal of existing rows, without advisory locks: the conditional
+   * UPDATE serializes on its own rows and cannot insert, delete, change
+   * ownership, or resurrect an expired lease. Unrelated global work must not
+   * starve a live lease's heartbeat. Never use for acquire/release work.
    */
   leaseRenewal?: boolean;
   /**
@@ -273,7 +273,12 @@ export async function acquireAdvisoryScope(
     }
     return;
   }
-  if (!leaseRenewal && scopedPaths.length === 0) {
+  // Renewal and expiry/release serialize on the exact row. Waiting for the
+  // workspace gate here lets an unrelated global operation expire every live
+  // lease in the domain. A conditional UPDATE cannot resurrect a deleted or
+  // expired row, including when it resumes after a concurrent row-lock wait.
+  if (leaseRenewal) return;
+  if (scopedPaths.length === 0) {
     // Preserve the original key for global operations and rolling
     // compatibility with processes that still use the workspace lock alone.
     await tx`SELECT pg_advisory_xact_lock(
@@ -290,8 +295,6 @@ export async function acquireAdvisoryScope(
     ${SU_LOCKS_FEATURE_KEY}::int,
     hashtext(${'su:' + coordinationDomain})
   )`;
-  if (leaseRenewal) return;
-
   // Shared locks on strict ancestors make a subtree/exact-path exclusive lock
   // conflict with descendants, while siblings can share the same directory
   // ancestor. Lock all shared ancestors before any exclusive leaves, then all

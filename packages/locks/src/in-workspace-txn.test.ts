@@ -165,7 +165,7 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
     expect(observed.every((timing) => Number.isFinite(timing.durationMs) && timing.durationMs >= 0)).toBe(true);
   });
 
-  it('uses only the shared domain gate for a targeted lease renewal', async () => {
+  it('does not wait for a domain advisory gate for a targeted lease renewal', async () => {
     const { sql, tx } = fakePool();
     mocks.getTxPool.mockReturnValue(sql);
 
@@ -175,8 +175,7 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
 
     const advisory = tx.mock.calls.map(([strings]) => strings.join(' '))
       .filter((query) => query.includes('pg_advisory'));
-    expect(advisory).toHaveLength(1);
-    expect(advisory[0]).toContain('pg_advisory_xact_lock_shared');
+    expect(advisory).toEqual([]);
   });
 
   // EI-27114494366587753: resource work must not take the EXCLUSIVE workspace key,
