@@ -181,11 +181,51 @@ describe.each([
       if (/DELETE|grant_cascade|promote_resource/i.test(query)) {
         throw Object.assign(new Error('unrelated expired row locked'), { code: '57014' });
       }
-      return query.startsWith('UPDATE') ? [{ expires_ts: expires }] : [];
+      return query.includes('UPDATE') ? [{ expires_ts: expires, extended: true }] : [];
     }) as unknown as Parameters<typeof tryHeartbeat>[0];
 
     await expect(heartbeat(tx, 'domain', 'owner', 'lock-id', 120))
       .resolves.toEqual({ extended: true, expires_ts: expires });
+  });
+});
+
+describe('resource heartbeat refusal evidence', () => {
+  const observed = new Date('2030-01-01T00:10:00Z');
+  const acquired = new Date('2030-01-01T00:00:00Z');
+  const live = new Date('2030-01-01T00:20:00Z');
+
+  it.each([
+    { reason: 'missing', expiry: null, domain: null, owner: null },
+    { reason: 'domain-mismatch', expiry: live, domain: false, owner: true },
+    { reason: 'owner-mismatch', expiry: live, domain: true, owner: false },
+    { reason: 'expired', expiry: observed, domain: true, owner: true },
+    { reason: 'live-row-not-renewed', expiry: live, domain: true, owner: true },
+  ])('preserves $reason without renewing or re-acquiring the lease', async ({ reason, expiry, domain, owner }) => {
+    const statements: Array<{ query: string; values: unknown[] }> = [];
+    const tx = (async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join('$').replace(/\s+/g, ' ').trim();
+      statements.push({ query, values });
+      return query.includes('WITH renewed') ? [{
+        extended: false, expires_ts: null, observed_ts: observed,
+        acquired_ts: expiry ? acquired : null, lease_expires_ts: expiry,
+        domain_matches: domain, owner_matches: owner,
+      }] : [];
+    }) as unknown as Parameters<typeof tryHeartbeatResource>[0];
+
+    await expect(tryHeartbeatResource(tx, 'domain', 'owner', 'lock-id', 120)).resolves.toEqual({
+      extended: false, expires_ts: null, refusal: {
+        reason, observed_ts: observed, acquired_ts: expiry ? acquired : null,
+        lease_expires_ts: expiry, domain_matches: domain, owner_matches: owner,
+      },
+    });
+    const renewal = statements.find(({ query }) => query.includes('WITH renewed'))!;
+    expect(renewal.query).toContain('AND expires_ts > clock_timestamp()');
+    expect(renewal.query).toContain('AND owner = $');
+    expect(renewal.query).toContain('WHERE coordination_domain = $');
+    expect(renewal.query).toContain('WHERE NOT EXISTS (SELECT 1 FROM renewed)');
+    expect(renewal.values).toEqual(['120 seconds', 'domain', 'lock-id', 'owner', 'domain', 'owner', 'lock-id']);
+    expect(statements).toHaveLength(2); // timeout + one atomic renewal/observation statement
+    expect(statements.some(({ query }) => /INSERT|DELETE|grant_cascade/i.test(query))).toBe(false);
   });
 });
 

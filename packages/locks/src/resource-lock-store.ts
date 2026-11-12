@@ -921,8 +921,20 @@ export async function releaseOwnerResourcesScoped(
   return { released: deleted.length, releasedExclusiveResources, exclusiveResources, waiters };
 }
 
+export interface ResourceHeartbeatRefusal {
+  reason: 'missing' | 'domain-mismatch' | 'owner-mismatch' | 'expired' | 'live-row-not-renewed';
+  /** The renewal statement's snapshot, not a later reconstruction of the lost row. */
+  observed_ts: Date;
+  acquired_ts: Date | null;
+  lease_expires_ts: Date | null;
+  domain_matches: boolean | null;
+  owner_matches: boolean | null;
+}
+
 /**
  * Extend a held resource lease's TTL. Owner-checked like tryHeartbeat.
+ * A refused renewal includes the same statement's row observation. It never
+ * re-acquires the lease or guesses why an already missing row disappeared.
  */
 export async function tryHeartbeatResource(
   tx: Sql,
@@ -930,23 +942,62 @@ export async function tryHeartbeatResource(
   owner: string,
   lockId: string,
   ttlSec: number,
-): Promise<{ expires_ts: Date | null; extended: boolean }> {
+): Promise<{ expires_ts: Date | null; extended: boolean; refusal?: ResourceHeartbeatRefusal }> {
   await tx`SET LOCAL statement_timeout = '500ms'`;
   // As with file leases, renew only this live owner's rows. Expiry cleanup
   // and queue promotion belong to the janitor and acquire/release operations.
 
   const ttlText = `${ttlSec} seconds`;
-  const rows = await tx<Array<{ expires_ts: Date }>>`
-    UPDATE agent_resource_locks
-       SET expires_ts = clock_timestamp() + ${ttlText}::interval
-     WHERE coordination_domain = ${coordinationDomain}
-       AND lock_id = ${lockId}::uuid
-       AND owner = ${owner}
-       AND expires_ts > clock_timestamp()
-    RETURNING expires_ts
+  const rows = await tx<Array<{
+    expires_ts: Date | null;
+    extended: boolean;
+    observed_ts: Date | null;
+    acquired_ts: Date | null;
+    lease_expires_ts: Date | null;
+    domain_matches: boolean | null;
+    owner_matches: boolean | null;
+  }>>`
+    WITH renewed AS (
+      UPDATE agent_resource_locks
+         SET expires_ts = clock_timestamp() + ${ttlText}::interval
+       WHERE coordination_domain = ${coordinationDomain}
+         AND lock_id = ${lockId}::uuid
+         AND owner = ${owner}
+         AND expires_ts > clock_timestamp()
+      RETURNING expires_ts
+    )
+    SELECT expires_ts, true AS extended, NULL::timestamptz AS observed_ts,
+           NULL::timestamptz AS acquired_ts, NULL::timestamptz AS lease_expires_ts,
+           NULL::boolean AS domain_matches, NULL::boolean AS owner_matches
+      FROM renewed
+    UNION ALL
+    SELECT NULL::timestamptz, false, clock_timestamp(),
+           snapshot.acquired_ts, snapshot.expires_ts,
+           snapshot.coordination_domain = ${coordinationDomain}, snapshot.owner = ${owner}
+      FROM (SELECT 1) AS attempt
+      LEFT JOIN agent_resource_locks AS snapshot ON snapshot.lock_id = ${lockId}::uuid
+     WHERE NOT EXISTS (SELECT 1 FROM renewed)
   `;
-  if (rows.length === 0) return { expires_ts: null, extended: false };
-  return { expires_ts: rows[0].expires_ts, extended: true };
+  const row = rows[0];
+  if (!row) throw new Error('resource heartbeat returned no renewal observation');
+  if (row.extended) return { expires_ts: row.expires_ts, extended: true };
+  if (!row.observed_ts) throw new Error('refused resource heartbeat lacks its observation time');
+  const reason: ResourceHeartbeatRefusal['reason'] = row.lease_expires_ts === null
+    ? 'missing'
+    : row.domain_matches === false ? 'domain-mismatch'
+    : row.owner_matches === false ? 'owner-mismatch'
+    : row.lease_expires_ts <= row.observed_ts ? 'expired'
+    // A concurrent row change can make UPDATE refuse even though the statement's
+    // snapshot saw a live matching row. Preserve that uncertainty explicitly.
+    : 'live-row-not-renewed';
+  return { expires_ts: null, extended: false, refusal: {
+    reason,
+    observed_ts: row.observed_ts,
+    acquired_ts: row.acquired_ts,
+    lease_expires_ts: row.lease_expires_ts,
+    domain_matches: row.domain_matches,
+    owner_matches: row.owner_matches,
+  } };
 }
 
 /**
