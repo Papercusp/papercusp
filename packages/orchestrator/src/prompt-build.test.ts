@@ -220,14 +220,14 @@ test('buildPrompt — non-curator bee gets the friction trip-wire (self-learning
       runId: 'r1',
       extras: [],
     });
-    assert.match(out, /## Bug \+ friction trip-wire \(self-learning loop\)/);
+    assert.match(out, /\*\*Bug \+ friction trip-wire \(self-learning loop\)\*\*/);
     assert.match(out, /improvements:capture/);
     // Filing a suspected bug is unconditional — the heart of the clause.
     assert.match(out, /FILING IS NOT A JUDGMENT CALL/);
     // Trip-wire, not a per-turn reflection pass.
     assert.match(out, /don't reflect every turn/i);
     // The default (harness-free) base must NOT name harness-pipeline roles.
-    const idx = out.indexOf('## Bug + friction trip-wire');
+    const idx = out.indexOf('**Bug + friction trip-wire');
     const section = out.slice(idx);
     assert.doesNotMatch(section.split('\n---')[0], /validator|reviewer/i);
   } finally {
@@ -279,7 +279,7 @@ test('buildPrompt — non-curator gets the observation-rubric nudge (rubric-driv
       runId: 'r1',
       extras: [],
     });
-    assert.match(out, /## Filing an observation\? Grade it against a rubric if one fits/);
+    assert.match(out, /\*\*Filing an observation\? Grade it against a rubric if one fits\*\*/);
     // It must reference the rubric-discovery tool + the structured-observation fields (P-001 D-003).
     assert.match(out, /rubrics:list/);
     assert.match(out, /observation\.rubricRef/);
@@ -501,7 +501,7 @@ test('buildPrompt — every role gets the deploy-pipeline note (async; a RED gat
   }
 });
 
-test('buildPrompt — every role gets the wait-loop note (waiting? arm a self-wake loop; never sleep on an event that may never fire)', () => {
+test('buildPrompt — every role gets the bounded wait policy with current authority and independent work', () => {
   for (const role of ['worker', 'curator', 'reviewer'] as const) {
     const fx = makeFixture(({ harnessDir }) => {
       writeFileSync(join(harnessDir, `${role}.md`), `# ${role.toUpperCase()}`);
@@ -519,17 +519,13 @@ test('buildPrompt — every role gets the wait-loop note (waiting? arm a self-wa
         runId: 'r1',
         extras: [],
       });
-      assert.match(out, /## Waiting on something\? Arm a self-wake LOOP/);
-      // the user's core reasoning: a never-firing event never wakes you, and it may not fire BECAUSE
-      // something upstream is broken — the thing you must be awake to FIX.
-      assert.match(out, /NEVER-FIRING event/);
-      // mechanism verbs (e.g. hints) for each audience: su loop:arm vs autonomous declare-wake
-      assert.match(out, /loop:arm/);
-      assert.match(out, /pot:declare-wake/);
-      // a worker with no self-wake records the blocker so the live reconciled signal shows it
-      assert.match(out, /work_items:set_state/);
-      // reconciles with the "never poll the datastore as a message bus" anti-pattern (it is NOT that)
-      assert.match(out, /never poll the datastore as a message bus/);
+      assert.ok(out.includes(WAIT_LOOP_NOTE));
+      assert.match(out, /ONE exact push continuation/);
+      assert.match(out, /SAME blocked-wait episode across work\/monitor labels/);
+      assert.match(out, /Default noDeltaBudget is 1/);
+      assert.match(out, /never grants takeover authority/);
+      assert.match(out, /stop automatic polling\/rearm/);
+      assert.match(out, /Independently ready work/);
     } finally {
       fx.cleanup();
     }

@@ -987,24 +987,13 @@ export const AGENT_ACTIVITY_TRUTH_NOTE = [
 ].join('\n');
 
 /**
- * WAIT_LOOP_NOTE — the "waiting on something? arm a self-wake LOOP — never sleep on an event that
- * may never fire" clause every agent shares (owner directive 2026-06-23).
+ * WAIT_LOOP_NOTE — one bounded dependency continuation, with current authority
+ * and custody intact (EI-28588239447583146 approved acceptance).
  *
- * The behavioral complement of the coordination guidance "blocked on something announced? await an
- * event and sleep". That guidance is correct ONLY when a live emitter is GUARANTEED to fire; the
- * failure mode it leaves open is the trap this note closes: an agent blocked on something that may
- * NEVER fire subscribes to an event, ends its turn, and sleeps forever — because the event never
- * fires, and it never fires precisely BECAUSE something upstream is broken (the exact thing the
- * agent needs to be awake to notice and FIX). A bare subscription cannot fix the producer that
- * would make it fire. So when an agent genuinely must wait on something outside its control, it
- * should keep a LIVE re-check alive via a recurring self-wake (su/interactive → `loop:arm`; an
- * autonomous fleet supervisor → `pot:declare-wake` / `kettle:declare-wake`; a worker with no
- * self-wake → record the blocker on the work-item so the live reconciled signal shows it), at a
- * cadence matched to how fast the thing changes, and on each wake re-check + FIX-if-stuck rather
- * than sleep again. It explicitly RECONCILES with the neighbouring notes: first try to REMOVE the
- * wait (do/force it now — the deploy-pipeline + "a red gate is everyone's job" notes), and it is
- * NOT the "never poll the datastore as a message bus" anti-pattern (a paced liveness re-check that
- * ALSO carries a fix-it mandate is the point; the passive bare subscription is the trap).
+ * Exact push delivery stays primary. Rechecks share the same finite episode;
+ * uncertainty parks automatic probes without spending budget or authorizing a
+ * takeover. Independent work continues. Keep the default shortened projection in
+ * operator-core's prompt-reference-sections.ts aligned with this source.
  *
  * Sourced once here (the CONCURRENCY_FIRST_NOTE / DEPLOY_PIPELINE_NOTE / AGENT_ACTIVITY_TRUTH_NOTE
  * precedent): injected into the spawned-bee base (buildPromptParts below) + the operator-launched-
