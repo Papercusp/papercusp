@@ -19,7 +19,7 @@
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'crypto';
 import type { BuildPromptInput, PromptParts } from './prompt-build';
-import { buildPromptParts } from './prompt-build';
+import { buildPromptParts, WAIT_LOOP_NOTE } from './prompt-build';
 
 /** Hash a string for quick byte-comparison. */
 function sha256(s: string): string {
@@ -92,6 +92,15 @@ function makeInput(role: string, volatile: { runId: string; extras: string[] }):
 }
 
 describe('bee preamble byte-stability (WI-175)', () => {
+  it('renders the same bounded wait policy across distinct wake contexts', () => {
+    const a = buildPromptParts(makeInput('test-worker', { runId: 'warm', extras: ['first wait'] }));
+    const b = buildPromptParts(makeInput('test-worker', { runId: 'cold', extras: ['equivalent rearm'] }));
+    expect(a.preamble).toContain(WAIT_LOOP_NOTE);
+    expect(b.preamble).toContain(WAIT_LOOP_NOTE);
+    expect(a.preamble).toBe(b.preamble);
+    expect(WAIT_LOOP_NOTE).toContain('stop automatic polling/rearm');
+    expect(WAIT_LOOP_NOTE).toContain('never grants takeover authority');
+  });
   it('preamble is BYTE-IDENTICAL across multiple spawns with different volatile inputs', () => {
     const role = 'test-worker';
 

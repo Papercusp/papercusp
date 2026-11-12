@@ -1146,7 +1146,7 @@ test('buildPrompt — empty sharedGuides produces no extra section dividers', ()
     // agent-activity-truth note (agent-activity-liveness-truth-2026-06-21) rides the shared bee base.
     assert.match(out, /is a LIVE derived truth/);
     // wait-loop note (owner directive 2026-06-23) rides the shared bee base.
-    assert.match(out, /Arm a self-wake LOOP/);
+    assert.match(out, /Keep one bounded continuation and work independent steps/);
     // ...and carries the keep-working-while-you-wait bullet (owner directive 2026-09-26, WI-10003276).
     assert.match(out, /SECOND, keep working while you wait/);
     // peer-wake note (owner directive 2026-06-24) rides the shared bee base.
@@ -1167,6 +1167,25 @@ test('waiting never means idling: work the independent steps, and arm an await F
   const su = readSuSource();
   assert.doesNotMatch(su, /`events:await \{ event \}` → END YOUR TURN/);
   assert.match(su, /`events:await \{ event \}` FIRST, then finish every step that does not need the/);
+});
+
+test('rendered waiting policy preserves bounded custody and uncertainty without an automatic takeover mandate', () => {
+  const fx = makeFixture(() => {});
+  try {
+    const out = buildPrompt({
+      role: 'worker', promptFile: join(fx.harnessDir, 'worker.md'),
+      projectDir: fx.projectDir, harnessDir: fx.harnessDir, stateDir: fx.stateDir,
+      runId: 'wait-policy-regression', extras: [],
+    });
+    assert.ok(out.includes(WAIT_LOOP_NOTE));
+    assert.match(out, /SAME blocked-wait episode across work\/monitor labels/);
+    assert.match(out, /stop automatic polling\/rearm/);
+    assert.match(out, /never grants takeover authority/);
+    assert.match(out, /Independently ready work/);
+    assert.doesNotMatch(WAIT_LOOP_NOTE, /schedule a RECURRING self-wake|TAKE THE WORK OVER yourself|DO or FORCE it now/);
+  } finally {
+    fx.cleanup();
+  }
 });
 
 test('buildPrompt — whitespace-only sharedGuides entries are skipped', () => {
