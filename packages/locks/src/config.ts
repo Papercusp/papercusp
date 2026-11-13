@@ -87,7 +87,8 @@ export interface LocksHost {
   /** Committed expiry deletions which left no live exclusive successor. */
   onResourceExpired?: (release: ResourceExpiryRelease) => void | Promise<void>;
   /** Preserve predecessor generations before release/expiry removes rows.
-   * Runs inside the lock transaction, before any successor can grant.
+   * Runs outside SQL with the existing path fence retained until the exact
+   * selection is revalidated and removed, before any successor can grant.
    * Rejection retains the rows and prevents handoff. Non-Git hosts may omit. */
   beforeFileLocksRelease?: (input: {
     coordinationDomain: string;

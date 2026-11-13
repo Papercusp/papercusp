@@ -20,9 +20,10 @@ import {
   ensureBootstrap,
   getTxPool,
   SU_LOCKS_FEATURE_KEY,
+  SU_LOCK_TX_POOL_LABEL,
 } from './su-lock-store';
 import { startBackgroundJanitor } from './workspace-listener';
-import { txnTimeouts } from './config';
+import { beginAcquireDiagnostic, txnTimeouts } from './config';
 
 /**
  * Thrown when a per-workspace transaction can't proceed in time under
@@ -79,6 +80,9 @@ export interface WorkspaceTxnOptions {
    * starve a live lease's heartbeat. Never use for acquire/release work.
    */
   leaseRenewal?: boolean;
+  /** Global janitor only: skip a busy domain without waiting. The callback is
+   * not entered and the result is undefined; use with a void callback. */
+  tryWorkspaceLock?: boolean;
   /**
    * Canonical file-lock paths touched by this transaction. When present,
    * acquire the shared workspace gate, shared advisory locks for each strict
@@ -167,55 +171,54 @@ async function measureAsyncPhase<T>(
   }
 }
 
-/**
- * A custody callback can be doing bounded filesystem/Git work while retaining
- * the transaction's row and advisory fences. PostgreSQL otherwise treats that
- * work as idle and can kill the connection before preservation commits. Keep
- * this SAME transaction active; never renew a lease or release its fence here.
- * There is at most one probe in flight, and settlement joins it before COMMIT
- * or ROLLBACK. A failed probe must make a successful callback roll back too.
- */
-async function withTransactionLiveness<T>(
-  tx: Sql,
-  idleTimeoutMs: number,
-  operation: () => Promise<T>,
-): Promise<T> {
-  if (!Number.isFinite(idleTimeoutMs) || idleTimeoutMs <= 0) return operation();
-  const intervalMs = Math.max(1, Math.min(10_000, Math.floor(idleTimeoutMs / 3)));
-  let stopped = false;
-  let failed = false;
-  let failure: unknown;
-  let pending: Promise<void> | undefined;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const schedule = (): void => {
-    timer = setTimeout(() => {
-      pending = (async () => {
-        try {
-          await tx`SELECT 1 /* workspace transaction liveness */`;
-        } catch (error) {
-          failed = true;
-          failure = error;
-        } finally {
-          if (!stopped && !failed) schedule();
-        }
-      })();
-    }, intervalMs);
-    timer.unref?.();
-  };
-  schedule();
-  try {
-    const result = await operation();
-    // The final probe may still be running when operation() returns.
-    stopped = true;
-    if (timer) clearTimeout(timer);
-    await pending;
-    if (failed) throw failure;
-    return result;
-  } finally {
-    stopped = true;
-    if (timer) clearTimeout(timer);
-    await pending;
+class PreservationRequired extends Error {
+  constructor(readonly effect: () => Promise<unknown>, readonly identity: string) {
+    super('file-lock preservation requires transaction settlement');
   }
+}
+
+interface PreservationContext {
+  next: number;
+  completed: Array<{ identity: string; result: unknown }>;
+  pending?: PreservationRequired;
+  protect: (domain: string, paths: readonly string[]) => Promise<void>;
+  sql: Sql;
+}
+
+const preservationContexts = new WeakMap<Sql, PreservationContext>();
+
+/** Reserve the exact existing lease/operation under the same advisory keys on
+ * one dedicated session. Settle SQL before capture, then reread that identity
+ * before release/cascade. The existing lease, hook operation and immutable host
+ * receipt remain the durable records; no parallel reservation store is needed. */
+export async function preserveOutsideWorkspaceTxn<T>(
+  tx: Sql, domain: string, paths: readonly string[], identity: unknown,
+  effect: () => Promise<T>,
+): Promise<T> {
+  const context = preservationContexts.get(tx);
+  if (!context) throw new Error('file-lock preservation requires inWorkspaceTxn');
+  const key = JSON.stringify(identity);
+  const index = context.next++;
+  const prior = context.completed[index];
+  if (prior) {
+    if (prior.identity !== key) throw new Error('file-lock preservation selection changed');
+    return prior.result as T;
+  }
+  await context.protect(domain, paths);
+  const pending = new PreservationRequired(effect, key);
+  context.pending = pending;
+  throw pending;
+}
+
+/** Physical alias protection uses the same session fence. A different live
+ * lease remains a refusal, including another lease of the same owner. */
+export async function protectPreservationAlias(
+  tx: Sql, domain: string, paths: readonly string[], check: (sql: Sql) => Promise<void>,
+): Promise<void> {
+  const context = preservationContexts.get(tx);
+  if (!context) throw new Error('file-lock preservation requires inWorkspaceTxn');
+  await context.protect(domain, paths);
+  await check(context.sql);
 }
 
 function pathAncestors(path: string): string[] {
@@ -250,7 +253,18 @@ export async function acquireAdvisoryScope(
   paths: readonly string[] | undefined,
   leaseRenewal = false,
   resources?: readonly string[],
+  session = false,
 ): Promise<void> {
+  const lock = async (key: string, shared = false): Promise<void> => {
+    if (session) {
+      if (shared) await tx`SELECT pg_advisory_lock_shared(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+      else await tx`SELECT pg_advisory_lock(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+    } else if (shared) {
+      await tx`SELECT pg_advisory_xact_lock_shared(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+    } else {
+      await tx`SELECT pg_advisory_xact_lock(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+    }
+  };
   const scopedPaths = uniqueSortedPaths(paths);
   const scopedResources = Array.from(
     new Set((resources ?? []).filter((resource) => resource.length > 0)),
@@ -261,15 +275,9 @@ export async function acquireAdvisoryScope(
     }
     // Same shared gate as path-scoped work: a domain-global operation (or an
     // older process still taking the exclusive key for resource work) excludes us.
-    await tx`SELECT pg_advisory_xact_lock_shared(
-      ${SU_LOCKS_FEATURE_KEY}::int,
-      hashtext(${'su:' + coordinationDomain})
-    )`;
+    await lock('su:' + coordinationDomain, true);
     for (const resource of scopedResources) {
-      await tx`SELECT pg_advisory_xact_lock(
-        ${SU_LOCKS_FEATURE_KEY}::int,
-        hashtext(${'su-resource:' + coordinationDomain + ':' + resource})
-      )`;
+      await lock('su-resource:' + coordinationDomain + ':' + resource);
     }
     return;
   }
@@ -281,20 +289,14 @@ export async function acquireAdvisoryScope(
   if (scopedPaths.length === 0) {
     // Preserve the original key for global operations and rolling
     // compatibility with processes that still use the workspace lock alone.
-    await tx`SELECT pg_advisory_xact_lock(
-      ${SU_LOCKS_FEATURE_KEY}::int,
-      hashtext(${'su:' + coordinationDomain})
-    )`;
+    await lock('su:' + coordinationDomain);
     return;
   }
 
   // The shared gate prevents a path-scoped operation from racing a global
   // sweep/resource operation. The old workspace key is deliberately reused so
   // an old process holding the exclusive key still blocks new path work.
-  await tx`SELECT pg_advisory_xact_lock_shared(
-    ${SU_LOCKS_FEATURE_KEY}::int,
-    hashtext(${'su:' + coordinationDomain})
-  )`;
+  await lock('su:' + coordinationDomain, true);
   // Shared locks on strict ancestors make a subtree/exact-path exclusive lock
   // conflict with descendants, while siblings can share the same directory
   // ancestor. Lock all shared ancestors before any exclusive leaves, then all
@@ -304,24 +306,20 @@ export async function acquireAdvisoryScope(
     new Set(scopedPaths.flatMap(pathAncestors)),
   ).sort();
   for (const path of ancestors) {
-    await tx`SELECT pg_advisory_xact_lock_shared(
-      ${SU_LOCKS_FEATURE_KEY}::int,
-      hashtext(${'su:' + coordinationDomain + ':' + path})
-    )`;
+    await lock('su:' + coordinationDomain + ':' + path, true);
   }
   for (const path of scopedPaths) {
-    await tx`SELECT pg_advisory_xact_lock(
-      ${SU_LOCKS_FEATURE_KEY}::int,
-      hashtext(${'su:' + coordinationDomain + ':' + path})
-    )`;
+    await lock('su:' + coordinationDomain + ':' + path);
   }
 }
 
-export async function inWorkspaceTxn<T>(
+async function workspaceTransactionAttempt<T>(
   coordinationDomain: string,
   ownerId: string,
   fn: (tx: Sql) => Promise<T>,
   options: WorkspaceTxnOptions = {},
+  pool?: Sql,
+  acquisitionStartedAt?: number,
 ): Promise<T> {
   const onPhase = options.onPhase;
   const phaseTimings = onPhase ? [] as WorkspaceTxnPhaseTiming[] : null;
@@ -338,8 +336,8 @@ export async function inWorkspaceTxn<T>(
   if (!isTestEnv()) {
     measureSyncPhase(phaseObserver, 'background-janitor-arm', () => startBackgroundJanitor());
   }
-  const sql = measureSyncPhase(phaseObserver, 'pool-lookup', () => getTxPool());
-  const transactionStartedAt = phaseObserver ? performance.now() : null;
+  const sql = measureSyncPhase(phaseObserver, 'pool-lookup', () => pool ?? getTxPool());
+  const transactionStartedAt = phaseObserver ? acquisitionStartedAt ?? performance.now() : null;
   const transactionPhaseStartIndex = phaseTimings?.length ?? 0;
   let transactionEntered = false;
   // postgres-js's `begin` returns the handler's value but wraps it in
@@ -369,30 +367,30 @@ export async function inWorkspaceTxn<T>(
       configuredTimeouts.statementTimeoutMs,
       options.minStatementTimeoutMs,
     );
-    const settings = await measureAsyncPhase(phaseObserver, 'transaction-settings', () =>
+    await measureAsyncPhase(phaseObserver, 'transaction-settings', () =>
       tx`SELECT set_config('application_name', ${'papercusp-su:' + ownerId}, true),
                     set_config('lock_timeout', ${`${Math.trunc(lockTimeoutMs)}ms`}, true),
-                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true),
-                    EXTRACT(EPOCH FROM current_setting('idle_in_transaction_session_timeout')::interval)
-                      * 1000 AS idle_timeout_ms`,
+                    set_config('statement_timeout', ${`${Math.trunc(statementTimeoutMs)}ms`}, true)`,
     );
-    await measureAsyncPhase(phaseObserver, 'advisory-scope', () =>
-      acquireAdvisoryScope(
-        tx as unknown as Sql,
-        coordinationDomain,
-        options.paths,
-        options.leaseRenewal,
-        options.resources,
-      ),
-    );
+    const scoped = await measureAsyncPhase(phaseObserver, 'advisory-scope', async () => {
+      if (options.tryWorkspaceLock) {
+        if (options.paths?.length || options.resources?.length || options.leaseRenewal) {
+          throw new Error('tryWorkspaceLock requires a global workspace scope');
+        }
+        const rows = await tx`SELECT pg_try_advisory_xact_lock(
+          ${SU_LOCKS_FEATURE_KEY}::int, hashtext(${'su:' + coordinationDomain})) AS locked`;
+        return rows[0]?.locked === true;
+      }
+      await acquireAdvisoryScope(tx as unknown as Sql, coordinationDomain,
+        options.paths, options.leaseRenewal, options.resources);
+      return true;
+    });
+    if (!scoped) return undefined as T;
     // TransactionSql has the same tagged-template surface as Sql for our
     // purposes; the cast lets store helpers take a single `Sql` type
     // rather than juggling a union that TS can't resolve as callable.
-    return measureAsyncPhase(phaseObserver, 'operation', () =>
-      withTransactionLiveness(tx as unknown as Sql, Number(settings[0]?.idle_timeout_ms),
-        () => fn(tx as unknown as Sql)),
-    );
-    });
+    return measureAsyncPhase(phaseObserver, 'operation', () => fn(tx as unknown as Sql));
+    }, Boolean(pool));
   } catch (err) {
     if (transactionStartedAt !== null && !transactionEntered) {
       reportWorkspaceTxnPhase(
@@ -426,4 +424,104 @@ export async function inWorkspaceTxn<T>(
     }
   }
   return result as T;
+}
+
+export async function inWorkspaceTxn<T>(
+  coordinationDomain: string, ownerId: string, fn: (tx: Sql) => Promise<T>,
+  options: WorkspaceTxnOptions = {},
+): Promise<T> {
+  await ensureBootstrap();
+  const acquisitionStartedAt = options.onPhase ? performance.now() : undefined;
+  const acquisition = beginAcquireDiagnostic(SU_LOCK_TX_POOL_LABEL);
+  const connection = await getTxPool().reserve().then(reserved => {
+    acquisition?.acquired();
+    return reserved;
+  }, error => {
+    acquisition?.release();
+    throw error;
+  });
+  let firstAttempt = true;
+  let inTransaction = false;
+  // ReservedSql has no begin(): ordinary postgres-js begin closes over the
+  // pool, which could select another backend. Keep settlement and session keys
+  // on this reserved connection, including after ROLLBACK of a SQL-only prefix.
+  const pool = new Proxy(connection, {
+    get(target, property) {
+      if (property !== 'begin') return Reflect.get(target, property);
+      return async (run: (tx: Sql) => Promise<unknown>) => {
+        await connection.unsafe('BEGIN');
+        inTransaction = true;
+        try {
+          const result = await run(connection as unknown as Sql);
+          await connection.unsafe('COMMIT');
+          return result;
+        } catch (error) {
+          await connection.unsafe('ROLLBACK');
+          throw error;
+        } finally {
+          inTransaction = false;
+        }
+      };
+    },
+  }) as unknown as Sql;
+  const scopes = new Set<string>();
+  let fenced = false;
+  const context: PreservationContext = {
+    next: 0, completed: [], sql: connection as unknown as Sql,
+    protect: async (domain, paths) => {
+      const key = JSON.stringify([domain, uniqueSortedPaths(paths)]);
+      if (scopes.has(key)) return;
+      const take = async () => {
+        fenced = true;
+        await acquireAdvisoryScope(context.sql, domain, paths, false, undefined, true);
+      };
+      // The first reservation overlaps its transaction's original keys. An
+      // alias requested by capture uses a separate short, timeout-bounded txn.
+      if (inTransaction) await take();
+      else await workspaceTransactionAttempt(domain, ownerId, take, { paths }, pool);
+      scopes.add(key);
+    },
+  };
+  const tx = connection as unknown as Sql;
+  preservationContexts.set(tx, context);
+  try {
+    for (;;) {
+      context.next = 0;
+      context.pending = undefined;
+      try {
+        const startedAt = firstAttempt ? acquisitionStartedAt : undefined;
+        firstAttempt = false;
+        return await workspaceTransactionAttempt(coordinationDomain, ownerId, async () => {
+          const protect = context.protect;
+          context.protect = async (domain, paths) => {
+            context.protect = protect;
+            await protect(coordinationDomain, options.paths ?? []);
+            await protect(domain, paths);
+          };
+          const result = await fn(tx);
+          if (context.next !== context.completed.length) {
+            throw new Error('file-lock preservation selection changed');
+          }
+          return result;
+        }, options, pool, startedAt);
+      } catch (error) {
+        // Expiry wraps host errors. Only this request's exact sentinel may
+        // cross the settlement boundary; an ordinary error never runs capture.
+        let cause: unknown = error;
+        while (cause instanceof Error && cause !== context.pending && cause.cause) cause = cause.cause;
+        const pending = context.pending as PreservationRequired | undefined;
+        if (!pending || cause !== pending) throw error;
+        const result = await pending.effect();
+        context.completed.push({ identity: pending.identity, result });
+      }
+    }
+  } finally {
+    preservationContexts.delete(tx);
+    try {
+      if (fenced) await connection`SELECT pg_advisory_unlock_all()`;
+    } finally {
+      connection.release();
+      acquisition?.release();
+    }
+  }
 }

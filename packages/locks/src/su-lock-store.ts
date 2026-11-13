@@ -99,8 +99,9 @@ let bootstrapped = false;
 export async function beginSuLockTransaction<T>(
   sql: Sql,
   run: (tx: SuTransactionSql) => Promise<T>,
+  acquisitionAlreadyTracked = false,
 ): Promise<T> {
-  const ticket = beginAcquireDiagnostic(SU_LOCK_TX_POOL_LABEL);
+  const ticket = acquisitionAlreadyTracked ? null : beginAcquireDiagnostic(SU_LOCK_TX_POOL_LABEL);
   let expiries: ResourceExpiryRelease[] = [];
   try {
     const result = await sql.begin(async (tx) => {
@@ -517,8 +518,10 @@ async function deleteExpiredFileLocks(tx: Sql, coordinationDomain: string, paths
   `;
   if (!selected.length) return [];
   try {
-    await beforeExpire({ coordinationDomain, rows: selected,
-      protectRepositoryPaths: releasePathProtection(tx, coordinationDomain) });
+    const { preserveOutsideWorkspaceTxn } = await import('./in-workspace-txn');
+    await preserveOutsideWorkspaceTxn(tx, coordinationDomain, selected.map(row => row.path),
+      ['expiry', coordinationDomain, selected], () => beforeExpire({ coordinationDomain, rows: selected,
+        protectRepositoryPaths: releasePathProtection(tx, coordinationDomain) }));
   } catch (cause) {
     // Distinguish custody refusal from fail-open infrastructure diagnostics.
     throw new FileLockPreservationError(cause);
@@ -621,18 +624,11 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
       WHERE expires_ts <= clock_timestamp()
   `;
 
+  const { inWorkspaceTxn } = await import('./in-workspace-txn');
   for (const { coordination_domain } of dirty) {
     try {
-      await beginSuLockTransaction(sql, async (txn) => {
-        const tx = txn as unknown as Sql;
+      await inWorkspaceTxn(coordination_domain, 'system:lock-janitor', async (tx) => {
         await tx`SET LOCAL statement_timeout = '2s'`;
-        const got = await tx<Array<{ locked: boolean }>>`
-          SELECT pg_try_advisory_xact_lock(
-            ${SU_LOCKS_FEATURE_KEY}::int,
-            hashtext(${'su:' + coordination_domain})
-          ) AS locked
-        `;
-        if (!got[0]?.locked) return; // contended — handled elsewhere
         const swept = await sweepWorkspaceExpired(tx, coordination_domain);
         if (swept) {
           await tx`SELECT grant_cascade(${coordination_domain}, clock_timestamp())`;
@@ -642,7 +638,7 @@ export async function runBackgroundJanitorOnce(): Promise<void> {
         if (resourceSwept) {
           await tx`SELECT resource_grant_cascade(${coordination_domain}, clock_timestamp())`;
         }
-      });
+      }, { tryWorkspaceLock: true });
     } catch (err) {
       console.error(
         `[su-locks] background janitor: workspace ${coordination_domain} sweep failed`,
@@ -1137,7 +1133,7 @@ export async function tryFinishHookOperation(
   params: AcquireParams & {
     operation: HookLockOperation;
     outcome: 'cancelled' | 'completed';
-    /** Runs under the existing path transaction BEFORE release/cascade. The
+    /** Runs outside SQL under the existing operation/path fence BEFORE release/cascade. The
      * host must verify durable custody, including on replay. Throwing keeps
      * the original lease and operation state; external effects need stable ids. */
     beforeRelease?: (operation: {
@@ -1170,10 +1166,15 @@ export async function tryFinishHookOperation(
     `;
     if (live.length !== data.held.length) throw new Error('operation_preservation_fence_lost');
   }
-  const captureReceipt = params.outcome === 'completed' && params.beforeRelease
-    ? await params.beforeRelease({ requestedPaths: row.paths, goalRef: row.goal_ref,
-      state: data.state, captureReceipt: data.captureReceipt })
-    : data.captureReceipt;
+  let captureReceipt = data.captureReceipt;
+  if (params.outcome === 'completed' && params.beforeRelease) {
+    const { preserveOutsideWorkspaceTxn } = await import('./in-workspace-txn');
+    const operation = { requestedPaths: row.paths, goalRef: row.goal_ref,
+      state: data.state, captureReceipt: data.captureReceipt };
+    captureReceipt = await preserveOutsideWorkspaceTxn(tx, params.coordinationDomain, row.paths,
+      ['hook', params.coordinationDomain, params.owner, params.operation.id, data],
+      () => params.beforeRelease!(operation));
+  }
   if (data.lockId && data.newlyHeld.length > 0) {
     const result = await tryRelease(tx, { coordinationDomain: params.coordinationDomain,
       owner: params.owner, lockId: data.lockId, paths: data.newlyHeld,
@@ -1201,9 +1202,9 @@ export interface ReleaseParams {
   /** Omit to read every path; an explicit empty array intentionally matches no paths. */
   paths?: string[];
   allMine?: boolean;
-  /** Host preservation runs with the exact live selection still fenced.
-   * Throwing rolls back release and cascade; stable host ids reconcile any
-   * external custody already written before the transaction failed. */
+  /** Host preservation runs outside SQL with the exact selection still fenced.
+   * Throwing prevents release/cascade; stable host ids reconcile custody
+   * already written before a later settlement failed. */
   beforeRelease?: (rows: ReleaseLockRow[], protectRepositoryPaths?: ProtectReleasePaths) => Promise<void>;
 }
 
@@ -1217,15 +1218,16 @@ function releasePathProtection(tx: Sql, originalDomain: string): ProtectReleaseP
     if (coordinationDomain === originalDomain || paths.length === 0) {
       throw new Error('edit-capture-refused:invalid-alias-protection');
     }
-    const { acquireAdvisoryScope } = await import('./in-workspace-txn');
-    await acquireAdvisoryScope(tx, coordinationDomain, paths);
-    const conflicts = await tx<Array<{ path: string }>>`
+    const { protectPreservationAlias } = await import('./in-workspace-txn');
+    await protectPreservationAlias(tx, coordinationDomain, paths, async (sql) => {
+      const conflicts = await sql<Array<{ path: string }>>`
       SELECT path FROM agent_file_locks
        WHERE coordination_domain = ${coordinationDomain}
          AND expires_ts > clock_timestamp() AND ${filePathOverlap(tx, paths)}
        LIMIT 1
     `;
-    if (conflicts.length) throw new Error('edit-capture-refused:canonical-path-held');
+      if (conflicts.length) throw new Error('edit-capture-refused:canonical-path-held');
+    });
   };
 }
 
@@ -1299,7 +1301,12 @@ export async function tryRelease(
     // A row may expire while the initial sweep preserves a different row.
     // Release deletes that predecessor too, so expiry must not exclude it
     // from the protected capture selection.
-    if (selected.length) await beforeRelease(selected, releasePathProtection(tx, coordinationDomain));
+    if (selected.length) {
+      const { preserveOutsideWorkspaceTxn } = await import('./in-workspace-txn');
+      await preserveOutsideWorkspaceTxn(tx, coordinationDomain, selected.map(row => row.path),
+        ['release', coordinationDomain, owner, selected],
+        () => beforeRelease(selected, releasePathProtection(tx, coordinationDomain)));
+    }
   }
 
   let released: Array<{ path: string }>;

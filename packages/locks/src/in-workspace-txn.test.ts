@@ -29,18 +29,22 @@ vi.mock('./config', async (importOriginal) => ({
   beginAcquireDiagnostic: mocks.beginAcquireDiagnostic,
 }));
 
-import { inWorkspaceTxn } from './in-workspace-txn';
+import { inWorkspaceTxn, preserveOutsideWorkspaceTxn, protectPreservationAlias } from './in-workspace-txn';
 import type { WorkspaceTxnPhaseTiming } from './in-workspace-txn';
 
-function fakePool(idleTimeoutMs = 0) {
-  const tx = vi.fn(async (strings: TemplateStringsArray, ..._values: unknown[]) =>
-    strings.join(' ').includes('idle_timeout_ms') ? [{ idle_timeout_ms: idleTimeoutMs }] : []);
-  const sql = {
-    begin: vi.fn(async (run: (transaction: Sql) => Promise<unknown>) =>
-      run(tx as unknown as Sql),
-    ),
-  };
-  return { sql, tx };
+function fakePool() {
+  let active = false;
+  const commands: string[] = [];
+  const tx = vi.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => []);
+  const release = vi.fn();
+  const unsafe = vi.fn(async (command: string) => {
+    commands.push(command);
+    active = command === 'BEGIN';
+    return [];
+  });
+  Object.assign(tx, { unsafe, release });
+  const sql = { reserve: vi.fn(async () => tx) };
+  return { sql, tx, commands, release, active: () => active };
 }
 
 describe('inWorkspaceTxn diagnostic phase timing', () => {
@@ -61,82 +65,78 @@ describe('inWorkspaceTxn diagnostic phase timing', () => {
     vi.unstubAllEnvs();
   });
 
-  it('keeps an active custody callback alive and stops probing after settlement', async () => {
-    vi.useFakeTimers();
-    const { sql, tx } = fakePool(90);
+  it('settles SQL before a paused capture and revalidates before committing', async () => {
+    const { sql, tx, commands, release, active } = fakePool();
     mocks.getTxPool.mockReturnValue(sql);
     let finish!: () => void;
-    const work = new Promise<void>((resolve) => { finish = resolve; });
-    const result = inWorkspaceTxn('custody', 'owner', async () => { await work; return 'preserved'; });
-    await vi.advanceTimersByTimeAsync(120);
-    const probes = () => tx.mock.calls.filter(([strings]) => strings.join(' ').includes('transaction liveness'));
-    expect(probes().length).toBeGreaterThanOrEqual(3);
-    finish();
-    await expect(result).resolves.toBe('preserved');
-    const count = probes().length;
-    await vi.advanceTimersByTimeAsync(180);
-    expect(probes()).toHaveLength(count);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('drains an in-flight probe before the transaction can settle', async () => {
-    vi.useFakeTimers();
-    const { sql, tx } = fakePool(90);
-    let finishProbe!: () => void;
-    let finishWork!: () => void;
-    const probe = new Promise<void>((resolve) => { finishProbe = resolve; });
-    const work = new Promise<void>((resolve) => { finishWork = resolve; });
-    tx.mockImplementation(async (strings) => {
-      const query = strings.join(' ');
-      if (query.includes('idle_timeout_ms')) return [{ idle_timeout_ms: 90 }];
-      if (query.includes('transaction liveness')) await probe;
-      return [];
+    const work = new Promise<void>(resolve => { finish = resolve; });
+    const capture = vi.fn(async () => {
+      expect(active()).toBe(false);
+      await work;
+      expect(active()).toBe(false);
+      return { custody: 'original' };
     });
-    mocks.getTxPool.mockReturnValue(sql);
-    let settled = false;
-    const result = inWorkspaceTxn('custody', 'owner', async () => { await work; return 'done'; })
-      .then((value) => { settled = true; return value; });
-    await vi.advanceTimersByTimeAsync(30);
-    finishWork();
-    await vi.advanceTimersByTimeAsync(300);
-    expect(settled).toBe(false);
-    expect(tx.mock.calls.filter(([s]) => s.join(' ').includes('transaction liveness'))).toHaveLength(1);
-    finishProbe();
-    await expect(result).resolves.toBe('done');
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it('fails closed on a probe error and stops after a failed capture', async () => {
-    vi.useFakeTimers();
-    const { sql, tx } = fakePool(90);
-    const lostConnection = new Error('connection lost');
-    tx.mockImplementation(async (strings) => {
-      if (strings.join(' ').includes('idle_timeout_ms')) return [{ idle_timeout_ms: 90 }];
-      if (strings.join(' ').includes('transaction liveness')) throw lostConnection;
-      return [];
-    });
-    mocks.getTxPool.mockReturnValue(sql);
-    let finish!: () => void;
-    const work = new Promise<void>((resolve) => { finish = resolve; });
-    const result = inWorkspaceTxn('custody', 'owner', async () => { await work; return 'must not commit'; });
-    const rejected = expect(result).rejects.toBe(lostConnection);
-    await vi.advanceTimersByTimeAsync(120);
+    const result = inWorkspaceTxn('custody', 'owner', async transaction => {
+      const receipt = await preserveOutsideWorkspaceTxn(transaction, 'custody', ['a.ts'],
+        { lease: 'original' }, capture);
+      expect(active()).toBe(true);
+      return receipt;
+    }, { paths: ['a.ts'] });
+    await vi.waitFor(() => expect(capture).toHaveBeenCalledOnce());
+    expect(commands).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(release).not.toHaveBeenCalled();
+    expect(tx.mock.calls.some(([s]) => s.join(' ').includes('pg_advisory_lock('))).toBe(true);
     finish();
-    await rejected;
-    expect(tx.mock.calls.filter(([s]) => s.join(' ').includes('transaction liveness'))).toHaveLength(1);
-    const captureFailure = new Error('capture failed');
-    await expect(inWorkspaceTxn('custody', 'owner', async () => { throw captureFailure; })).rejects.toBe(captureFailure);
-    await vi.advanceTimersByTimeAsync(180);
-    expect(vi.getTimerCount()).toBe(0);
+    await expect(result).resolves.toEqual({ custody: 'original' });
+    expect(capture).toHaveBeenCalledOnce();
+    expect(commands).toEqual(['BEGIN', 'ROLLBACK', 'BEGIN', 'COMMIT']);
+    expect(tx.mock.calls.at(-1)?.[0].join(' ')).toContain('pg_advisory_unlock_all');
+    expect(release).toHaveBeenCalledOnce();
   });
 
-  it('does not probe when the effective idle timeout is disabled', async () => {
-    vi.useFakeTimers();
-    const { sql, tx } = fakePool(0);
+  it('keeps release rolled back when capture fails and drops the session fence', async () => {
+    const { sql, commands, release, active } = fakePool();
     mocks.getTxPool.mockReturnValue(sql);
-    await inWorkspaceTxn('custody', 'owner', async () => { await vi.advanceTimersByTimeAsync(120); });
-    expect(tx.mock.calls.some(([s]) => s.join(' ').includes('transaction liveness'))).toBe(false);
-    expect(vi.getTimerCount()).toBe(0);
+    const failure = new Error('capture failed');
+    await expect(inWorkspaceTxn('custody', 'owner', transaction =>
+      preserveOutsideWorkspaceTxn(transaction, 'custody', ['a.ts'], ['lease'], async () => {
+        expect(active()).toBe(false);
+        throw failure;
+      }), { paths: ['a.ts'] })).rejects.toBe(failure);
+    expect(commands).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it.each(['changed', 'missing'])('refuses a %s selection instead of recapturing a successor', async mode => {
+    const { sql, commands, release } = fakePool();
+    mocks.getTxPool.mockReturnValue(sql);
+    let captured = false;
+    const capture = vi.fn(async () => { captured = true; return 'receipt'; });
+    await expect(inWorkspaceTxn('custody', 'owner', async transaction => {
+      if (captured && mode === 'missing') return 'must not commit';
+      return preserveOutsideWorkspaceTxn(transaction, 'custody', ['a.ts'],
+        [captured ? 'successor' : 'original'], capture);
+    }, { paths: ['a.ts'] })).rejects.toThrow('preservation selection changed');
+    expect(capture).toHaveBeenCalledOnce();
+    expect(commands).toEqual(['BEGIN', 'ROLLBACK', 'BEGIN', 'ROLLBACK']);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it('retains physical alias protection without an idle SQL transaction', async () => {
+    const { sql, commands, active } = fakePool();
+    mocks.getTxPool.mockReturnValue(sql);
+    const capture = vi.fn(async (transaction: Sql) => {
+      await protectPreservationAlias(transaction, 'physical', ['a.ts'], async () => {
+        expect(active()).toBe(false);
+      });
+      expect(active()).toBe(false);
+      return 'alias receipt';
+    });
+    await expect(inWorkspaceTxn('alias', 'owner', transaction =>
+      preserveOutsideWorkspaceTxn(transaction, 'alias', ['a.ts'], ['original'],
+        () => capture(transaction)), { paths: ['a.ts'] })).resolves.toBe('alias receipt');
+    expect(capture).toHaveBeenCalledOnce();
+    expect(commands).toEqual(['BEGIN', 'ROLLBACK', 'BEGIN', 'COMMIT', 'BEGIN', 'COMMIT']);
   });
 
   it('reports each named transaction phase and preserves the callback result', async () => {
