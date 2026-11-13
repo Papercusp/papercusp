@@ -25,6 +25,8 @@ import {
   PG_QUERY_FAMILY_MEMO_MAX_TEXT,
 } from './acquire-registry';
 
+const NEVER_EMIT_MARKER = 'never-emit-me';
+
 const require_ = createRequire(import.meta.url);
 
 function resolvePostgresRoot(): string {
@@ -239,7 +241,7 @@ describe('same-SELECT physical PostgreSQL correlation', () => {
       requestId: randomUUID(), operation: 'workItems.byHarness' };
     setPgDiagnosticContextResolver(() => correlation);
     const row = { diagnostic_pg_pid: 4231, diagnostic_statement_at: at,
-      set_config: 'do-not-retain-workspace', secret: 'test-do-not-retain-secret' };
+      set_config: 'do-not-retain-workspace', secret: NEVER_EMIT_MARKER };
     const diagnostic = record([row], { context: capturePgDiagnosticContext() });
     row.diagnostic_pg_pid = 999;
     row.diagnostic_statement_at = 'changed';
@@ -249,6 +251,7 @@ describe('same-SELECT physical PostgreSQL correlation', () => {
     expect(diagnostic.recordedAt).toEqual(expect.any(Number));
     const rendered = JSON.stringify(pgResultDiagnosticSnapshot('setup-scalars'));
     expect(rendered).not.toContain('do-not-retain');
+    expect(rendered).not.toContain(NEVER_EMIT_MARKER);
     expect(rendered).not.toContain('set_config');
     expect(rendered).not.toContain('objectRefs');
   });
