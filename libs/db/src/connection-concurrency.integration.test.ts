@@ -22,7 +22,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres, { type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
-import { getOrgPgApp, _resetForTests, _resetUrlCacheForTests } from './connection';
+import { getOrgPgApp, _resetForTests, _resetUrlCacheForTests, withPriorityOrgPg } from './connection';
+import { pgAcquireTimingSnapshot, withPgAcquireDiagnostics } from './acquire-registry';
 import { withWorkspace } from './workspace-context';
 
 // The pool max we pin for this test. Small + deterministic so the bound is
@@ -195,4 +196,18 @@ describe('bounded org/app pool under high concurrency (C4-1)', () => {
         `succeeded=${fulfilled.length} rejected=${rejected.length}`,
     );
   }, 60_000);
+
+  it('attributes withWorkspace acquisitions to the active priority app pool', async () => {
+    const snapshot = await withPgAcquireDiagnostics('priority-app-label', async () => {
+      await withPriorityOrgPg(async () => {
+        await withWorkspace('ws-priority-pool', async (tx) => {
+          await tx`SELECT 1`;
+        });
+      });
+      return pgAcquireTimingSnapshot();
+    });
+    const pools = snapshot?.acquisitions.map(({ pool }) => pool) ?? [];
+    expect(pools).toContain('org-app-priority');
+    expect(pools).not.toContain('org-app');
+  }, 30_000);
 });

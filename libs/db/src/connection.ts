@@ -1741,6 +1741,8 @@ function buildClient(
 
 export interface OrgPgHandle {
   sql: Sql;
+  /** Exact pool identity for acquisition diagnostics, including priority clients. */
+  poolLabel?: 'org-admin' | 'org-app' | 'org-admin-priority' | 'org-app-priority';
   /**
    * @deprecated since Phase 1 of the Drizzle migration. Equivalent to
    * `.db` but only the 5 hand-written tables are in its schema config.
@@ -1930,6 +1932,7 @@ export function getOrgPg(): OrgPgHandle {
     drizzle: _adminDrizzle!,
     db: _adminDb!,
     schema: sharedSchema,
+    poolLabel: 'org-admin',
   };
 }
 
@@ -2004,6 +2007,7 @@ export async function withPriorityOrgPg<T>(run: () => Promise<T>): Promise<T> {
       drizzle: drizzle(dedicated.sql, { schema: sharedTables }),
       db: drizzle(dedicated.sql, { schema: fullSchema }),
       schema: sharedSchema,
+      poolLabel: 'org-admin-priority',
     };
   }
   if (endStalePool(priorityOrgPg.appClient, priorityOrgPg.appUrl, appTarget, 'org-app-priority')) {
@@ -2018,6 +2022,7 @@ export async function withPriorityOrgPg<T>(run: () => Promise<T>): Promise<T> {
     priorityOrgPg.appHandle = {
       sql: client, drizzle: drizzle(client, { schema: sharedTables }),
       db: drizzle(client, { schema: fullSchema }), schema: sharedSchema,
+      poolLabel: 'org-app-priority',
     };
     validateDiscoveryTargetOnce(client, 'app-priority', {
       url: appTarget, checkSchema: _resolvedAppUrlSource === 'discovery',
@@ -2489,6 +2494,7 @@ export function getOrgPgApp(): OrgPgHandle {
     drizzle: _appOrgDrizzle!,
     db: _appOrgDb!,
     schema: sharedSchema,
+    poolLabel: 'org-app',
   };
 }
 

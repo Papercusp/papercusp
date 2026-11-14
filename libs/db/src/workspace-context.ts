@@ -77,7 +77,8 @@ export async function withWorkspace<T>(
   // transaction is the load-bearing workspace filter.
   // Admin-bypass path: harness_admin role, RLS bypassed (intentional for
   // migrations and cross-workspace tooling).
-  const { sql } = opts.bypassRlsForAdmin ? getOrgPg() : getOrgPgApp();
+  const handle = opts.bypassRlsForAdmin ? getOrgPg() : getOrgPgApp();
+  const { sql } = handle;
   // EI-9279: retry a CONNECTION_CLOSED/CONNECT_TIMEOUT hitting a stale pooled
   // connection — but ONLY while `markStarted()` proves the caller's own `fn`
   // hasn't run any query yet (see connect-retry.ts header for why this is
@@ -93,12 +94,11 @@ export async function withWorkspace<T>(
   // OUTSIDE retryBeforeCallbackStarts on purpose, so it bounds total
   // acquisition across all retry attempts rather than each attempt separately.
   const acquireLabel = `withWorkspace:acquire(${opts.bypassRlsForAdmin ? 'admin' : 'app'})`;
-  // EI-19485014132257783: the POOL, not the call site — these are the labels
-  // getOrgPg()/getOrgPgApp() hand buildClient(), so they match the
-  // `pcusp:<label>:p<pid>` application_name a reader will grep pg_stat_activity
-  // for. Passing it makes a deadline breach report MEASURED waiting/held counts
-  // rather than the 3-step manual probe the message used to hand out.
-  const acquirePool = opts.bypassRlsForAdmin ? 'org-admin' : 'org-app';
+  // Use the selected handle's actual pool identity. `withPriorityOrgPg` makes
+  // getOrgPg()/getOrgPgApp() return dedicated clients, so deriving this from
+  // bypassRlsForAdmin alone mislabels priority acquisitions as ordinary pools.
+  // The fallback keeps structurally supplied handles compatible.
+  const acquirePool = handle.poolLabel ?? (opts.bypassRlsForAdmin ? 'org-admin' : 'org-app');
   const acquireMs = opts.acquireTimeoutMs ?? DEFAULT_TX_ACQUIRE_DEADLINE_MS;
   return retryOnRetryableDbDeadline(() =>
     withAcquisitionDeadline<T>(
