@@ -467,6 +467,9 @@ export interface CapabilityWithheldRestriction {
   readonly detail: string;
 }
 
+/** OMP-visible name for the Papercusp tools:invoke dispatcher. */
+export const OMP_MANAGED_MCP_DISPATCHER = 'mcp__papercusp-su__tools_invoke';
+
 export interface CapabilityPolicyRequest {
   readonly client: CapabilityClientFamily;
   readonly surface: CapabilityPolicySurface;
@@ -510,6 +513,8 @@ export interface CapabilityPolicyRequest {
    * inventory/help list is insufficient: default code mode exposes eval/hub,
    * which --tools cannot preserve. Missing or unrepresentable stays retained. */
   readonly ompNativeTools?: readonly string[];
+  /** Separately measured OMP MCP dispatcher; it is not part of the native inventory. */
+  readonly ompManagedMcpDispatcher?: string;
 }
 
 /** Minimal shape the gate needs from a disposition — family, readiness, gaps. */
@@ -995,7 +1000,11 @@ export function composeOmpCapabilityTools(
   request: Omit<CapabilityPolicyRequest, 'client'>,
 ): string[] {
   const decision = resolveCapabilityPolicy({ ...request, client: 'omp' });
-  if (!decision.deniedNames.length || argv.includes('--no-tools')) return [...argv];
+  const managedDispatcher = request.ompManagedMcpDispatcher;
+  const hasExplicitSelection = argv.some(arg => arg === '--tools' || arg.startsWith('--tools='));
+  const shouldCompose = decision.deniedNames.length > 0 ||
+    Boolean(managedDispatcher && hasExplicitSelection);
+  if (!shouldCompose || argv.includes('--no-tools')) return [...argv];
   const remaining: string[] = [];
   let selected: string[] | undefined;
   for (let index = 0; index < argv.length; index++) {
@@ -1007,10 +1016,14 @@ export function composeOmpCapabilityTools(
     } else if (arg.startsWith('--tools=')) selected = arg.slice('--tools='.length).split(',');
     else remaining.push(arg);
   }
-  if (selected?.some(name => !request.ompNativeTools!.includes(name))) {
+  const nativeTools = request.ompNativeTools ?? [];
+  const knownNames = new Set([...nativeTools, ...(managedDispatcher ? [managedDispatcher] : [])]);
+  if (decision.deniedNames.length > 0 && selected?.some(name => !knownNames.has(name))) {
     throw new Error('OMP native selection changed after measurement; revalidate the allow-list before cutover');
   }
-  const allowed = (selected ?? request.ompNativeTools!).filter(name => !decision.deniedNames.includes(name));
+  const selectedNames = selected ?? nativeTools;
+  const allowed = dedupe([...selectedNames, ...(managedDispatcher ? [managedDispatcher] : [])])
+    .filter(name => !decision.deniedNames.includes(name));
   return [...remaining, ...(allowed.length ? ['--tools', allowed.join(',')] : ['--no-tools'])];
 }
 

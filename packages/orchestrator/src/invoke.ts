@@ -73,7 +73,12 @@ import {
   normalizeModelForBackend,
   resolveCodexModel,
 } from './env';
-import { capabilityPolicyFlags, composeOmpCapabilityTools, type CapabilityPolicyRequest } from './managed-capability-policy';
+import {
+  capabilityPolicyFlags,
+  composeOmpCapabilityTools,
+  OMP_MANAGED_MCP_DISPATCHER,
+  type CapabilityPolicyRequest,
+} from './managed-capability-policy';
 import { hasExplicitDisallowedTools } from './native-scheduler-deny';
 import { NO_SUBAGENT_TOOLS_DENY } from './no-subagent-deny';
 import { ROLE_MODEL_DEFAULTS } from './role-models';
@@ -3767,6 +3772,7 @@ export async function invoke(
   const finalArgv = agentBackend === 'omp'
     ? composeOmpCapabilityTools(assembledArgv, {
         ...options.capabilityPolicy, surface: 'launch', audience: 'headless-agent',
+        ompManagedMcpDispatcher: OMP_MANAGED_MCP_DISPATCHER,
       })
     : assembledArgv;
   const command = argv[0];
