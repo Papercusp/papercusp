@@ -468,7 +468,7 @@ export interface CapabilityWithheldRestriction {
 }
 
 /** OMP-visible name for the Papercusp tools:invoke dispatcher. */
-export const OMP_MANAGED_MCP_DISPATCHER = 'mcp__papercusp-su__tools_invoke';
+export const OMP_MANAGED_MCP_DISPATCHER = 'mcp__papercusp_su_tools_invoke';
 
 export interface CapabilityPolicyRequest {
   readonly client: CapabilityClientFamily;
