@@ -68,6 +68,8 @@ export interface RoutineRow {
   tier: 'durable' | 'ephemeral' | 'in-process';
   active: boolean;
   lastFiredAt: Date | null;
+  /** Latest admission of this action across active durable cron rows, including rows no longer due. */
+  actionLastFiredAt?: Date | null;
   nextFireAt: Date | null;
   /**
    * The LOOP interval (loop-routines-interval-recurrence-2026-06-20 P-001). A loop is
@@ -107,11 +109,14 @@ export function isParkedNextFire(nextFireAt: Date | null): boolean {
 
 export async function listDueCronRoutines(sql: Sql): Promise<RoutineRow[]> {
   const rows = await sql<any[]>`
-    SELECT * FROM harness_shared.routines
-     WHERE active = TRUE
-       AND trigger_kind = 'cron'
-       AND tier = 'durable'
-       AND (next_fire_at IS NULL OR next_fire_at <= now())
+    SELECT * FROM (
+      SELECT *, max(last_fired_at) OVER (PARTITION BY target_role) AS action_last_fired_at
+        FROM harness_shared.routines
+       WHERE active = TRUE
+         AND trigger_kind = 'cron'
+         AND tier = 'durable'
+    ) AS active_cron
+     WHERE next_fire_at IS NULL OR next_fire_at <= now()
      ORDER BY next_fire_at ASC NULLS FIRST
   `;
   return rows.map(rowToRoutine);
@@ -438,6 +443,7 @@ export function rowToRoutine(row: any): RoutineRow {
     tier: row.tier ?? 'durable',
     active: row.active,
     lastFiredAt: normalizeLastFiredAt(row.last_fired_at),
+    ...('action_last_fired_at' in row ? { actionLastFiredAt: normalizeLastFiredAt(row.action_last_fired_at) } : {}),
     nextFireAt: normalizeNextFireAt(row.next_fire_at),
     rescheduleIntervalSec:
       row.reschedule_interval_sec == null ? null : Number(row.reschedule_interval_sec),

@@ -266,6 +266,19 @@ describe('upsertRoutine', () => {
 });
 
 describe('listDueCronRoutines', () => {
+  it('retains an action admission clock after its served row leaves the due population', async () => {
+    const recent = new Date(Date.now() - 1_000);
+    const old = new Date(Date.now() - 60_000);
+    await upsertRoutine(sql, baseInput({ name: 'backlog', nextFireAt: old }), nextFn);
+    await upsertRoutine(sql, baseInput({ name: 'served', nextFireAt: new Date(Date.now() + 60_000) }), nextFn);
+    await upsertRoutine(sql, baseInput({ name: 'inactive', active: false, nextFireAt: old }), nextFn);
+    await sql`UPDATE harness_shared.routines SET last_fired_at = ${recent} WHERE name = 'served'`;
+    await sql`UPDATE harness_shared.routines SET last_fired_at = now() WHERE name = 'inactive'`;
+    const due = await listDueCronRoutines(sql);
+    expect(due.map(row => row.name)).toEqual(['backlog']);
+    expect(due[0].actionLastFiredAt).toEqual(recent);
+  });
+
   it('returns active cron routines that are due, excluding inactive/non-cron/future', async () => {
     await upsertRoutine(sql, baseInput({ name: 'due', nextFireAt: new Date(Date.now() - 1000) }), nextFn);
     await upsertRoutine(sql, baseInput({ name: 'future', nextFireAt: new Date(Date.now() + 60_000) }), nextFn);
