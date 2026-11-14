@@ -514,7 +514,6 @@ export interface CapabilityPolicyRequest {
    * which --tools cannot preserve. Missing or unrepresentable stays retained. */
   readonly ompNativeTools?: readonly string[];
   /** Separately measured OMP MCP dispatcher; it is not part of the native inventory. */
-  readonly ompManagedMcpDispatcher?: string;
 }
 
 /** Minimal shape the gate needs from a disposition — family, readiness, gaps. */
@@ -993,18 +992,22 @@ export function capabilityPolicyFlags(request: CapabilityPolicyRequest): readonl
   return resolveCapabilityPolicy(request).flags;
 }
 
-/** OMP replaces its tool selection rather than unioning restrictions. Compose
- * the admitted cut with operator/fleet selections into a single occurrence. */
+/** OMP's `--tools` flag is a native-tool allow-list. MCP servers are registered
+ * from project configuration, so their dispatcher must stay out of this argv. */
 export function composeOmpCapabilityTools(
   argv: readonly string[],
   request: Omit<CapabilityPolicyRequest, 'client'>,
 ): string[] {
   const decision = resolveCapabilityPolicy({ ...request, client: 'omp' });
-  const managedDispatcher = request.ompManagedMcpDispatcher;
-  const hasExplicitSelection = argv.some(arg => arg === '--tools' || arg.startsWith('--tools='));
-  const shouldCompose = decision.deniedNames.length > 0 ||
-    Boolean(managedDispatcher && hasExplicitSelection);
-  if (!shouldCompose || argv.includes('--no-tools')) return [...argv];
+  const selectedMcpDispatcher = argv.some((arg, index) => {
+    const value = arg === '--tools' ? argv[index + 1]
+      : arg.startsWith('--tools=') ? arg.slice('--tools='.length) : undefined;
+    return value?.split(',').includes(OMP_MANAGED_MCP_DISPATCHER) ?? false;
+  });
+  if (selectedMcpDispatcher) {
+    throw new Error('OMP managed MCP dispatcher must come from MCP config, not --tools');
+  }
+  if (decision.deniedNames.length === 0 || argv.includes('--no-tools')) return [...argv];
   const remaining: string[] = [];
   let selected: string[] | undefined;
   for (let index = 0; index < argv.length; index++) {
@@ -1017,12 +1020,12 @@ export function composeOmpCapabilityTools(
     else remaining.push(arg);
   }
   const nativeTools = request.ompNativeTools ?? [];
-  const knownNames = new Set([...nativeTools, ...(managedDispatcher ? [managedDispatcher] : [])]);
+  const knownNames = new Set(nativeTools);
   if (decision.deniedNames.length > 0 && selected?.some(name => !knownNames.has(name))) {
     throw new Error('OMP native selection changed after measurement; revalidate the allow-list before cutover');
   }
   const selectedNames = selected ?? nativeTools;
-  const allowed = dedupe([...selectedNames, ...(managedDispatcher ? [managedDispatcher] : [])])
+  const allowed = dedupe(selectedNames)
     .filter(name => !decision.deniedNames.includes(name));
   return [...remaining, ...(allowed.length ? ['--tools', allowed.join(',')] : ['--no-tools'])];
 }

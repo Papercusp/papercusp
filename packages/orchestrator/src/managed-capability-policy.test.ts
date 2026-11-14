@@ -370,7 +370,6 @@ describe('OMP version-pinned removal and allow-list composition', () => {
   const admitted: CapabilityPolicyRequest = {
     client: 'omp', surface: 'launch', clientVersions: { omp: '18.0.3' },
     ompNativeTools: ['read', 'bash', 'grep'],
-    ompManagedMcpDispatcher: OMP_MANAGED_MCP_DISPATCHER,
     readiness: [{ family: 'shell-ssh-interpreters', cutoverReady: true, openGapIds: [] }],
     cutoverStaging: { 'shell-ssh-interpreters': 'full' },
     adoption: [{ client: 'omp', family: 'shell-ssh-interpreters',
@@ -382,24 +381,26 @@ describe('OMP version-pinned removal and allow-list composition', () => {
   it.each(SURFACES)('cuts bash on %s and preserves an explicit narrower selection', surface => {
     expect(resolveCapabilityPolicy({ ...admitted, surface }).deniedNames).toEqual(['bash']);
     expect(composeOmpCapabilityTools(['--tools', 'read,bash,grep'], { ...admitted, surface }))
-      .toEqual(['--tools', ['read', 'grep', OMP_MANAGED_MCP_DISPATCHER].join(',')]);
+      .toEqual(['--tools', 'read,grep']);
     expect(composeOmpCapabilityTools(['--tools=bash'], { ...admitted, surface }))
-      .toEqual(['--tools', OMP_MANAGED_MCP_DISPATCHER]);
+      .toEqual(['--no-tools']);
     expect(composeOmpCapabilityTools(['--no-tools'], { ...admitted, surface })).toEqual(['--no-tools']);
   });
 
-  it('adds the separate managed dispatcher to explicit selections without narrowing OMP defaults', () => {
+  it('keeps the managed MCP dispatcher out of OMP native selections', () => {
     const retained = { ...admitted, cutoverStaging: {} };
     expect(retained.ompNativeTools).not.toContain(OMP_MANAGED_MCP_DISPATCHER);
     expect(composeOmpCapabilityTools(['--tools', 'read,bash'], retained))
-      .toEqual(['--tools', ['read', 'bash', OMP_MANAGED_MCP_DISPATCHER].join(',')]);
+      .toEqual(['--tools', 'read,bash']);
     expect(composeOmpCapabilityTools([], retained)).toEqual([]);
+    expect(() => composeOmpCapabilityTools(['--tools', ['read', OMP_MANAGED_MCP_DISPATCHER].join(',')], retained))
+      .toThrow('OMP managed MCP dispatcher must come from MCP config, not --tools');
   });
 
   it('normalizes repeated flags so an operator selection cannot restore bash', () => {
     const argv = ['--print', '--tools', 'read,bash', '--tools=grep,bash'];
     const result = composeOmpCapabilityTools(argv, admitted);
-    expect(result).toEqual(['--print', '--tools', ['grep', OMP_MANAGED_MCP_DISPATCHER].join(',')]);
+    expect(result).toEqual(['--print', '--tools', 'grep']);
     // Wrong implementation: appending a second selection lets its bash win.
     expect([...result, '--tools', 'bash'].at(-1)).toBe('bash');
   });
@@ -410,7 +411,7 @@ describe('OMP version-pinned removal and allow-list composition', () => {
     expect(resolveCapabilityPolicy(request).withheld.find(row => row.id === 'managed-shell-cutover')?.reason)
       .toBe('client-version-drift');
     expect(composeOmpCapabilityTools(['--tools', 'read,bash'], request))
-      .toEqual(['--tools', ['read', 'bash', OMP_MANAGED_MCP_DISPATCHER].join(',')]);
+      .toEqual(['--tools', 'read,bash']);
   });
 
   it('keeps each evidence gate ahead of allow-list emission', () => {
