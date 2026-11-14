@@ -1,0 +1,31 @@
+-- NULL is an old, unversioned receipt, which must never suppress a candidate
+-- with a known canonical source version. Preserve the existing stable keys.
+ALTER TABLE harness_shared.memory_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_fingerprint text
+  CHECK (source_fingerprint IS NULL OR source_fingerprint ~ '^[a-f0-9]{64}$');
+ALTER TABLE harness_shared.corpus_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_fingerprint text
+  CHECK (source_fingerprint IS NULL OR source_fingerprint ~ '^[a-f0-9]{64}$');
+
+-- Host metadata only: hashes, revision/passage and validity, never source prose.
+-- Revalidation scheduling is separate from confirmed emission/surfaced_at.
+ALTER TABLE harness_shared.memory_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_checked_at timestamptz;
+ALTER TABLE harness_shared.corpus_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_checked_at timestamptz;
+
+-- Host metadata only: hashes, revision/passage and validity, never source prose.
+-- Retaining it on the existing receipts enables scoped lifecycle revalidation
+-- even after a previously delivered source disappears from ordinary search.
+ALTER TABLE harness_shared.memory_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_version jsonb
+  CHECK (source_version IS NULL OR COALESCE((jsonb_typeof(source_version) = 'object'
+    AND source_version->>'schemaVersion' = 'context-source-version-v1'
+    AND source_fingerprint IS NOT NULL
+    AND source_version->>'fingerprint' = source_fingerprint), false));
+ALTER TABLE harness_shared.corpus_session_surfaced
+  ADD COLUMN IF NOT EXISTS source_version jsonb
+  CHECK (source_version IS NULL OR COALESCE((jsonb_typeof(source_version) = 'object'
+    AND source_version->>'schemaVersion' = 'context-source-version-v1'
+    AND source_fingerprint IS NOT NULL
+    AND source_version->>'fingerprint' = source_fingerprint), false));
