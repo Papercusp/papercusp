@@ -46,6 +46,7 @@ let appPid: number; // backend pid of the observer, excluded from app-pool count
 
 const savedEnv = {
   url: process.env.HARNESS_DATABASE_URL,
+  adminUrl: process.env.HARNESS_ADMIN_DATABASE_URL,
   poolMax: process.env.PAPERCUSP_DB_POOL_MAX,
   pgbouncer: process.env.PAPERCUSP_PGBOUNCER,
 };
@@ -54,6 +55,7 @@ beforeAll(async () => {
   db = await createFreshTestDb({ prefix: 'connconc' });
   // Point the real connection layer at the fresh DB and pin a small bounded pool.
   process.env.HARNESS_DATABASE_URL = db.url;
+  process.env.HARNESS_ADMIN_DATABASE_URL = db.url;
   process.env.PAPERCUSP_DB_POOL_MAX = String(POOL_MAX);
   // Make sure we exercise the DIRECT (non-pooler) path — that's where pool max ==
   // PG backends and the bound is load-bearing.
@@ -74,6 +76,8 @@ afterAll(async () => {
   await db?.drop().catch(() => {});
   if (savedEnv.url === undefined) delete process.env.HARNESS_DATABASE_URL;
   else process.env.HARNESS_DATABASE_URL = savedEnv.url;
+  if (savedEnv.adminUrl === undefined) delete process.env.HARNESS_ADMIN_DATABASE_URL;
+  else process.env.HARNESS_ADMIN_DATABASE_URL = savedEnv.adminUrl;
   if (savedEnv.poolMax === undefined) delete process.env.PAPERCUSP_DB_POOL_MAX;
   else process.env.PAPERCUSP_DB_POOL_MAX = savedEnv.poolMax;
   if (savedEnv.pgbouncer === undefined) delete process.env.PAPERCUSP_PGBOUNCER;
