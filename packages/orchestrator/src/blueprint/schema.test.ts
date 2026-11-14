@@ -97,6 +97,16 @@ test('BlueprintSchema — role spine action fills extras/rejectWhenParallel defa
   }
 });
 
+test('BlueprintRoleSchema — preserves an optional baseRole without granting capabilities', () => {
+  const bp = BlueprintSchema.parse({ ...minimal,
+    roles: [{ id: 'app-analyst', baseRole: 'worker' }] });
+  assert.equal(bp.roles[0]!.baseRole, 'worker');
+  assert.equal(bp.roles[0]!.capabilities, undefined);
+  assert.equal(bp.fleet, undefined);
+  assert.equal(BlueprintSchema.parse({ ...minimal, roles: [{ id: 'bare' }] }).roles[0]!.baseRole, undefined);
+  assert.throws(() => BlueprintSchema.parse({ ...minimal, roles: [{ id: 'bad', baseRole: '' }] }));
+});
+
 test('BlueprintRoleSchema — role `isolation` is an optional worktree/none enum (BRIEF-demo-blueprints ②)', () => {
   // a role can declare worktree isolation (migration's transformer); it survives.
   const isolated = BlueprintSchema.parse({

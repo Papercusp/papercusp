@@ -111,6 +111,8 @@ export const WorkItemSchema = z.object({
  */
 export const BlueprintRoleSchema = z.object({
   id: z.string().min(1),
+  /** Host-validated canonical role used only for tool agentRoles membership. */
+  baseRole: z.string().min(1).max(80).optional(),
   /**
    * Default identity binding for this launch role. Entries use the same
    * `slot:document-id` wire form as the live stack/control anchor; launch-time
