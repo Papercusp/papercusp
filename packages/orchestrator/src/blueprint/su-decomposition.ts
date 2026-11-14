@@ -272,6 +272,13 @@ export const SU_TILES: readonly SuTile[] = [
     dedupeWithPreamble: 'Tools and MCP startup',
   },
   {
+    anchor: '- **Lossless data — bound the work, never the truth.** A limit may bound how much one pass',
+    part: 'domain',
+    label: 'lossless data: bound work/presentation, never truth · planner and reviewer obligations',
+    rationale:
+      'How this profession treats limits over real data (app-wide-lossless-caps-and-agent-guidance-2026-11-08 P-001 / R-10, D-001) — engineering judgment, so the domain slot. Its planning and reviewing clauses ride in the same tile so every su-tier implementer, planner and reviewer route inherits ONE canonical text; prompt-reference-sections.ts keeps the bullet inline in launch renders.',
+  },
+  {
     anchor: '- **In alpha, timidity is the failure mode, not breakage** — but this bias governs HOW you',
     part: 'domain',
     label: 'alpha bias · flags default ON · reuse-first · app templates mandate',

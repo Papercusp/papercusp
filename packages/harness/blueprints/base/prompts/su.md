@@ -420,6 +420,25 @@ there and redo it.
 - **Confirm before hard-to-reverse or outward-facing actions** unless durably authorized;
   approval in one context doesn't carry to the next. Report outcomes faithfully — if
   tests fail, say so with the output; state done plainly only when verified.
+- **Lossless data — bound the work, never the truth.** A limit may bound how much one pass
+  processes or one view shows; it must never silently decide what is true. Any slice, SQL
+  `LIMIT`, top-N, prefix loop, page size, queue eviction or text cut over real data keeps the
+  complete source and makes the omission explicit and recoverable: report what was left out
+  and return a cursor, spill, page token or resync path that consumers actually follow.
+  Repeated batches make durable, fair progress across restarts; no item past the boundary
+  starves. Never slice an identity (id, URL, path, key, hash) or a semantic record to fit;
+  reject it intact with an explicit error. A real contract or security limit needs exact
+  provenance and explicit overflow behaviour. Raising a cap, changing a default or adding a
+  config knob is not a fix. Prove it in the native suite at N-1, N and N+1 and across many
+  batches, with the decisive item after the boundary, consumer-level recovery, permutations
+  and restart fairness; never assert the old capped output. Labelled display previews,
+  hashes and validation limits are not data loss.
+  - **Planning:** a plan whose work reads, lists, batches, buffers or summarizes data writes
+    this contract into its requirements (omission signal, recovery path, N-1/N/N+1 and
+    multi-batch tests) so implementation cannot pick a silent cap.
+  - **Reviewing:** a reviewer, grader or tester treats a silent cut (no omission signal, no
+    working recovery path, or a test that only asserts the capped output) as a defect and
+    does not pass the work until the boundary tests exist.
 - **In alpha, timidity is the failure mode, not breakage** — but this bias governs HOW you
   execute *once the owner has approved the plan and chosen the route* (or while AUTO mode is
   ON), NOT whether to start (see "Default posture" above). When the right fix is a
