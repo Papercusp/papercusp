@@ -150,6 +150,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     gaps: [
       {
+        id: 'shell-start-once-response-yield',
+        kind: 'evidence',
+        description: 'Start-once execution and response yielding still require qualified replacement observations for this retained gap.',
+        owningPlanItems: ['P-032', 'P-020', 'P-015'],
+        falsifier: 'Exact current native/client positive and refusal controls establish the original start-once and response-yield outcomes with matching source, runtime, environment, and criterion identity.',
+      },
+      {
         id: 'shell-cross-client-enforcement',
         kind: 'policy',
         description: 'Claude, Codex, and OMP alias/interpreter/SSH bypass coverage is not yet accepted.',
@@ -198,6 +205,20 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
     ],
     gaps: [
       {
+        id: 'pty-resize-completion-reattach',
+        kind: 'evidence',
+        description: 'Implemented PTY resize, completion, and reattachment retain their original qualified native/client acceptance obligation.',
+        owningPlanItems: ['P-032', 'P-019', 'P-020', 'P-015'],
+        falsifier: 'Exact current paired native/client observations prove resize, terminal completion, reattachment, and explicit unrecoverable outcomes with matching source, runtime, environment, and criterion identity.',
+      },
+      {
+        id: 'job-response-deadline-continuity',
+        kind: 'evidence',
+        description: 'Job survival across response deadlines still requires qualified replacement observations for the original continuity gap.',
+        owningPlanItems: ['P-032', 'P-020', 'P-015'],
+        falsifier: 'Exact current paired native/client observations establish response-deadline continuity of the same admitted job, preserving task identity, output, completion, and explicit cancellation semantics.',
+      },
+      {
         id: 'pty-real-client-restart-acceptance',
         kind: 'unsupported',
         description:
@@ -245,6 +266,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
     ],
     gaps: [
+      {
+        id: 'kernel-state-media-contract',
+        kind: 'evidence',
+        description: 'The implemented kernel state/media contract retains its original qualified native/client observations and explicit unsupported-state boundaries.',
+        owningPlanItems: ['P-032', 'P-017', 'P-020', 'P-015'],
+        falsifier: 'Exact current paired native/client observations establish the original kernel state and media outcomes with matching source, runtime, environment, and criterion identity, preserving unsupported and unrecoverable outcomes.',
+      },
       {
         id: 'persistent-kernel-lifecycle',
         kind: 'unsupported',
@@ -359,6 +387,13 @@ export const MANAGED_CAPABILITY_DISPOSITIONS = [
       },
     ],
     gaps: [
+      {
+        id: 'patch-notebook-adapters',
+        kind: 'evidence',
+        description: 'Registered patch and notebook adapters retain the original qualified native/client acceptance obligation for this gap.',
+        owningPlanItems: ['P-032', 'P-019', 'P-020', 'P-015'],
+        falsifier: 'Exact current paired native/client observations prove atomic patch and notebook cell semantics through the managed lock authority, preserving source, runtime, environment, and criterion identity.',
+      },
       {
         id: 'patch-notebook-real-client-acceptance',
         kind: 'evidence',
