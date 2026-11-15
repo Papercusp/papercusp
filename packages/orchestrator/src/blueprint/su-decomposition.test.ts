@@ -234,3 +234,31 @@ test('R-2 (identity-system-everything-migration-2026-10-18 #D-005): the kernel i
     assert.ok(!onDisk.includes(seam(id)), `checked-in su.kernel.md must not carry the ${id} seam (run npm run gen:su-decomposition)`);
   }
 });
+
+test('app-wide-lossless-caps-and-agent-guidance-2026-11-08 P-001 (LOSSLESS-P-001 / AUTO-BAR-R-10-P-001): the lossless-data rule is authored ONCE in su.md and regenerated into exactly the domain part document', () => {
+  const RULE = '- **Lossless data — bound the work, never the truth.**';
+  const text = su();
+  // Canonical source: su.md carries the rule exactly once, with its planning and reviewing clauses.
+  assert.equal(text.split(RULE).length - 1, 1, 'su.md authors the lossless-data rule exactly once');
+  const tile = locateSuTiles(text).find((t) => t.text.startsWith(RULE));
+  assert.ok(tile, 'the rule opens its own tile (an SU_TILES row in su-decomposition.ts)');
+  assert.equal(tile!.part, 'domain', 'engineering judgment rides the domain slot');
+  for (const clause of ['  - **Planning:**', '  - **Reviewing:**', 'N-1, N and N+1', 'Raising a cap, changing a default or adding a']) {
+    assert.ok(tile!.text.includes(clause), `the rule tile carries its clause: ${clause.trim()}`);
+  }
+  assert.ok(!tile!.text.includes('- **In alpha, timidity'), 'the rule tile ends before the next bullet');
+  // Derived copies: exactly ONE part document carries it, and the checked-in file holds the regenerated text.
+  const carriers = SU_PART_DOCUMENTS.filter((d) => extractSuPart(text, d.id).includes(RULE)).map((d) => d.id);
+  assert.deepEqual(carriers, ['papercusp-engineer'], 'exactly the domain identity document carries the rule');
+  const domainDoc = SU_PART_DOCUMENTS.find((d) => d.id === 'papercusp-engineer')!;
+  const onDisk = readFileSync(join(HARNESS_PKG, domainDoc.path), 'utf8');
+  assert.equal(onDisk.split(RULE).length - 1, 1, 'the checked-in domain document carries the rule once (run npm run gen:su-decomposition)');
+  assert.ok(onDisk.includes(tile!.text), 'the checked-in domain document carries the regenerated tile verbatim');
+  // Counterexample: drop the tile row and the bullet is absorbed by the preceding kernel tile, so
+  // the domain document loses it. The row, not luck, is what routes the rule to every su route.
+  const withoutRow = SU_TILES.filter((t) => !t.anchor.startsWith(RULE));
+  assert.equal(withoutRow.length, SU_TILES.length - 1, 'exactly one SU_TILES row anchors the rule');
+  const misrouted = SU_PART_DOCUMENTS.filter((d) => extractSuPart(text, d.id, withoutRow).includes(RULE)).map((d) => d.id);
+  assert.equal(misrouted.length, 1, 'without its row the bullet still lands in exactly one document (tiling stays lossless)');
+  assert.notEqual(misrouted[0], 'papercusp-engineer', 'without its row the rule is misrouted out of the domain document');
+});
