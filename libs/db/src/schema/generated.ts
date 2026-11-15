@@ -1991,6 +1991,7 @@ export const codeIntelPushSkipsInHarnessShared = harnessShared.table("code_intel
 	site: text().notNull(),
 	client: text(),
 	skippedAt: timestamp("skipped_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sourceRecord: jsonb("source_record"),
 }, (table) => [
 	index("code_intel_push_skips_leg_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.leg.asc().nullsLast().op("text_ops"), table.skippedAt.asc().nullsLast().op("timestamptz_ops")),
 	unique("code_intel_push_skips_turn_fact_key").on(table.leg, table.ownerId, table.subject, table.turnId, table.workspaceId),
@@ -2014,6 +2015,7 @@ export const codeIntelPushesInHarnessShared = harnessShared.table("code_intel_pu
 	chars: integer().notNull(),
 	client: text(),
 	pushedAt: timestamp("pushed_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sourceRecord: jsonb("source_record"),
 }, (table) => [
 	index("code_intel_pushes_leg_time_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.leg.asc().nullsLast().op("text_ops"), table.pushedAt.asc().nullsLast().op("timestamptz_ops")),
 	index("code_intel_pushes_turn_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops"), table.turnId.asc().nullsLast().op("text_ops")),
@@ -2817,9 +2819,14 @@ export const corpusSessionSurfacedInHarnessShared = harnessShared.table("corpus_
 	ref: text().notNull(),
 	port: text(),
 	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	sourceFingerprint: text("source_fingerprint"),
+	sourceCheckedAt: timestamp("source_checked_at", { withTimezone: true, mode: 'string' }),
+	sourceVersion: jsonb("source_version"),
 }, (table) => [
 	index("corpus_session_surfaced_at_idx").using("btree", table.surfacedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.epoch, table.ref, table.sessionId], name: "corpus_session_surfaced_pkey"}),
+	check("corpus_session_surfaced_check", sql`(source_version IS NULL) OR COALESCE(((jsonb_typeof(source_version) = 'object'::text) AND ((source_version ->> 'schemaVersion'::text) = 'context-source-version-v1'::text) AND (source_fingerprint IS NOT NULL) AND ((source_version ->> 'fingerprint'::text) = source_fingerprint)), false)`),
+	check("corpus_session_surfaced_source_fingerprint_check", sql`(source_fingerprint IS NULL) OR (source_fingerprint ~ '^[a-f0-9]{64}$'::text)`),
 ]);
 
 export const corpusTermDfInHarnessShared = harnessShared.table("corpus_term_df", {
@@ -4605,6 +4612,19 @@ export const featureWorkingSetInHarnessShared = harnessShared.table("feature_wor
 	pgPolicy("feature_working_set_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 ]);
 
+export const fedTombstonesInHarnessShared = harnessShared.table("fed_tombstones", {
+	workspaceId: text("workspace_id").notNull(),
+	harnessSlug: text("harness_slug").notNull(),
+	tableName: text("table_name").notNull(),
+	rowKey: text("row_key").notNull(),
+	fedHlc: text("fed_hlc"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fedTs: bigint("fed_ts", { mode: "number" }),
+	deletedAt: timestamp("deleted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.harnessSlug, table.rowKey, table.tableName, table.workspaceId], name: "fed_tombstones_pkey"}),
+]);
+
 export const federationProbesInHarnessShared = harnessShared.table("federation_probes", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedAlwaysAsIdentity({ name: "harness_shared.federation_probes_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -5862,6 +5882,7 @@ origin: scout
 	verificationProfile: text("verification_profile"),
 	verificationProfileSource: text("verification_profile_source"),
 	executionStartRevisionSeq: integer("execution_start_revision_seq"),
+	executionStartInvalidation: jsonb("execution_start_invalidation"),
 }, (table) => [
 	index("harness_plans_acceptance_bar_unseeded").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops")).where(sql`((acceptance_bar_epoch IS NOT NULL) AND (acceptance_bar_set_hash IS NULL))`),
 	index("harness_plans_bm25").using("bm25", sql`(((COALESCE(title, ''::text) || ' '::text) || COALESCE(content, ''::text)))`).with({text_config: "english",compaction: "manual"}),
@@ -7007,10 +7028,15 @@ export const memorySessionSurfacedInHarnessShared = harnessShared.table("memory_
 	surfacedAt: timestamp("surfaced_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	outcome: text().default('ignored').notNull(),
 	outcomeAt: timestamp("outcome_at", { withTimezone: true, mode: 'string' }),
+	sourceFingerprint: text("source_fingerprint"),
+	sourceCheckedAt: timestamp("source_checked_at", { withTimezone: true, mode: 'string' }),
+	sourceVersion: jsonb("source_version"),
 }, (table) => [
 	index("memory_session_surfaced_age_idx").using("btree", table.surfacedAt.asc().nullsLast().op("timestamptz_ops")),
 	primaryKey({ columns: [table.epoch, table.memoryId, table.sessionId], name: "memory_session_surfaced_pkey"}),
+	check("memory_session_surfaced_check", sql`(source_version IS NULL) OR COALESCE(((jsonb_typeof(source_version) = 'object'::text) AND ((source_version ->> 'schemaVersion'::text) = 'context-source-version-v1'::text) AND (source_fingerprint IS NOT NULL) AND ((source_version ->> 'fingerprint'::text) = source_fingerprint)), false)`),
 	check("memory_session_surfaced_outcome_check", sql`outcome = ANY (ARRAY['ignored'::text, 'used'::text, 'contradicted'::text])`),
+	check("memory_session_surfaced_source_fingerprint_check", sql`(source_fingerprint IS NULL) OR (source_fingerprint ~ '^[a-f0-9]{64}$'::text)`),
 ]);
 
 export const memoryVecGemmaInHarnessShared = harnessShared.table("memory_vec_gemma", {
@@ -8956,13 +8982,15 @@ export const planAuditsInHarnessShared = harnessShared.table("plan_audits", {
 	auditedPlanRevisionId: bigint("audited_plan_revision_id", { mode: "number" }),
 	auditedPlanRevisionSeq: integer("audited_plan_revision_seq"),
 	auditedPlanContentHash: text("audited_plan_content_hash"),
+	discovery: jsonb(),
 }, (table) => [
 	index("plan_audits_created_by_idx").using("btree", table.createdBy.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("plan_audits_harness_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.createdAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("plan_audits_kind_recent_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.auditKind.asc().nullsLast().op("text_ops"), table.auditSeq.desc().nullsFirst().op("int4_ops")),
 	primaryKey({ columns: [table.auditSeq, table.planSlug, table.workspaceId], name: "plan_audits_pkey"}),
-	check("plan_audits_activation_shape_check", sql`(audit_kind = 'completion'::text) OR ((jsonb_typeof(activation) = 'object'::text) AND (audited_plan_revision_id IS NOT NULL) AND (audited_plan_revision_seq IS NOT NULL) AND (audited_plan_revision_seq > 0) AND (audited_plan_content_hash ~ '^[0-9a-f]{64}$'::text))`),
-	check("plan_audits_kind_check", sql`audit_kind = ANY (ARRAY['completion'::text, 'activation'::text])`),
+	check("plan_audits_activation_shape_check", sql`(audit_kind <> 'activation'::text) OR ((jsonb_typeof(activation) = 'object'::text) AND (audited_plan_revision_id IS NOT NULL) AND (audited_plan_revision_seq > 0) AND (audited_plan_revision_seq IS NOT NULL) AND (audited_plan_content_hash ~ '^[0-9a-f]{64}$'::text))`),
+	check("plan_audits_discovery_shape_check", sql`(audit_kind <> 'discovery'::text) OR ((discovery IS NOT NULL) AND (jsonb_typeof(discovery) = 'object'::text) AND ((discovery ->> 'schemaVersion'::text) IS NOT NULL) AND ((discovery ->> 'schemaVersion'::text) = '1'::text) AND ((discovery ->> 'requestKey'::text) IS NOT NULL) AND (audited_plan_revision_id IS NOT NULL) AND (audited_plan_revision_seq IS NOT NULL) AND (audited_plan_revision_seq > 0) AND (audited_plan_content_hash IS NOT NULL) AND (audited_plan_content_hash ~ '^[0-9a-f]{64}$'::text))`),
+	check("plan_audits_kind_check", sql`audit_kind = ANY (ARRAY['completion'::text, 'activation'::text, 'discovery'::text])`),
 ]);
 
 export const planBlindReviewSessionsInHarnessShared = harnessShared.table("plan_blind_review_sessions", {
@@ -10645,7 +10673,10 @@ export const remoteAccessPortalRelayInHarnessShared = harnessShared.table("remot
 	lastErrorAt: timestamp("last_error_at", { withTimezone: true, mode: 'string' }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	linkedUserId: text("linked_user_id"),
+	desktopGrant: jsonb("desktop_grant"),
 }, (table) => [
+	check("portal_relay_desktop_grant_binding_ck", sql`(desktop_grant IS NULL) OR (((state = 'linked'::text) AND (consented_at IS NOT NULL) AND (jsonb_typeof(desktop_grant) = 'object'::text) AND ((desktop_grant ->> 'version'::text) = '1'::text) AND (length((desktop_grant ->> 'id'::text)) > 0) AND ((desktop_grant ->> 'installId'::text) = install_id) AND ((desktop_grant ->> 'portalOrigin'::text) = portal_origin) AND ((desktop_grant ->> 'userId'::text) = linked_user_id) AND ((desktop_grant ->> 'organizationId'::text) = organization_id) AND ((desktop_grant ->> 'customerWorkspaceId'::text) = customer_workspace_id) AND (length((desktop_grant ->> 'localWorkspaceId'::text)) > 0) AND ((desktop_grant ->> 'browserPublicKey'::text) ~ '^[A-Za-z0-9+/]{43}=$'::text) AND ((desktop_grant -> 'view'::text) = 'true'::jsonb) AND (jsonb_typeof((desktop_grant -> 'control'::text)) = 'boolean'::text) AND (length((desktop_grant ->> 'grantedAt'::text)) > 0)) IS TRUE)`),
 	check("remote_access_portal_relay_consent_complete", sql`(consent_notice_version IS NULL) = (consented_at IS NULL)`),
 	check("remote_access_portal_relay_consent_notice_version_check", sql`(consent_notice_version IS NULL) OR (consent_notice_version > 0)`),
 	check("remote_access_portal_relay_install_id_check", sql`install_id ~ '^[a-z0-9][a-z0-9-]{7,63}$'::text`),
@@ -11423,6 +11454,7 @@ export const sessionBriefsInHarnessShared = harnessShared.table("session_briefs"
 	ambientExcludedRefs: jsonb("ambient_excluded_refs"),
 	pendingCarryRespawn: jsonb("pending_carry_respawn"),
 	recoveryDelivery: jsonb("recovery_delivery"),
+	missionContinuity: jsonb("mission_continuity"),
 }, (table) => [
 	index("session_briefs_goal_id_idx").using("btree", table.goalId.asc().nullsLast().op("text_ops")).where(sql`(goal_id IS NOT NULL)`),
 	index("session_briefs_native_session_id_idx").using("btree", table.nativeSessionId.asc().nullsLast().op("text_ops")).where(sql`(native_session_id IS NOT NULL)`),
@@ -12186,6 +12218,7 @@ export const specEvidenceBindingsInHarnessShared = harnessShared.table("spec_evi
 	index("spec_evidence_bindings_by_verified_binding").using("btree", table.verifiesBindingId.asc().nullsLast().op("int8_ops")).where(sql`(verifies_binding_id IS NOT NULL)`),
 	index("spec_evidence_bindings_by_work_item").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops"), table.observedAt.desc().nullsFirst().op("timestamptz_ops")),
 	uniqueIndex("spec_evidence_bindings_dedup_live").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.workItemId.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.specId.asc().nullsLast().op("text_ops"), table.specRevision.asc().nullsLast().op("int4_ops"), table.bindingFingerprint.asc().nullsLast().op("text_ops")).where(sql`(retracted_at IS NULL)`),
+	index("spec_evidence_bindings_mutation_controls").using("gin", table.details.asc().nullsLast().op("jsonb_path_ops")).where(sql`(evidence_kind = 'mutation'::text)`),
 	foreignKey({
 			columns: [table.testRunId],
 			foreignColumns: [testRunsInHarnessShared.id],
@@ -12493,8 +12526,13 @@ export const substrateOutboxInHarnessShared = harnessShared.table("substrate_out
 	quarantinedAt: bigint("quarantined_at", { mode: "number" }),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	enqueuedAtMs: bigint("enqueued_at_ms", { mode: "number" }).default(sql`(EXTRACT(epoch FROM now()) * 1000)::bigint`).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	fanoutRetryAt: bigint("fanout_retry_at", { mode: "number" }),
+	fanoutAttempts: integer("fanout_attempts").default(0).notNull(),
+	fanoutLastError: text("fanout_last_error"),
 }, (table) => [
 	index("substrate_outbox_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.drainedAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
+	index("substrate_outbox_fanout_retry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.fanoutRetryAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")).where(sql`(fanout_retry_at IS NOT NULL)`),
 	index("substrate_outbox_table_drain_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.tableName.asc().nullsLast().op("text_ops"), table.drainedAt.asc().nullsLast().op("int8_ops"), table.id.asc().nullsLast().op("int8_ops")),
 	check("substrate_outbox_op_check", sql`op = ANY (ARRAY['put'::text, 'del'::text])`),
 ]);
@@ -12766,6 +12804,7 @@ export const testRunsInHarnessShared = harnessShared.table("test_runs", {
 	executionDetails: jsonb("execution_details"),
 	configurationSnapshot: jsonb("configuration_snapshot"),
 }, (table) => [
+	index("test_runs_bound_mutation_probe").using("btree", sql`workspace_id`, sql`file_path`, sql`((execution_details #>> '{mutation,probeInvocationId}'::text[]))`, sql`((execution_details #>> '{mutation,subjectBeforeSha256}'::text[]))`).where(sql`((source = 'mutation-probe'::text) AND ((execution_details #>> '{mutation,leg}'::text[]) = 'mutant'::text))`),
 	index("test_runs_branch_idx").using("btree", table.branch.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(branch IS NOT NULL)`),
 	index("test_runs_file_path_idx").using("btree", table.filePath.asc().nullsLast().op("text_ops"), table.finishedAt.desc().nullsFirst().op("timestamptz_ops")),
 	index("test_runs_file_path_substring_trgm_idx").using("gin", table.filePath.asc().nullsLast().op("gin_trgm_ops")),
@@ -12956,8 +12995,11 @@ export const toolInvocationsInHarnessShared = harnessShared.table("tool_invocati
 	index("tool_invocations_goal_ref_idx").using("btree", table.goalRef.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(goal_ref IS NOT NULL)`),
 	index("tool_invocations_intent_event_idx").using("btree", table.intentEventId.asc().nullsLast().op("int8_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(intent_event_id IS NOT NULL)`),
 	index("tool_invocations_invoked_at_cov_idx").using("btree", table.invokedAt.desc().nullsFirst().op("timestamptz_ops"), table.toolName.asc().nullsLast(), table.durationMs.asc().nullsLast(), table.status.asc().nullsLast()),
+	index("tool_invocations_native_dispatch_fingerprint_idx").using("btree", sql`((((metadata_json -> 'requestOrigin'::text) -> 'nativeSession'::text) ->> 'valueFingerprint'::text))`, sql`((((metadata_json -> 'requestOrigin'::text) -> 'nativeSession'::text) ->> 'callIdFingerprint'::text))`, sql`id`).where(sql`(((((metadata_json -> 'requestOrigin'::text) -> 'nativeSession'::text) ->> 'valueFingerprint'::text) IS NOT NULL) AND ((((metadata_json -> 'requestOrigin'::text) -> 'nativeSession'::text) ->> 'callIdFingerprint'::text) IS NOT NULL))`),
 	index("tool_invocations_parent_spawn_partial_idx").using("btree", table.parentSpawnId.asc().nullsLast().op("text_ops")).where(sql`((parent_spawn_id IS NOT NULL) AND (parent_spawn_id <> ''::text))`),
 	index("tool_invocations_quota_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.toolName.asc().nullsLast().op("text_ops"), table.role.asc().nullsLast().op("text_ops"), table.windowKey.asc().nullsLast().op("text_ops"), table.status.asc().nullsLast()).where(sql`(status = ANY (ARRAY['ok'::text, 'refused'::text]))`),
+	index("tool_invocations_recipe_receipt_idx").using("btree", sql`workspace_id`, sql`(((metadata_json -> 'otel'::text) ->> 'callId'::text))`, sql`invoked_at`).where(sql`(lower(replace(replace(tool_name, ':'::text, ''::text), '_'::text, ''::text)) = ANY (ARRAY['coderun'::text, 'recipesrun'::text]))`),
+	index("tool_invocations_recipe_receipt_window_idx").using("btree", sql`workspace_id`, sql`invoked_at`, sql`(((metadata_json -> 'otel'::text) ->> 'callId'::text))`).where(sql`(lower(replace(replace(tool_name, ':'::text, ''::text), '_'::text, ''::text)) = ANY (ARRAY['coderun'::text, 'recipesrun'::text]))`),
 	index("tool_invocations_serving_host_idx").using("btree", table.servingHost.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")).where(sql`(serving_host IS NOT NULL)`),
 	index("tool_invocations_spawn_id_ws_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.spawnId.asc().nullsLast().op("text_ops")),
 	index("tool_invocations_telemetry_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.invokedAt.desc().nullsFirst().op("timestamptz_ops")),
@@ -13978,13 +14020,17 @@ END`),
 	uniqueIndex("work_items_intake_promotion_key_uniq").using("btree", sql`(((payload -> 'intakePromotion'::text) ->> 'key'::text))`).where(sql`(payload ? 'intakePromotion'::text)`),
 	index("work_items_issue_created_at_idx").using("btree", sql`workspace_id`, sql`to_timestamp((((created_ts)::numeric / 1000.0))::double precision)`).where(sql`(item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text]))`),
 	uniqueIndex("work_items_keyless_title_identity_uq").using("btree", sql`workspace_id`, sql`harness_slug`, sql`((payload #>> '{admissionIdentity,titleKey}'::text[]))`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])) AND ((status IS NULL) OR (status <> ALL (ARRAY['passed'::text, 'deprecated'::text, 'resolved'::text, 'closed'::text, 'done'::text, 'dropped'::text]))) AND (NULLIF(btrim((payload ->> 'watchdogKey'::text)), ''::text) IS NULL) AND (COALESCE((payload ->> 'lane'::text), 'improvement'::text) <> 'observation'::text) AND ((payload #>> '{admissionIdentity,schemaVersion}'::text[]) = 'admission-identity-v1'::text) AND (NULLIF(btrim((payload #>> '{admissionIdentity,titleKey}'::text[])), ''::text) IS NOT NULL))`),
+	index("work_items_legacy_needs_human_candidates_idx").using("btree", table.updatedTs.asc().nullsFirst().op("int8_ops"), table.harnessSlug.asc().nullsFirst().op("text_ops"), table.featureId.asc().nullsLast().op("text_ops"), table.workspaceId.asc().nullsLast().op("text_ops")).where(sql`((COALESCE(payload, '{}'::jsonb) ->> 'needsHuman'::text) = 'true'::text)`),
 	index("work_items_obs_rubric_ref_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL)`),
+	index("work_items_obs_spec_quality_series_idx").using("btree", sql`workspace_id`, sql`split_part((((payload -> 'observation'::text) -> 'subject'::text) ->> 'ref'::text), ':'::text, 2)`, sql`split_part((((payload -> 'observation'::text) -> 'subject'::text) ->> 'ref'::text), ':'::text, 4)`, sql`to_timestamp((((created_ts)::numeric / 1000.0))::double precision)`, sql`feature_id`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])) AND (((payload -> 'observation'::text) ->> 'rubricRef'::text) = 'spec-quality'::text) AND ((((payload -> 'observation'::text) -> 'subject'::text) ->> 'kind'::text) = 'plan'::text))`),
+	index("work_items_obs_supersedes_rubric_probe_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`, sql`(((payload -> 'observation'::text) ->> 'rubricRef'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_obs_supersedes_v2_idx").using("btree", sql`(((payload -> 'observation'::text) ->> 'supersedes'::text))`).where(sql`(((payload -> 'observation'::text) ->> 'supersedes'::text) IS NOT NULL)`),
 	index("work_items_payload_paths_gin").using("gin", sql`((payload -> 'paths'::text))`).where(sql`(jsonb_typeof((payload -> 'paths'::text)) = 'array'::text)`),
 	index("work_items_plan_item_stamp_idx").using("btree", sql`(((payload -> 'plan_item'::text) ->> 'plan_slug'::text))`, sql`(((payload -> 'plan_item'::text) ->> 'item_id'::text))`).where(sql`((payload -> 'plan_item'::text) IS NOT NULL)`),
 	uniqueIndex("work_items_plan_line_node_uniq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops"), table.planSlug.asc().nullsLast().op("text_ops"), table.planLineId.asc().nullsLast().op("text_ops")).where(sql`(plan_line_id IS NOT NULL)`),
 	uniqueIndex("work_items_resource_governor_identity_uq").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text))`, sql`(((payload -> 'resource_governor'::text) ->> 'idempotencyKey'::text))`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
 	index("work_items_resource_governor_queue_idx").using("btree", sql`workspace_id`, sql`(((payload -> 'resource_governor'::text) ->> 'namespace'::text))`, sql`(((payload -> 'resource_governor'::text) ->> 'state'::text))`, sql`created_ts`, sql`feature_id`).where(sql`(((payload -> 'resource_governor'::text) ->> 'schemaVersion'::text) = '1'::text)`),
+	index("work_items_scorecard_created_keyset_idx").using("btree", sql`workspace_id`, sql`to_timestamp((((created_ts)::numeric / 1000.0))::double precision)`, sql`feature_id`).where(sql`((item_kind = ANY (ARRAY['bug'::text, 'change'::text, 'task'::text, 'cleanup'::text])) AND (((payload -> 'observation'::text) ->> 'rubricRef'::text) IS NOT NULL))`),
 	index("work_items_summary_substring_trgm_idx").using("gin", sql`COALESCE(summary, ''::text)`),
 	index("work_items_title_substring_trgm_idx").using("gin", sql`COALESCE(title, ''::text)`),
 	index("work_items_twin_rekey_marker_idx").using("btree", sql`workspace_id`, sql`(((payload -> '_physicalTwinRekey'::text) ->> 'oldId'::text))`).where(sql`(((payload -> '_physicalTwinRekey'::text) ->> 'migration'::text) = '826'::text)`),
