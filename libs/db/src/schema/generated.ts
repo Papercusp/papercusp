@@ -2605,7 +2605,7 @@ export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coor
 	followBlockers: boolean("follow_blockers").default(false).notNull(),
 	derivedFromKind: text("derived_from_kind"),
 	derivedFromRef: text("derived_from_ref"),
-	reasons: text().array().default(["RAY['explicit'::tex"]),
+	reasons: text().array().default(sql`ARRAY['explicit'::text]`),
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	contextEpoch: bigint("context_epoch", { mode: "number" }),
 	cancelReason: text("cancel_reason"),
@@ -13536,7 +13536,7 @@ export const userSessionsInHarnessShared = harnessShared.table("user_sessions", 
 	userAgent: text("user_agent"),
 	remoteAddr: text("remote_addr"),
 	workspaceId: text("workspace_id"),
-	capabilities: text().array().default(["RAY['*'::tex"]).notNull(),
+	capabilities: text().array().default(sql`ARRAY['*'::text]`).notNull(),
 }, (table) => [
 	index("user_sessions_user_idx").using("btree", table.userId.asc().nullsLast().op("uuid_ops")),
 	index("user_sessions_workspace_user_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.userId.asc().nullsLast().op("uuid_ops")).where(sql`(workspace_id IS NOT NULL)`),
