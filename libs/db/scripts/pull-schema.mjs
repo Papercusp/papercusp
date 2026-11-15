@@ -59,7 +59,11 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync, realpathSync, rmSync, readdirSync } from 'node:fs';
 import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs';
-import { repairEmptyArrayDefaults, repairRawSqlCallDefaults } from '../src/schema/schema-defaults.mjs';
+import {
+  repairClippedArrayLiteralDefaults,
+  repairEmptyArrayDefaults,
+  repairRawSqlCallDefaults,
+} from '../src/schema/schema-defaults.mjs';
 import { repairUnconstrainedVectorColumns } from '../src/schema/schema-vector-columns.mjs';
 import {
   annotateCircularForeignKeyExtraConfigs,
@@ -447,6 +451,13 @@ const fixedDefaults = (schema.match(/\.default\(''\)/g) ?? []).length;
 const repairedArrayDefaults = repairEmptyArrayDefaults(schema);
 schema = repairedArrayDefaults.schema;
 const fixedEmptyArrayDefaults = repairedArrayDefaults.fixed;
+
+// Fix 1c: drizzle-kit clips a NON-empty `ARRAY['x'::text]` default to
+// `.array().default(["RAY['x'::tex"])` (two characters off each end). Restore it
+// as sql`ARRAY[...]`. The pure helper is unit-tested without a live DB.
+const repairedClippedArrayDefaults = repairClippedArrayLiteralDefaults(schema);
+schema = repairedClippedArrayDefaults.schema;
+const fixedClippedArrayDefaults = repairedClippedArrayDefaults.fixed;
 
 // Fix 2: drop the `mode` on timestamptz columns → drizzle's default 'date'
 // (returns a JS Date). drizzle-orm 0.45 only accepts mode 'date'|'string' on
@@ -1025,6 +1036,7 @@ console.log(
 writeFileSync(schemaPath, schema);
 console.log(`    fixed ${fixedDefaults} empty-string defaults`);
 console.log(`    fixed ${fixedEmptyArrayDefaults} empty-array defaults`);
+console.log(`    fixed ${fixedClippedArrayDefaults} clipped ARRAY[...::text] defaults (wrapped in sql\`\`)`);
 console.log(`    fixed ${fixedTimestamps} timestamptz columns (dropped invalid mode)`);
 console.log(`    fixed ${fixedFnDefaults} function-call defaults (wrapped in sql\`\`)`);
 console.log(`    fixed ${fixedRawSqlCallDefaults} bare SQL function-call defaults (wrapped in sql\`\`)`);

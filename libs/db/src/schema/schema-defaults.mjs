@@ -19,6 +19,37 @@ export function repairEmptyArrayDefaults(schema) {
   };
 }
 
+/**
+ * Repair drizzle-kit's rendering of a NON-empty text-array literal default.
+ *
+ * For `DEFAULT ARRAY['explicit'::text]` drizzle-kit treats the catalog value as
+ * if it were the quoted `'{...}'` form and strips two characters from each end,
+ * emitting `.array().default(["RAY['explicit'::tex"])` — a one-element array
+ * holding a garbled string, so the TS schema states a default the database does
+ * not have (migration 1638 `coord_entity_subscriptions.reasons`; the older
+ * `capabilities` default ARRAY['*'::text] had the same rendering).
+ *
+ * The two clipped characters are `AR` at the front and the cast's last letter
+ * plus `]` at the back. Only the `::text` cast is restored, because that is the
+ * one case where the clipped letter is known (`::tex` → `::text`); the literal is
+ * re-emitted verbatim as sql`ARRAY[...]` so element quoting and casts keep the
+ * database's exact semantics. Anything else is left alone for the committed-file
+ * guard in schema-defaults.test.ts to flag.
+ *
+ * @param {string} schema drizzle-kit's generated schema source
+ * @returns {{ schema: string, fixed: number }} the repaired source and the
+ *   number of defaults rewritten
+ */
+export function repairClippedArrayLiteralDefaults(schema) {
+  const broken = /\.array\(\)\.default\(\["RAY\[([^"`$\\]*::tex)"\]\)/g;
+  let fixed = 0;
+  const repaired = schema.replace(broken, (_match, inner) => {
+    fixed += 1;
+    return `.array().default(sql\`ARRAY[${inner}t]\`)`;
+  });
+  return { schema: repaired, fixed };
+}
+
 // A default whose content opens with a bare identifier call, optionally inside
 // parentheses: `gen_random_uuid()`, `(gen_random_uuid())`, `now()`. A JS member
 // call such as `Date.now()` does not match, because of the dot.

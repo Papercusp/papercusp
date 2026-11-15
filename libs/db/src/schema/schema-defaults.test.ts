@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { repairEmptyArrayDefaults, repairRawSqlCallDefaults } from './schema-defaults.mjs';
+import {
+  repairClippedArrayLiteralDefaults,
+  repairEmptyArrayDefaults,
+  repairRawSqlCallDefaults,
+} from './schema-defaults.mjs';
 
 describe('repairEmptyArrayDefaults', () => {
   it('turns drizzle-kits one-empty-string rendering into a real empty array', () => {
@@ -43,6 +47,56 @@ describe('repairEmptyArrayDefaults', () => {
     const generated = readFileSync(join(__dirname, 'generated.ts'), 'utf8');
 
     expect(generated).not.toMatch(/\.array\(\)\.default\(\[""\]\)/);
+  });
+});
+
+describe('repairClippedArrayLiteralDefaults (migration 1638 reasons default)', () => {
+  it('restores a clipped single-element ARRAY[...::text] default as sql``', () => {
+    const source = `
+	reasons: text().array().default(["RAY['explicit'::tex"]),
+	capabilities: text().array().default(["RAY['*'::tex"]).notNull(),
+    `;
+
+    const repaired = repairClippedArrayLiteralDefaults(source);
+
+    expect(repaired.fixed).toBe(2);
+    expect(repaired.schema).toContain("reasons: text().array().default(sql`ARRAY['explicit'::text]`),");
+    expect(repaired.schema).toContain("capabilities: text().array().default(sql`ARRAY['*'::text]`).notNull(),");
+    expect(repaired.schema).not.toContain('"RAY[');
+  });
+
+  it('restores a multi-element literal with every element kept', () => {
+    const repaired = repairClippedArrayLiteralDefaults(
+      `kinds: text().array().default(["RAY['a'::text, 'b'::tex"]),`,
+    );
+
+    expect(repaired).toEqual({
+      schema: "kinds: text().array().default(sql`ARRAY['a'::text, 'b'::text]`),",
+      fixed: 1,
+    });
+  });
+
+  it('leaves a clipped non-text cast alone, since its clipped letter is unknown', () => {
+    const source = `codes: varchar().array().default(["RAY['x'::character varyin"]),`;
+
+    expect(repairClippedArrayLiteralDefaults(source)).toEqual({ schema: source, fixed: 0 });
+  });
+
+  it('does not touch ordinary array defaults and is idempotent', () => {
+    const source = `
+      labels: text("labels").array().default(["system"]).notNull(),
+      tags: text().array().default([]).notNull(),
+    `;
+    expect(repairClippedArrayLiteralDefaults(source)).toEqual({ schema: source, fixed: 0 });
+
+    const once = repairClippedArrayLiteralDefaults(`r: text().array().default(["RAY['explicit'::tex"]),`);
+    expect(repairClippedArrayLiteralDefaults(once.schema)).toEqual({ schema: once.schema, fixed: 0 });
+  });
+
+  it('keeps the committed generated schema free of any clipped ARRAY[...] default', () => {
+    const generated = readFileSync(join(__dirname, 'generated.ts'), 'utf8');
+
+    expect(generated).not.toMatch(/\.default\(\["RAY\[/);
   });
 });
 
