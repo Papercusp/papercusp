@@ -235,7 +235,8 @@ test('R-2 (identity-system-everything-migration-2026-10-18 #D-005): the kernel i
   }
 });
 
-test('app-wide-lossless-caps-and-agent-guidance-2026-11-08 P-001 (LOSSLESS-P-001 / AUTO-BAR-R-10-P-001): the lossless-data rule is authored ONCE in su.md and regenerated into exactly the domain part document', () => {
+// app-wide-lossless-caps-and-agent-guidance-2026-11-08 P-001 / LOSSLESS-P-001 rev2.
+test('lossless rule is regenerated from its canonical source', () => {
   const RULE = '- **Lossless data — bound the work, never the truth.**';
   const text = su();
   // Canonical source: su.md carries the rule exactly once, with its planning and reviewing clauses.
