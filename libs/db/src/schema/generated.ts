@@ -2574,6 +2574,23 @@ export const coordConversationsInHarnessShared = harnessShared.table("coord_conv
 	check("coord_conversations_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
 
+export const coordEntitySubscriptionCleanupSnapshotsInHarnessShared = harnessShared.table("coord_entity_subscription_cleanup_snapshots", {
+	snapshotId: bigserial("snapshot_id", { mode: "bigint" }).primaryKey().notNull(),
+	cleanupRun: text("cleanup_run").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	subscriptionId: bigint("subscription_id", { mode: "number" }).notNull(),
+	workspaceId: text("workspace_id").notNull(),
+	subscriberId: text("subscriber_id").notNull(),
+	cause: text().notNull(),
+	rowData: jsonb("row_data").notNull(),
+	snapshottedAt: timestamp("snapshotted_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("coord_entity_subscription_cleanup_snapshots_sub_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops")),
+	unique("coord_entity_subscription_clean_cleanup_run_subscription_id_key").on(table.cleanupRun, table.subscriptionId),
+	primaryKey({ columns: [table.snapshotId], name: "coord_entity_subscription_cleanup_snapshots_pkey"}),
+
+]);
+
 export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coord_entity_subscriptions", {
 	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
 	id: bigint({ mode: "number" }).primaryKey().generatedByDefaultAsIdentity({ name: "harness_shared.coord_entity_subscriptions_id_seq", startWith: 1, increment: 1, minValue: 1, maxValue: 9223372036854775807, cache: 1 }),
@@ -2588,12 +2605,18 @@ export const coordEntitySubscriptionsInHarnessShared = harnessShared.table("coor
 	followBlockers: boolean("follow_blockers").default(false).notNull(),
 	derivedFromKind: text("derived_from_kind"),
 	derivedFromRef: text("derived_from_ref"),
+	reasons: text().array().default(["RAY['explicit'::tex"]),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	contextEpoch: bigint("context_epoch", { mode: "number" }),
+	cancelReason: text("cancel_reason"),
 }, (table) => [
 	uniqueIndex("coord_entity_subscriptions_active_uq").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
+	index("coord_entity_subscriptions_context_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.contextEpoch.asc().nullsLast().op("int8_ops")).where(sql`((cancelled_at IS NULL) AND ('context'::text = ANY (reasons)))`),
 	index("coord_entity_subscriptions_derived_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.derivedFromKind.asc().nullsLast().op("text_ops"), table.derivedFromRef.asc().nullsLast().op("text_ops")).where(sql`((cancelled_at IS NULL) AND (derived_from_kind IS NOT NULL))`),
 	index("coord_entity_subscriptions_target_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.targetKind.asc().nullsLast().op("text_ops"), table.targetRef.asc().nullsLast().op("text_ops")).where(sql`(cancelled_at IS NULL)`),
 	check("coord_entity_subscriptions_kind_check", sql`target_kind = ANY (ARRAY['topic'::text, 'object'::text, 'fleet'::text, 'event'::text])`),
 	check("coord_entity_subscriptions_mode_check", sql`delivery_mode = ANY (ARRAY['full'::text, 'digest'::text, 'mention'::text, 'muted'::text])`),
+	check("coord_entity_subscriptions_reasons_check", sql`(reasons IS NULL) OR (reasons <@ ARRAY['context'::text, 'explicit'::text, 'held_item'::text, 'blocker'::text])`),
 	check("coord_entity_subscriptions_ref_nonempty", sql`target_ref <> ''::text`),
 	check("coord_entity_subscriptions_workspace_nonempty", sql`workspace_id <> ''::text`),
 ]);
