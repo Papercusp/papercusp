@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS harness_shared.substrate_fanout_deliveries (
   next_retry_at           bigint,
   last_error              text,
   finding_ref             text,
+  finding_artifact_id     text,
+  finding_retry_at        bigint,
   end_reason              text,
   superseded_by_outbox_id bigint,
   read_at                 timestamptz,
@@ -57,7 +59,15 @@ COMMENT ON COLUMN harness_shared.substrate_fanout_deliveries.delivery IS
 COMMENT ON COLUMN harness_shared.substrate_fanout_deliveries.next_retry_at IS
   'Epoch ms when the retry sweep next handles this row. NULL once the row leaves pending.';
 COMMENT ON COLUMN harness_shared.substrate_fanout_deliveries.finding_ref IS
-  'The persistent-failure work-item filed at FANOUT_MAX_ATTEMPTS (R-27), keyed fanout-persistent:<subscriber>:outbox:<outbox_id>.';
+  'Confirmed reserved artifact id for R-27; never an in-progress marker or unconfirmed dedupe key.';
+COMMENT ON COLUMN harness_shared.substrate_fanout_deliveries.finding_artifact_id IS
+  'Permanent identity reserved before capture; replayed after crashes, terminal findings and notification recovery.';
+COMMENT ON COLUMN harness_shared.substrate_fanout_deliveries.finding_retry_at IS
+  'Epoch ms finding retry/claim lease, independent of notification state. NULL before first claim or after confirmation.';
+
+CREATE INDEX IF NOT EXISTS substrate_fanout_deliveries_finding_due_idx
+  ON harness_shared.substrate_fanout_deliveries (workspace_id, COALESCE(finding_retry_at, 0), outbox_id, subscriber_id)
+  WHERE finding_ref IS NULL;
 
 -- The retry sweep: due pending rows of one coord workspace, oldest due first.
 CREATE INDEX IF NOT EXISTS substrate_fanout_deliveries_due_idx
