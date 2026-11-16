@@ -42,6 +42,33 @@ describe('blueprint source authoring', () => {
     expect(resolveBlueprint(root, { resolve }).sourceKind).toBe('blueprint');
   });
 
+  it('rejects stale workspace pot declarations while accepting import migration without widening the fleet ceiling', () => {
+    const role = { id: 'proposal-reviewer', prompt: 'Read market data and write proposals only.' };
+    const ceiling = [{ id: role.id, capabilities: ['market:read'] }];
+    const reactive = [{ role: role.id, when: { cond: { event: { equals: 'market.resolved' } } } }];
+    const root = { id: 'workspace-ops', kind: 'hive', workItem: { kind: 'feature' },
+      roles: [{ ...role, tools: ['work_items:get'], capabilities: ['market:read'] }],
+      fleet: { workerRoles: ceiling }, reactive, spine: { edges: { DONE: { to: 'done' } } } };
+    expect(() => resolveBlueprintSource(root)).toThrow();
+    // Source validation checks authored identity layers. Runnable validation
+    // (also used by blueprint:validate) owns legacy role dependency authority.
+    expect(() => resolveBlueprint({ ...root, kind: 'pot' })).toThrow(/duplicate-capability-authority/);
+
+    const migrated = resolveBlueprint({ ...root, kind: 'pot', roles: [role],
+      dependencies: { tools: ['work_items:get', 'market:read'] } });
+    expect(migrated.validation.errors).toEqual([]);
+    expect(migrated.sourceKind).toBe('blueprint');
+    expect(migrated.blueprint.roles).toContainEqual(expect.objectContaining(role));
+    expect(migrated.blueprint.fleet?.workerRoles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: role.id, capabilities: ['market:read'] }),
+    ]));
+    expect(migrated.blueprint.fleet?.workerRoles).toHaveLength(1);
+    expect(migrated.blueprint.dependencies?.tools).toEqual(['work_items:get', 'market:read']);
+    expect(migrated.blueprint.reactive).toEqual(expect.arrayContaining([
+      expect.objectContaining({ role: role.id, when: reactive[0].when }),
+    ]));
+  });
+
   it.each([
     [{ slots: [{ slot: 'unknown-slot' }] }, 'slot-unknown'],
     [{ slots: [{ slot: 'kernel' }] }, 'slot-reserved-layer'],
