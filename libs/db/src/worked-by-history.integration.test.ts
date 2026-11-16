@@ -141,6 +141,128 @@ describe('migration 806 — shared-base worked_by_history writer', () => {
   });
 });
 
+/**
+ * Non-su modernization P-001 / R-46 qualification of THIS writer, not a claim
+ * that prior-worker attribution is already a complete custody witness. The
+ * positive control must retain a whole interval; the negative controls expose
+ * paths for which endpoint equality plus worked_by_history cannot prove one.
+ * Every mutation below is confined to createFreshTestDb's disposable database.
+ * Keep these characterizations when adding capture at the existing audit seam:
+ * a future witness must detect them from independent evidence, not relabel an
+ * unchanged history array as proof that no transition occurred.
+ */
+describe('R-46 qualification — holder-history interval and evidence boundaries', () => {
+  it('retains transfer/restore and release/reclaim history beyond five entries', async () => {
+    const id = 'WI-custody-long-interval';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    const expected = ['su-original'];
+
+    for (let i = 0; i < 6; i += 1) {
+      await claim(id, `su-other-${i}`);
+      await claim(id, 'su-original');
+      expected.push(`su-other-${i}`, 'su-original');
+    }
+    await claim(id, null);
+    await claim(id, 'su-original');
+    expected.push('su-original', 'su-original');
+
+    const actual = await history(id);
+    expect(actual.map(entry => entry.owner)).toEqual(expected);
+    expect(actual.slice(0, baseline.length)).toEqual(baseline);
+    expect(actual.length).toBeGreaterThan(5);
+    expect(actual.every(entry => typeof entry.at === 'string' && Number.isFinite(Date.parse(entry.at)))).toBe(true);
+    const [row] = await sql`
+      SELECT taken_by FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(row?.taken_by).toBe('su-original');
+    expect(actual).not.toEqual(baseline);
+  });
+
+  it('cannot witness a local transfer/restore when each write also advances fed_ts', async () => {
+    const id = 'WI-custody-fed-clock-gap';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+
+    // This is a LOCAL row, unlike the existing remote-projection control. The
+    // function's fed_ts guard returns before recording either real transition.
+    for (const holder of ['su-other', 'su-original']) {
+      await sql`
+        UPDATE harness_shared.work_items
+           SET taken_by = ${holder}, fed_ts = COALESCE(fed_ts, 0) + 1
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      const [row] = await sql`
+        SELECT taken_by, origin FROM harness_shared.work_items
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      expect(row).toMatchObject({ taken_by: holder, origin: 'local' });
+    }
+    expect(await history(id)).toEqual(baseline);
+  });
+
+  it('does not protect the history prefix from direct replacement or truncation', async () => {
+    const id = 'WI-custody-history-replacement';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    expect(baseline).toHaveLength(1);
+
+    // UPDATE OF taken_by does not fire for a history-only write. Restoring the
+    // exact prefix afterwards also leaves no trace in this field itself.
+    await sql`
+      UPDATE harness_shared.work_items SET worked_by_history = '[]'::jsonb
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(await history(id)).toEqual([]);
+    await sql`
+      UPDATE harness_shared.work_items SET worked_by_history = ${sql.json(baseline)}::jsonb
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(await history(id)).toEqual(baseline);
+  });
+
+  it('does not reconstruct custody from an inserted held row or a deleted/reseeded identity', async () => {
+    const id = 'WI-custody-delete-reseed';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    expect(await history(id)).toHaveLength(1);
+    await sql`
+      DELETE FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    await sql`
+      INSERT INTO harness_shared.work_items
+        (workspace_id, harness_slug, feature_id, title, summary, status, item_kind, origin, taken_by, payload)
+      VALUES ('default', 'worked-history', ${id}, ${id}, 'history test', 'open', 'feature', 'local', 'su-original', '{}'::jsonb)`;
+
+    const [row] = await sql`
+      SELECT taken_by FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(row?.taken_by).toBe('su-original');
+    expect(await history(id)).toEqual([]);
+  });
+
+  it('cannot prove continuity across a disabled and subsequently restored trigger', async () => {
+    const id = 'WI-custody-disabled-trigger';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+
+    await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER record_work_item_worked_by_history_trg');
+    try {
+      await claim(id, 'su-other');
+      await claim(id, 'su-original');
+    } finally {
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER record_work_item_worked_by_history_trg');
+    }
+
+    const [trigger] = await sql`
+      SELECT tgenabled FROM pg_trigger
+       WHERE tgrelid = 'harness_shared.work_items'::regclass
+         AND tgname = 'record_work_item_worked_by_history_trg'`;
+    expect(trigger?.tgenabled).toBe('O');
+    expect(await history(id)).toEqual(baseline);
+  });
+});
+
 async function firstClaimedAt(id: string): Promise<string | null> {
   const rows = await sql<{ first_claimed_at: string | null }[]>`
     SELECT first_claimed_at FROM harness_shared.work_items
