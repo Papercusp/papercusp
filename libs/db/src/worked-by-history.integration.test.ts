@@ -220,6 +220,47 @@ describe('R-46 qualification — holder-history interval and evidence boundaries
     expect(await history(id)).toEqual(baseline);
   });
 
+  it('captures normal content and claims in the outbox but not history-only replacement/restoration', async () => {
+    const id = 'WI-custody-outbox-boundary';
+    await seed(id, 'feature');
+    const outboxCount = async () => {
+      const [row] = await sql<{ n: number }[]>`
+        SELECT count(*)::int AS n FROM harness_shared.substrate_outbox
+         WHERE workspace_id = 'default' AND harness_slug = 'worked-history'
+           AND table_name = 'harness_features_consolidated' AND key = ${id}`;
+      return row!.n;
+    };
+
+    // A missing or disabled capture writer must fail the positive control,
+    // rather than make an empty outbox look like an observed omission.
+    const inserted = await outboxCount();
+    expect(inserted).toBeGreaterThan(0);
+    await sql`
+      UPDATE harness_shared.work_items SET title = 'normal content control'
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    const content = await outboxCount();
+    expect(content).toBeGreaterThan(inserted);
+    await claim(id, 'su-original');
+    const claimed = await outboxCount();
+    expect(claimed).toBeGreaterThan(content);
+    const baseline = await history(id);
+    expect(baseline).toHaveLength(1);
+
+    // Migration 1226 compares the feature wire projection. Local history is
+    // deliberately outside it, so even an active federation capture is not a
+    // substitute for independent history-mutation evidence.
+    await sql`
+      UPDATE harness_shared.work_items SET worked_by_history = '[]'::jsonb
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(await history(id)).toEqual([]);
+    expect(await outboxCount()).toBe(claimed);
+    await sql`
+      UPDATE harness_shared.work_items SET worked_by_history = ${sql.json(baseline)}::jsonb
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(await history(id)).toEqual(baseline);
+    expect(await outboxCount()).toBe(claimed);
+  });
+
   it('does not reconstruct custody from an inserted held row or a deleted/reseeded identity', async () => {
     const id = 'WI-custody-delete-reseed';
     await seed(id, 'feature');
