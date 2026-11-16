@@ -12853,9 +12853,11 @@ export const testingRunSnapshotsInHarnessShared = harnessShared.table("testing_r
 	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	taskId: text("task_id"),
+	documentationInput: jsonb("documentation_input"),
 }, (table) => [
 	index("testing_run_snapshots_finished_idx").using("btree", table.finishedAt.desc().nullsFirst().op("timestamptz_ops"), table.runId.asc().nullsLast().op("text_ops")).where(sql`(finished_at IS NOT NULL)`),
 	index("testing_run_snapshots_updated_idx").using("btree", table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.runId.asc().nullsLast().op("text_ops")),
+	check("testing_run_snapshots_documentation_input_ck", sql`(documentation_input IS NULL) OR (((jsonb_typeof(documentation_input) = 'object'::text) AND ((documentation_input ->> 'schemaVersion'::text) = '1'::text) AND ((documentation_input ->> 'inputSha256'::text) ~ '^[a-f0-9]{64}$'::text) AND (((documentation_input -> 'input'::text) ->> 'runId'::text) = run_id) AND (((documentation_input -> 'input'::text) ->> 'kind'::text) = kind) AND (((documentation_input -> 'input'::text) ->> 'label'::text) = label) AND (((documentation_input -> 'input'::text) -> 'filePath'::text) = COALESCE(to_jsonb(file_path), 'null'::jsonb)) AND (((documentation_input -> 'input'::text) -> 'command'::text) = command) AND (((documentation_input -> 'input'::text) -> 'taskId'::text) = COALESCE(to_jsonb(task_id), 'null'::jsonb)) AND (((documentation_input -> 'input'::text) -> 'startedAt'::text) = to_jsonb((EXTRACT(epoch FROM started_at) * (1000)::numeric))) AND (jsonb_typeof(((documentation_input -> 'input'::text) -> 'source'::text)) = 'object'::text) AND (jsonb_typeof(((documentation_input -> 'input'::text) -> 'configuration'::text)) = 'object'::text)) IS TRUE)`),
 	check("testing_run_snapshots_kind_ck", sql`kind = ANY (ARRAY['vitest'::text, 'playwright'::text, 'cargo'::text, 'node'::text, 'shell'::text, 'admin-suite'::text])`),
 	check("testing_run_snapshots_status_ck", sql`status = ANY (ARRAY['running'::text, 'pass'::text, 'fail'::text, 'cancelled'::text, 'error'::text])`),
 	primaryKey({ columns: [table.runId], name: "testing_run_snapshots_pkey"}),
