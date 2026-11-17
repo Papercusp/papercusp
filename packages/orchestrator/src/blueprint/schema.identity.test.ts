@@ -42,7 +42,7 @@ test('a portable identity source parses contributions, grants, publisher and att
     id: 'papercusp-engineer',
     extends: 'identity-root',
     version: '1.0.0',
-    slots: [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }],
+    slots: [{ slot: 'domain', cardinality: 'exclusive' }],
     contributions: [
       { id: 'core', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'knowledge-pack:papercusp-core' },
       { id: 'ship-rubric', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'rubric:plan-class-feature-ship' },
@@ -54,7 +54,7 @@ test('a portable identity source parses contributions, grants, publisher and att
   const source = IdentitySourceDocumentSchema.parse(doc);
   const bp = BlueprintSchema.parse({ ...minimal, ...doc });
   assert.equal(isIdentitySourceDocument(parseBlueprintSourceDocument(doc)), true);
-  assert.deepEqual(bp.slots, [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }]);
+  assert.deepEqual(bp.slots, [{ slot: 'domain', cardinality: 'exclusive' }]);
   assert.equal(source.contributions?.length, 2);
   assert.throws(() => IdentitySourceDocumentSchema.parse({ ...doc, bundles: [] }), /Unrecognized key.*bundles/);
   assert.deepEqual(bp.bundles, []);
@@ -68,6 +68,21 @@ test('a portable identity source parses contributions, grants, publisher and att
   assert.equal(isIdentityDocument(source), true);
   assert.equal(isIdentityDocument(bp), true, 'legacy helper cannot tell source from resolved; loader sourceKind can');
   assert.deepEqual(BlueprintSchema.parse(bp), bp);
+});
+
+test('R-13: a source layer fills one slot while a named stack fills none', () => {
+  const layer = { id: 'one-layer', slots: [{ slot: 'domain' }] };
+  assert.equal(IdentitySourceDocumentSchema.safeParse(layer).success, true);
+  assert.equal(IdentitySourceDocumentSchema.safeParse({ id: 'named-stack', slots: [], extends: ['one-layer'] }).success, true);
+  for (const slots of [
+    [{ slot: 'domain' }, { slot: 'practice' }],
+    [{ slot: 'practice' }, { slot: 'practice' }],
+  ]) {
+    assert.throws(() => parseBlueprintSourceDocument({ ...layer, slots }), /slots.*|one slot/s);
+  }
+  // Merged configurations retain the slots of every contributing layer.
+  assert.deepEqual(RunnableBlueprintSchema.parse({ ...minimal, slots: [{ slot: 'domain' }, { slot: 'practice' }] }).slots,
+    [{ slot: 'domain' }, { slot: 'practice' }]);
 });
 
 test('a slot id is an OPEN string at the schema (the registry check is validateBlueprint’s); a bundle kind is the CLOSED D-011 vocabulary', () => {

@@ -1551,13 +1551,20 @@ export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.pick({
   publisher: true,
   attestation: true,
 }).extend({
-  slots: z.array(SlotDeclarationSchema),
+  // Authored layers fill one slot. The merged runnable contract still admits
+  // every slot contributed by the stack; slotless documents name compositions.
+  slots: z.array(SlotDeclarationSchema).max(1, 'an identity layer fills one slot; a named stack fills none'),
 }).strict().superRefine((identity, context) => {
   // Inspect the authored source: inherited layer grants are preserved after
   // resolution, but a slotless named composition owns no permissions.
   if (identity.slots.length === 0 && identity.grants !== undefined) {
     context.addIssue({ code: 'custom', path: ['grants'],
       message: 'a named stack cannot declare grants of its own' });
+  }
+  const launchOnlySlot = identity.slots.find(({ slot }) => slot === 'client' || slot === 'fleet-posture');
+  if (launchOnlySlot && identity.grants !== undefined) {
+    context.addIssue({ code: 'custom', path: ['grants'],
+      message: `launch-only ${launchOnlySlot.slot} layers cannot declare grants` });
   }
 });
 

@@ -76,6 +76,17 @@ test('R-13: a named stack carrying its own permissions is refused', () => {
   }
 });
 
+test('R-13: launch-only client and fleet posture layers contribute no grants', () => {
+  for (const slot of ['client', 'fleet-posture']) {
+    const source = { id: `launch-${slot}`, slots: [{ slot }] };
+    assert.equal(compileAgentSpecification({ source }).configuration.id, source.id);
+    for (const grants of [{}, { requires: ['claims.record@1.0.0'] }, { optional: ['email.message@1.0.0'] }]) {
+      assert.throws(() => compileAgentSpecification({ source: { ...source, grants } }),
+        new RegExp(`${slot}.*grants|grants.*${slot}`), slot);
+    }
+  }
+});
+
 test('R-13: su and the SC-009 stack compile', () => {
   const practice = join(dirname(builtinBlueprintPath('su.practice')), 'prompts', 'practice.md');
   const su = compileAgentSpecification({
