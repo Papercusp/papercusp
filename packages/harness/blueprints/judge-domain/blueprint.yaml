@@ -3,7 +3,6 @@
 id: judge-domain
 extends: identity-root
 version: 0.1.0
-visibility: public
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the independent judge
   profession shared by acceptance, grading-integrity, gym, and ensemble judges.

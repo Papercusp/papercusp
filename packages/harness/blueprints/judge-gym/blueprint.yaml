@@ -2,7 +2,6 @@
 id: judge-gym
 extends: identity-root
 version: 0.1.0
-visibility: public
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the gym evaluation
   practice for scoring a target harness trace against its frozen rubric.

@@ -2,7 +2,6 @@
 id: judge-ensemble
 extends: identity-root
 version: 0.1.0
-visibility: public
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the ensemble practice
   for selecting a winning independent candidate.

@@ -2,7 +2,6 @@
 id: judge-grading-integrity
 extends: identity-root
 version: 0.1.0
-visibility: public
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the grading-integrity
   practice for auditing a terminal scorecard against the meta-rubric.

@@ -19,7 +19,6 @@
 id: papercusp-engineer
 extends: identity-root
 version: 0.1.2
-visibility: public
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the software-engineering
   profession. Fills the exclusive `domain` slot with su.md's engineering discipline,

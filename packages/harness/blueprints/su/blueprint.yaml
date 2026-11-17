@@ -4,7 +4,6 @@ extends:
   - su-collaborator
   - su.practice
 version: 0.1.0
-visibility: public
 description: "Named SU identity composition. Client, fleet assignment and modes are selected separately; this package grants no role or authority."
 slots: []
 contributions:
