@@ -15,6 +15,7 @@ import { stringify as toYaml } from 'yaml';
 import { harnessRootCandidates } from '@papercusp/harness/paths';
 import {
   resolveBlueprint,
+  resolveBlueprintSource,
   resolveLayers,
   resolveExtends,
   MAX_BLUEPRINT_EXTENDS_DEPTH,
@@ -37,6 +38,31 @@ function chain(docs: Record<string, Record<string, unknown>>) {
 }
 const runnable = { workItem: { kind: 'feature' }, spine: { edges: { DONE: { to: 'done' } } } };
 
+test('R-1: identities cannot inherit workspace fields through a direct or indirect parent', () => {
+  const fixture = chain({
+    workspace: { id: 'workspace', knobs: { logRetention: 5 } },
+    indirect: { id: 'indirect', extends: 'workspace' },
+    root: { id: 'identity-root', slots: [] },
+    portable: { id: 'portable', extends: 'root', slots: [{ slot: 'domain' }] },
+  });
+  try {
+    for (const parent of ['workspace', 'indirect']) {
+      const identity = { id: 'identity', extends: parent, slots: [{ slot: 'domain' }] };
+      assert.throws(() => resolveBlueprintSource(identity, { resolve: fixture.resolve }),
+        /identity "identity" cannot extend workspace blueprint "workspace"/);
+      assert.throws(() => resolveBlueprint({ ...runnable, id: 'runtime', extends: parent, slots: [] }, { resolve: fixture.resolve }),
+        /Unrecognized key/);
+    }
+    assert.equal(resolveBlueprintSource({ id: 'valid', extends: 'portable', slots: [] },
+      { resolve: fixture.resolve }).validation.ok, true);
+    const workspace = resolveBlueprint({ id: 'runtime', extends: ['workspace', 'portable'], ...runnable },
+      { resolve: fixture.resolve });
+    assert.equal(workspace.blueprint.knobs.logRetention, 5, 'workspaces still combine their own runtime configuration with portable layers');
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test('layerTrust recognizes every built-in harness root without accepting a prefix lookalike', () => {
   for (const root of harnessRootCandidates()) {
     assert.equal(layerTrust(join(root, 'blueprints', 'su.mode-goal', 'blueprint.yaml')), 'builtin');
@@ -46,7 +72,7 @@ test('layerTrust recognizes every built-in harness root without accepting a pref
 
 test('resolveLayers — layers come back parent-first with the loaded document last, each with its own hash', () => {
   const { resolve, cleanup } = chain({
-    kernel: { id: 'kernel', knobs: { logRetention: 5 } },
+    kernel: { id: 'kernel', slots: [], lexicon: { workUnit: 'deliverable' } },
     eng: { id: 'eng', extends: 'kernel', slots: [{ slot: 'domain' }] },
   });
   try {
@@ -58,7 +84,7 @@ test('resolveLayers — layers come back parent-first with the loaded document l
     );
     assert.deepEqual(
       layers.map((l) => l.sourceKind),
-      ['blueprint', 'identity', 'blueprint'],
+      ['identity', 'identity', 'blueprint'],
     );
     assert.deepEqual(
       layers.map((l) => l.slots),
@@ -71,7 +97,7 @@ test('resolveLayers — layers come back parent-first with the loaded document l
       [null, null, null],
     );
     assert.equal(merged.extends, undefined, 'extends is consumed');
-    assert.equal((merged.knobs as { logRetention: number }).logRetention, 5, 'grandparent knobs inherited');
+    assert.equal((merged.lexicon as { workUnit: string }).workUnit, 'deliverable', 'grandparent portable lexicon inherited');
     assert.equal(new Set(layers.map((l) => l.contentHash)).size, 3, 'three distinct 64-hex hashes');
     for (const l of layers) assert.match(l.contentHash, /^[0-9a-f]{64}$/);
     // resolveExtends is the same walk minus the layers (the pre-P-001 signature).
@@ -324,7 +350,7 @@ test('D-029 — a forbidden mode-axis authority contribution cannot be hidden by
           },
           { resolve },
         ),
-      /authority-on-mode-axis.*`knobs`/,
+      /Unrecognized key.*knobs/,
     );
   } finally {
     cleanup();

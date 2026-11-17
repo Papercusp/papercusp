@@ -285,12 +285,13 @@ test('an operation acceptance rubric must match a retained package on compile an
   }
 });
 
-test('P-025 identity layers contribute lexicon, retirement, role backend and each valid rubric authority', () => {
+test('P-025 workspace layers retain lexicon, retirement, role backend and each valid rubric authority', () => {
   const f = fixture();
   try {
+    // R-1 moves runtime configuration out of authored identity sources. Preserve
+    // this compiler/provenance contract on workspace layers, where it belongs.
     const commonIdentity = {
       extends: 'base',
-      slots: [{ slot: 'domain' }],
       lexicon: { workUnit: 'deliverable', reviewGate: 'review' },
       retired: { at: 'D-025', reason: 'fixture retirement contract' },
       knobs: {
@@ -345,7 +346,7 @@ test('P-025 identity layers contribute lexicon, retirement, role backend and eac
         assert.equal(
           artifact.provenance.find((entry) => entry.path === path)?.sourceRef,
           sourceRef,
-          `${path} must retain identity-layer provenance`,
+          `${path} must retain workspace-layer provenance`,
         );
       }
     }

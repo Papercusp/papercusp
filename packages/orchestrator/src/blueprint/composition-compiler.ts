@@ -64,7 +64,7 @@ import { composeStack, type StackDocument } from './render-stack.js';
 import type { IdentityLintOptions } from './identity-lint.js';
 
 /** Compiler implementation version.  A semantic change requires a new value. */
-export const COMPOSITION_COMPILER_VERSION = '1.7.0';
+export const COMPOSITION_COMPILER_VERSION = '1.8.0';
 /** Alias used by callers that call the value a compiler revision. */
 export const COMPOSITION_COMPILER_REVISION = COMPOSITION_COMPILER_VERSION;
 
@@ -855,6 +855,7 @@ function validateOperationPins(
 export function validateSpecificationBundles(
   bundles: readonly { kind: string; ref: string; version?: string }[],
   inputs: readonly unknown[],
+  contributions: readonly Pick<BlueprintContribution, 'inputKind' | 'ref' | 'version' | 'availability'>[] = [],
 ): ResolvedPackageInput[] {
   const pins = validateAgentInputClosure(inputs).filter((entry): entry is ResolvedPackageInput => entry.kind === 'package');
   for (const bundle of bundles) {
@@ -862,6 +863,17 @@ export function validateSpecificationBundles(
     if (!pin) fail('package-missing', 'declared bundle has no resolved content', bundle.kind + ':' + bundle.ref);
     if (bundle.version && bundle.version !== pin.revision) {
       fail('package-pin-conflict', 'requires ' + bundle.version + ', selected ' + pin.revision, packageKey(pin));
+    }
+  }
+  for (const declaration of contributions) {
+    if (declaration.inputKind !== 'package') continue;
+    const pin = pins.find((entry) => packageKey(entry) === declaration.ref);
+    if (!pin) {
+      if (declaration.availability === 'optional') continue;
+      fail('package-missing', 'declared package contribution has no resolved content', declaration.ref);
+    }
+    if (declaration.version && declaration.version !== pin.revision) {
+      fail('package-pin-conflict', 'requires ' + declaration.version + ', selected ' + pin.revision, packageKey(pin));
     }
   }
   return pins;
@@ -965,7 +977,9 @@ export function blueprintPackageInputs(loaded: Pick<LoadedBlueprint, 'layers'>, 
       : Array.isArray(document.extends) ? document.extends : [];
     const dependencies = [...packages, ...additional.filter((entry): entry is ResolvedPackageInput => entry.kind === 'package')]
       .filter((entry) => layer === loaded.layers.at(-1) || (entry.packageKind === 'blueprint' ? parents.includes(entry.ref)
-        : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref)))
+        : layer.bundles.some((bundle) => bundle.kind === entry.packageKind && bundle.ref === entry.ref) ||
+          (Array.isArray(document.contributions) && document.contributions.some((contribution) =>
+            isRecord(contribution) && contribution.inputKind === 'package' && contribution.ref === `${entry.packageKind}:${entry.ref}`))))
       .map(({ packageKind, ref, revision, contentHash }) => ({ packageKind, ref, revision, contentHash }));
     const pin = pinPackageInput({
       packageKind: 'blueprint',
@@ -990,7 +1004,7 @@ export function replayAgentSpecification(value: unknown): CompiledAgentSpecifica
   const parsed = ResolvedAgentSpecificationSchema.safeParse(value);
   if (!parsed.success) fail('input-invalid', parsed.error.issues.map((issue) => issue.message).join('; '));
   const specification = parsed.data;
-  validateSpecificationBundles(specification.configuration.bundles ?? [], specification.inputs);
+  validateSpecificationBundles(specification.configuration.bundles ?? [], specification.inputs, specification.configuration.contributions);
   validateOperationPins(specification.configuration, specification.inputs);
   for (const entry of specification.inputs) {
     if (entry.kind === 'blueprint-layer' && !entry.document) fail('source-invalid', 'replay needs the source document', entry.ref);
@@ -1282,7 +1296,7 @@ function compileFromInput(input: CompositionCompilerInput): CompiledAgentSpecifi
   }
 
   const closure = validateAgentInputClosure(inputs);
-  validateSpecificationBundles(loaded.blueprint.bundles ?? [], closure);
+  validateSpecificationBundles(loaded.blueprint.bundles ?? [], closure, loaded.blueprint.contributions);
   validateOperationPins(loaded.blueprint, closure);
   const contributions = bindContributions(
     loaded.blueprint.contributions, closure, fixedPromptRefs, providerPromptRefs,

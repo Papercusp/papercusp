@@ -17,15 +17,15 @@ const runnableInput = {
 };
 
 test('authored source schemas separate identity contributions from runnable blueprint fields', () => {
-  const identity = { id: 'researcher', extends: 'base', slots: [{ slot: 'domain' }] };
+  const identity = { id: 'researcher', extends: 'identity-root', slots: [{ slot: 'domain' }] };
   assert.equal(IdentitySourceDocumentSchema.safeParse(identity).success, true);
   assert.equal(parseBlueprintSourceDocument(identity).kind, 'identity');
   assert.equal(BlueprintSourceDocumentSchema.safeParse({ id: 'abstract', knobs: { maxDepth: 2 } }).success, true);
   assert.equal(parseBlueprintSourceDocument({ id: 'abstract', knobs: { maxDepth: 2 } }).kind, 'blueprint');
   assert.equal(
     IdentitySourceDocumentSchema.safeParse({ ...identity, ...runnableInput }).success,
-    true,
-    'identity source kind and runnable capability are orthogonal',
+    false,
+    'authored identities cannot carry runnable workspace fields',
   );
   assert.throws(
     () => parseBlueprintSourceDocument({ ...identity, undeclaredAuthority: true }),

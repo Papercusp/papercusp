@@ -325,6 +325,7 @@ function resolveLayersBounded(
   seen: Set<string>,
   depth: number,
 ): { merged: RawBlueprint; layers: BlueprintLayer[] } {
+  const source = parseBlueprintSourceDocument(raw);
   if (depth > MAX_BLUEPRINT_EXTENDS_DEPTH) {
     throw new Error(
       `blueprint extends depth exceeds ${MAX_BLUEPRINT_EXTENDS_DEPTH} at "${String(raw.id)}" ` +
@@ -344,6 +345,12 @@ function resolveLayersBounded(
     const path = resolve(pid);
     if (!path) throw new Error(`cannot resolve extended blueprint "${pid}"`);
     const parent = resolveLayersBounded(readRaw(path), resolve, path, new Set([...seen, pid]), depth + 1);
+    if (source.kind === 'identity') {
+      const workspace = parent.layers.find((layer) => layer.sourceKind === 'blueprint');
+      if (workspace) {
+        throw new Error(`identity "${String(raw.id)}" cannot extend workspace blueprint "${workspace.id}"; extend an identity root`);
+      }
+    }
     if (layers.length + parent.layers.length + 1 > MAX_BLUEPRINT_EXPANDED_LAYERS) {
       throw new Error(
         `blueprint expanded layer count exceeds ${MAX_BLUEPRINT_EXPANDED_LAYERS} at "${String(raw.id)}" ` +

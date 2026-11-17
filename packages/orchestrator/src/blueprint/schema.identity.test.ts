@@ -28,7 +28,7 @@ test('new identity classification is source-wrapper-only; the old shape helper r
   assert.equal(bp.grants, undefined);
   assert.equal(bp.publisher, undefined);
   assert.equal(bp.attestation, undefined);
-  const source = { id: 'identity', extends: 'base', slots: [] };
+  const source = { id: 'identity', extends: 'identity-root', slots: [] };
   const parsedSource = parseBlueprintSourceDocument(source);
   assert.equal(isIdentitySourceDocument(parsedSource), true);
   assert.equal(isIdentityDocument(source), true, 'legacy helper still reads the raw slots shape');
@@ -37,15 +37,15 @@ test('new identity classification is source-wrapper-only; the old shape helper r
   assert.equal(isIdentityDocument(runnable), true, 'legacy helper remains shape-only until its documented removal');
 });
 
-test('a full identity document parses: slots, bundles, the reserved grants shape, publisher, attestation', () => {
+test('a portable identity source parses contributions, grants, publisher and attestation; bundles remain a workspace field', () => {
   const doc = {
     id: 'papercusp-engineer',
-    extends: 'base',
+    extends: 'identity-root',
     version: '1.0.0',
     slots: [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }],
-    bundles: [
-      { kind: 'knowledge-pack', ref: 'papercusp-core', version: '3' },
-      { kind: 'rubric', ref: 'plan-class-feature-ship' },
+    contributions: [
+      { id: 'core', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'knowledge-pack:papercusp-core' },
+      { id: 'ship-rubric', purpose: 'resource', source: 'fixed', refresh: 'source-change', inputKind: 'package', ref: 'rubric:plan-class-feature-ship' },
     ],
     grants: {},
     publisher: { id: 'papercusp', name: 'Papercusp', url: 'https://papercusp.dev' },
@@ -55,8 +55,9 @@ test('a full identity document parses: slots, bundles, the reserved grants shape
   const bp = BlueprintSchema.parse({ ...minimal, ...doc });
   assert.equal(isIdentitySourceDocument(parseBlueprintSourceDocument(doc)), true);
   assert.deepEqual(bp.slots, [{ slot: 'domain', cardinality: 'exclusive' }, { slot: 'practice' }]);
-  assert.equal(bp.bundles.length, 2);
-  assert.equal(bp.bundles[1]!.version, undefined);
+  assert.equal(source.contributions?.length, 2);
+  assert.throws(() => IdentitySourceDocumentSchema.parse({ ...doc, bundles: [] }), /Unrecognized key.*bundles/);
+  assert.deepEqual(bp.bundles, []);
   assert.deepEqual(
     bp.grants,
     { requires: [], optional: [], suggestedProviders: {} },

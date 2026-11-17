@@ -1231,6 +1231,8 @@ export const BlueprintContributionSchema = z.object({
   refresh: z.enum(['source-change', 'launch', 'turn', 'on-demand']),
   inputKind: z.enum(['prompt-file', 'addressed-document', 'package', 'capability-provider', 'setting']),
   ref: z.string().min(1),
+  /** Exact authored package version; the input closure pins its content hash. */
+  version: z.string().trim().min(1).optional(),
   /** Existing producer/service reference; required for generated contributions. */
   producerRef: z.string().min(1).optional(),
   /** A generated provider may be conditionally absent. The caller must still
@@ -1248,6 +1250,9 @@ export const BlueprintContributionSchema = z.object({
    * output. A request only; the host allocates one aggregate budget per sink. */
   injection: InjectionPointSchema.optional(),
 }).strict().superRefine((value, ctx) => {
+  if (value.version !== undefined && value.inputKind !== 'package') {
+    ctx.addIssue({ code: 'custom', path: ['version'], message: 'only a package contribution names a version' });
+  }
   // Shape errors already surface from the `injection` field itself; add only the
   // cross-field rules (provider source, injectable kind, renderable sink, cadence).
   if (value.injection !== undefined && InjectionPointSchema.safeParse(value.injection).success) {
@@ -1528,19 +1533,26 @@ export const BlueprintSourceDocumentSchema = BlueprintSchema.partial()
   .strict();
 
 /**
- * An identity SOURCE is a blueprint-envelope source with its own `slots:`
- * declaration. It may also be runnable (several adversarial and standalone
- * fixtures intentionally are); source kind and runnable capability are
- * orthogonal contracts rather than two mutually exclusive shapes.
- *
- * Contribution fields are nevertheless constrained: the strict parent schema
- * permits only package metadata plus fields derived from `BlueprintSchema`, and
- * slot-specific authority is enforced by `identity-lint` over those typed
- * fields. Unknown fields never disappear silently during resolution.
+ * Portable authored identity fields (identity-definitions-own-policy R-1).
+ * Pick explicitly rather than extending the workspace envelope: adding a new
+ * runnable field must never grant identities permission to author it. Package
+ * curation metadata belongs beside the definition, not in its portable bytes.
+ * RunnableBlueprintSchema remains the separate contract for merged execution.
  */
-export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.extend({
+export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.pick({
+  id: true,
+  extends: true,
+  version: true,
+  description: true,
+  contributions: true,
+  grants: true,
+  lexicon: true,
+  mode: true,
+  publisher: true,
+  attestation: true,
+}).extend({
   slots: z.array(SlotDeclarationSchema),
-});
+}).strict();
 
 export const BlueprintSourceKindSchema = z.enum(['blueprint', 'identity']);
 export type BlueprintSourceKind = z.infer<typeof BlueprintSourceKindSchema>;

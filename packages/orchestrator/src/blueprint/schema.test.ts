@@ -18,7 +18,42 @@ import {
   SpineActionSchema,
   finalizeEntryRole,
   finalizeEntryExtras,
+  parseBlueprintSourceDocument,
 } from './schema.js';
+
+test('R-1: every workspace-schema key is refused in an identity document', () => {
+  // Change detector. This vocabulary comes from R-1, independently of the
+  // implementation schema; enumerate the workspace schema so new runtime keys
+  // cannot silently become portable identity fields.
+  const portable = new Set([
+    'id', 'extends', 'version', 'description', 'slots', 'contributions',
+    'asks', 'grants', 'ceiling', 'floors', 'lexicon', 'mode', 'publisher', 'attestation',
+  ]);
+  const identity = { id: 'portable-domain', slots: [{ slot: 'domain' }] };
+  for (const key of Object.keys(BlueprintSchema.shape).filter((key) => !portable.has(key))) {
+    // Own-key presence must be refused even if the value is undefined. Requiring
+    // the unknown-key diagnostic prevents an invalid field value from passing
+    // the test on behalf of the identity allowlist.
+    assert.throws(
+      () => parseBlueprintSourceDocument({ ...identity, [key]: undefined }),
+      (error: unknown) => error instanceof Error && /Unrecognized key/.test(error.message) && error.message.includes(key),
+      `identity accepted workspace key ${key}`,
+    );
+  }
+  assert.throws(
+    () => parseBlueprintSourceDocument({ ...identity, dispatch: { costCapUsd: 1 } }),
+    /Unrecognized key.*dispatch/,
+  );
+});
+
+test('R-1: an unknown key is refused in an identity document', () => {
+  // Preservation control for the existing unknown-key refusal. The workspace
+  // iteration above separately detects the broad-envelope defect.
+  assert.throws(
+    () => parseBlueprintSourceDocument({ id: 'portable-domain', slots: [{ slot: 'domain' }], syntheticUnknownPolicy: true }),
+    /Unrecognized key.*syntheticUnknownPolicy/,
+  );
+});
 
 test('R-1: built-in workspace blueprints parse unchanged', () => {
   // Preservation control pinned before the identity schema changes. Compare both
