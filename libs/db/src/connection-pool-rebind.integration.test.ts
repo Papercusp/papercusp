@@ -27,7 +27,15 @@ import { createServer, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { _resetForTests, getHarnessPg } from './connection';
+import { _resetForTests, appUrl, getHarnessPg } from './connection';
+
+// This fixture exercises the discovery rung. The operator's on-disk URL pin
+// precedes discovery even after process.env is cleared, so isolate that one
+// provider while retaining the real URL resolver, socket check and pool cache.
+vi.mock('./operator-db-env', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./operator-db-env')>()),
+  readOperatorDbEnvLocal: () => ({}),
+}));
 
 // The rebind deliberately warns — this incident class was invisible for 14 minutes.
 // The repo runs vitest-fail-on-console, so it is captured rather than removed, and
@@ -88,6 +96,7 @@ describe('per-harness pools rebind when the app URL moves (EI-19462929205805752)
     const b = await listen();
     try {
       writeDiscovery(a.port);
+      expect(new URL(appUrl()).port).toBe(String(a.port));
       const first = getHarnessPg('acme');
       // Assert the steady state FIRST: without this, the `not.toBe` below would also
       // pass if the getter simply never cached, which is not what we are proving.
@@ -109,6 +118,7 @@ describe('per-harness pools rebind when the app URL moves (EI-19462929205805752)
     const a = await listen();
     try {
       writeDiscovery(a.port);
+      expect(new URL(appUrl()).port).toBe(String(a.port));
       const first = getHarnessPg('acme');
       getHarnessPg('other'); // re-resolves appUrl(); same endpoint => no eviction
       expect(getHarnessPg('acme')).toBe(first);
