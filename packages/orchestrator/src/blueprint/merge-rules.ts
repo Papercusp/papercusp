@@ -202,6 +202,11 @@ export const MERGE_RULES: Readonly<Record<string, MergeRule>> = {
   ),
   'grants.optional': setUnion('grant declaration set (D-003) — RESERVED until M3 (D-004/D-014)'),
   'grants.suggestedProviders': overlay(`${TODAY_RECORD}; publisher hints — RESERVED until M3`),
+  // These are layer declarations, not flattened effective policy. D-009
+  // evaluates each maximum before union and every restriction afterward, from
+  // the compiler's immutable per-layer source inputs.
+  ceiling: replace(LAYER_META),
+  floors: replace(LAYER_META),
   'publisher.id': replace(LAYER_META),
   'publisher.name': replace(LAYER_META),
   'publisher.url': replace(LAYER_META),

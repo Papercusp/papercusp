@@ -85,6 +85,35 @@ test('R-13: a source layer fills one slot while a named stack fills none', () =>
     [{ slot: 'domain' }, { slot: 'practice' }]);
 });
 
+test('R-1: portable grants, ceiling and floors use the governed category vocabulary', () => {
+  const source = {
+    id: 'portable-policy', slots: [{ slot: 'domain' }],
+    grants: { requires: ['claims.record@1.0.0'], optional: ['email.message@1.0.0'] },
+    ceiling: { tools: { allow: ['claims:*'], deny: ['claims:delete'] }, actions: { allow: [] } },
+    floors: { tools: { deny: ['mail:send'] }, dataUse: { allow: ['local-only'] } },
+  };
+  // Change detector: the prior identity allowlist rejected both policy fields.
+  const parsed = IdentitySourceDocumentSchema.parse(source);
+  assert.deepEqual(parsed.ceiling, source.ceiling);
+  assert.deepEqual(parsed.floors, source.floors);
+  assert.deepEqual(parsed.grants?.requires, source.grants.requires);
+  assert.deepEqual(parseBlueprintSourceDocument(source).document, source);
+  assert.deepEqual(parsed.ceiling?.actions?.allow, [], 'empty allow must remain deny-all');
+  for (const field of ['ceiling', 'floors']) {
+    for (const policy of [
+      { accounts: { allow: ['publisher-account'] } },
+      { tools: { alow: ['*'] } },
+      { tools: { allow: '*' } },
+      { tools: { allow: ['*'], approvedBy: 'publisher' } },
+    ]) {
+      assert.equal(IdentitySourceDocumentSchema.safeParse({ ...source, [field]: policy }).success, false,
+        `${field} accepted malformed or unknown policy: ${JSON.stringify(policy)}`);
+    }
+    assert.throws(() => parseBlueprintSourceDocument({ id: 'named-stack', slots: [], [field]: {} }),
+      new RegExp(`named stack.*${field}`));
+  }
+});
+
 test('a slot id is an OPEN string at the schema (the registry check is validateBlueprint’s); a bundle kind is the CLOSED D-011 vocabulary', () => {
   assert.equal(
     SlotDeclarationSchema.safeParse({ slot: 'risk-posture' }).success,

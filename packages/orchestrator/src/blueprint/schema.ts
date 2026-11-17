@@ -30,6 +30,7 @@ import { FIRST_PARTY_INPUT_KIND, resolveFirstPartyContextClass } from './first-p
 import { AGENT_BACKENDS } from '../types.js';
 import { MODEL_EFFORT_LEVELS, isLaunchAccountValue } from '../../../../../../packages/operator-core/lib/agent-config-constants.js';
 import { listCodexInstalledModels, resolveLaunchModelAlias, resolveCodexModel } from '../../../../../../packages/operator-core/lib/model-context-budget.mjs';
+import { GovernedRulesSchema } from '../../../../../../packages/operator-core/lib/governance-policy/category-rules.js';
 
 /** Null explicitly retains the host's account routing; omission inherits the parent. */
 export const LaunchAccountSchema = z.string().refine(isLaunchAccountValue, 'invalid account selector').nullable();
@@ -1507,8 +1508,13 @@ export const BlueprintSchema = z.object({
   contributions: z.array(BlueprintContributionSchema).optional(),
   /** Optional mode catalog view over this component; enforcement remains in the host registry. */
   mode: BlueprintModeDeclarationSchema.optional(),
-  /** RESERVED capability-class grants (D-004; refused non-empty until M3 — D-014). */
+  /** Capability-class asks; the installation binding supplies actual grants. */
   grants: GrantsSchema.optional(),
+  /** Publisher maximum for this layer's own contribution (D-009), never a
+   * ceiling on a sibling's contribution. Authorization reads pinned layers. */
+  ceiling: GovernedRulesSchema.optional(),
+  /** Restrictions this layer imposes on the whole stack, under platform floors. */
+  floors: GovernedRulesSchema.optional(),
   /** The layer's publisher/author. */
   publisher: PublisherSchema.optional(),
   /** Publisher attestation over this layer's content (checked by the loader). */
@@ -1546,6 +1552,8 @@ export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.pick({
   description: true,
   contributions: true,
   grants: true,
+  ceiling: true,
+  floors: true,
   lexicon: true,
   mode: true,
   publisher: true,
@@ -1557,9 +1565,13 @@ export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.pick({
 }).strict().superRefine((identity, context) => {
   // Inspect the authored source: inherited layer grants are preserved after
   // resolution, but a slotless named composition owns no permissions.
-  if (identity.slots.length === 0 && identity.grants !== undefined) {
-    context.addIssue({ code: 'custom', path: ['grants'],
-      message: 'a named stack cannot declare grants of its own' });
+  if (identity.slots.length === 0) {
+    for (const field of ['grants', 'ceiling', 'floors'] as const) {
+      if (identity[field] !== undefined) {
+        context.addIssue({ code: 'custom', path: [field],
+          message: `a named stack cannot declare ${field} of its own` });
+      }
+    }
   }
   const launchOnlySlot = identity.slots.find(({ slot }) => slot === 'client' || slot === 'fleet-posture');
   if (launchOnlySlot && identity.grants !== undefined) {

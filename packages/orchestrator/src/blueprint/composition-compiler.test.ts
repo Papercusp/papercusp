@@ -68,7 +68,8 @@ test('R-13: a named stack carrying its own permissions is refused', () => {
     assert.deepEqual(valid.configuration.grants?.requires, ['claims.record@1.0.0']);
     for (const key of ['grants', 'asks', 'ceiling', 'floors']) {
       assert.throws(() => compileAgentSpecification({
-        source: { ...source, [key]: { requires: ['email.message@1.0.0'] } }, resolve,
+        source: { ...source, [key]: key === 'ceiling' || key === 'floors'
+          ? { tools: { allow: ['*'] } } : { requires: ['email.message@1.0.0'] } }, resolve,
       }), new RegExp(`(?:named stack|Unrecognized key).*${key}`), key);
     }
   } finally {
@@ -84,6 +85,36 @@ test('R-13: launch-only client and fleet posture layers contribute no grants', (
       assert.throws(() => compileAgentSpecification({ source: { ...source, grants } }),
         new RegExp(`${slot}.*grants|grants.*${slot}`), slot);
     }
+  }
+});
+
+test('R-1: compilation pins each layer maximum and restrictions without merging their authority', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'identity-policy-origin-'));
+  try {
+    const first = { id: 'first', slots: [{ slot: 'domain' }],
+      ceiling: { tools: { allow: ['claims:*'] } }, floors: { tools: { deny: ['claims:delete'] } } };
+    const second = { id: 'second', slots: [{ slot: 'practice' }],
+      ceiling: { tools: { allow: ['mail:read'] } }, floors: { dataUse: { allow: ['local-only'] } } };
+    const paths = new Map([first, second].map(layer => {
+      const path = join(dir, layer.id + '.yaml');
+      writeFileSync(path, JSON.stringify(layer));
+      return [layer.id, path];
+    }));
+    const compiled = compileAgentSpecification({
+      source: { id: 'named-stack', slots: [], extends: ['first', 'second'] },
+      resolve: id => paths.get(id) ?? null,
+    });
+    const documents = compiled.inputs.filter(input => input.kind === 'blueprint-layer');
+    for (const layer of [first, second]) {
+      const pinned = documents.find(input => input.ref === layer.id);
+      assert.ok(pinned?.kind === 'blueprint-layer');
+      assert.ok(pinned.document);
+      assert.deepEqual(pinned.document.ceiling, layer.ceiling);
+      assert.deepEqual(pinned.document.floors, layer.floors);
+    }
+    assert.deepEqual(replayAgentSpecification(compiled).inputs, compiled.inputs);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
