@@ -87,6 +87,9 @@ export interface PgAcquireTimingSnapshot {
   capacity: number;
   omitted: number;
   acquisitions: PgAcquireTiming[];
+  /** Active waits at this seam, scoped to this async request; absent on older hosts. */
+  pending?: Array<{ pool: string; elapsedMs: number }>;
+  omittedPending?: number;
 }
 
 interface PgAcquireTimingContext {
@@ -146,7 +149,7 @@ interface PoolState {
   waiting: Map<number, number>;
   held: Map<number, number>;
   /** Optional during in-place upgrades of the pinned registry state. */
-  ticketContexts?: Map<number, { requestId: string | null; operation: string | null }>;
+  ticketContexts?: Map<number, { requestId: string | null; operation: string | null; acquisitionRequestId?: string }>;
   max: number | null;
   totalAcquired: number;
   lastAcquiredAt: number | null;
@@ -186,12 +189,24 @@ export function withPgAcquireDiagnostics<T>(operation: string, run: (requestId: 
 export function pgAcquireTimingSnapshot(): PgAcquireTimingSnapshot | null {
   const context = acquireTimingStorage.getStore();
   if (!context) return null;
+  const pending: Array<{ pool: string; elapsedMs: number }> = [];
+  let omittedPending = 0;
+  const now = Date.now();
+  for (const [pool, state] of STATE.pools) {
+    for (const [id, startedAt] of state.waiting) {
+      if (state.ticketContexts?.get(id)?.acquisitionRequestId !== context.requestId) continue;
+      if (pending.length >= PG_ACQUIRE_TIMING_LIMIT) { omittedPending++; continue; }
+      pending.push({ pool, elapsedMs: Math.max(0, now - startedAt) });
+    }
+  }
   return {
     requestId: context.requestId,
     operation: context.operation,
     capacity: PG_ACQUIRE_TIMING_LIMIT,
     omitted: context.omitted,
     acquisitions: context.acquisitions.map((item) => ({ ...item })),
+    pending,
+    omittedPending,
   };
 }
 
@@ -861,10 +876,11 @@ export function beginAcquire(pool: string): AcquireTicket {
   const requestContext = acquireTimingStorage.getStore();
   const diagnostic = capturePgDiagnosticContext();
   const correlation = diagnostic.state === 'linked' ? diagnostic.correlation : undefined;
-  if (correlation?.requestId) {
+  if (correlation?.requestId || requestContext) {
     s.ticketContexts?.set(id, {
-      requestId: correlation.requestId,
-      operation: correlation.operation ?? null,
+      requestId: correlation?.requestId ?? null,
+      operation: correlation?.operation ?? null,
+      ...(requestContext ? { acquisitionRequestId: requestContext.requestId } : {}),
     });
   }
   let done = false;

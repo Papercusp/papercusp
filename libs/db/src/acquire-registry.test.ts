@@ -206,6 +206,52 @@ describe('request-scoped pool acquisition timings', () => {
     });
   });
 
+  it('captures only this request\'s pending waits and retires them without changing prior snapshots', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    const foreign = beginAcquire('org-app');
+    try {
+      withPgAcquireDiagnostics('native-tool-guard', () => {
+        const first = beginAcquire('org-app');
+        vi.setSystemTime(new Date(Date.now() + 7));
+        const second = beginAcquire('org-admin');
+        try {
+          vi.setSystemTime(new Date(Date.now() + 13));
+          const snapshot = pgAcquireTimingSnapshot();
+          expect(snapshot?.pending).toEqual([
+            { pool: 'org-app', elapsedMs: 20 }, { pool: 'org-admin', elapsedMs: 13 },
+          ]);
+          expect(snapshot?.omittedPending).toBe(0);
+          first.acquired();
+          expect(pgAcquireTimingSnapshot()?.pending).toEqual([{ pool: 'org-admin', elapsedMs: 13 }]);
+          first.release(); second.release();
+          expect(pgAcquireTimingSnapshot()?.pending).toEqual([]);
+          expect(snapshot?.pending).toEqual([
+            { pool: 'org-app', elapsedMs: 20 }, { pool: 'org-admin', elapsedMs: 13 },
+          ]);
+        } finally { first.release(); second.release(); }
+      });
+    } finally { foreign.release(); }
+  });
+
+  it('bounds pending waits independently and excludes another request on the same pool', () => {
+    withPgAcquireDiagnostics('native-tool-guard', () => {
+      const tickets = Array.from({ length: PG_ACQUIRE_TIMING_LIMIT + 2 }, () => beginAcquire('org-app'));
+      try {
+        withPgAcquireDiagnostics('other-request', () => {
+          const other = beginAcquire('org-app');
+          try {
+            expect(pgAcquireTimingSnapshot()?.pending).toHaveLength(1);
+            expect(pgAcquireTimingSnapshot()?.omittedPending).toBe(0);
+          } finally { other.release(); }
+        });
+        expect(pgAcquireTimingSnapshot()?.pending).toHaveLength(PG_ACQUIRE_TIMING_LIMIT);
+        expect(pgAcquireTimingSnapshot()?.omittedPending).toBe(2);
+        expect(pgAcquireTimingSnapshot()?.acquisitions).toEqual([]);
+      } finally { tickets.forEach(ticket => ticket.release()); }
+    });
+  });
+
   it('caps each async request independently', async () => {
     const snapshots = await Promise.all(['org-app', 'org-admin'].map((pool) =>
       withPgAcquireDiagnostics('spawner.process.exec', async () => {
