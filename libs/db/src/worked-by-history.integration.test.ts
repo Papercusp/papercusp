@@ -996,4 +996,145 @@ describe('draft 1643 — prospective custody capture on the existing audit seam'
     expect(events).toEqual(all.map(row => row.details.eventId));
     expect(events.slice(0, 3)).not.toEqual(events);
   });
+
+  it('cannot qualify prospective capture across a disabled and restored trigger', async () => {
+    const id = 'WI-capture-disabled-witness';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const before = await captured(id);
+    const trigger = () => sql`
+      SELECT tgenabled, pg_get_triggerdef(oid) AS definition FROM pg_trigger
+       WHERE tgrelid = 'harness_shared.work_items'::regclass
+         AND tgname = 'capture_work_item_custody_audit_trg'`;
+    const enabled = await trigger();
+    expect(enabled[0]?.tgenabled).toBe('O');
+    await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER capture_work_item_custody_audit_trg');
+    try {
+      await claim(id, 'su-other');
+      await claim(id, 'su-original');
+    } finally {
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_item_custody_audit_trg');
+    }
+    expect(await trigger()).toEqual(enabled);
+    expect(await captured(id)).toEqual(before);
+    // A resumed positive control distinguishes an interval gap from a writer
+    // that never worked. Equal enabled endpoints did not retain the two writes.
+    await claim(id, 'su-recovered');
+    const receipts = await captured(id);
+    expect(receipts).toHaveLength(before.length + 1);
+    expect(receipts.at(-1)?.details.after?.taken_by).toBe('su-recovered');
+  });
+
+  it('cannot qualify prospective capture from a replaced and restored function', async () => {
+    const id = 'WI-capture-replaced-witness';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const before = await captured(id);
+    const definition = async () => {
+      const [row] = await sql<{ definition: string }[]>`
+        SELECT pg_get_functiondef('harness_shared.capture_work_item_custody_audit()'::regprocedure) AS definition`;
+      return row!.definition;
+    };
+    const original = await definition();
+    await sql.unsafe(`CREATE OR REPLACE FUNCTION harness_shared.capture_work_item_custody_audit()
+      RETURNS trigger LANGUAGE plpgsql AS $gap$ BEGIN RETURN NULL; END; $gap$`);
+    try {
+      expect(await definition()).not.toBe(original);
+      await claim(id, 'su-other');
+      await claim(id, 'su-original');
+    } finally {
+      await sql.unsafe(original);
+    }
+    expect(await definition()).toBe(original);
+    expect(await captured(id)).toEqual(before);
+    await claim(id, 'su-recovered');
+    const receipts = await captured(id);
+    expect(receipts).toHaveLength(before.length + 1);
+    expect(receipts.at(-1)?.details.after?.taken_by).toBe('su-recovered');
+  });
+
+  it('cannot qualify prospective capture integrity from restored audit receipts', async () => {
+    const id = 'WI-capture-tampered-receipt';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const before = await captured(id);
+    const receipt = before.find(row => row.details.operation === 'UPDATE')!;
+    expect(receipt.details.after?.taken_by).toBe('su-original');
+    const eventId = receipt.details.eventId;
+    try {
+      await sql`UPDATE harness_shared.audit_log
+        SET details = jsonb_set(details, '{after,taken_by}', '"su-forged"'::jsonb)
+        WHERE workspace_id = 'default' AND subject = ${id}
+          AND action = 'work_items:custody:capture' AND details->>'eventId' = ${eventId}`;
+      const changed = (await captured(id)).find(row => row.details.eventId === eventId);
+      expect(changed?.details.after?.taken_by).toBe('su-forged');
+      const [source] = await sql`SELECT taken_by FROM harness_shared.work_items
+        WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      expect(source?.taken_by).toBe('su-original');
+    } finally {
+      await sql`UPDATE harness_shared.audit_log SET details = ${sql.json(receipt.details)}::jsonb
+        WHERE workspace_id = 'default' AND subject = ${id}
+          AND action = 'work_items:custody:capture' AND details->>'eventId' = ${eventId}`;
+    }
+    expect(await captured(id)).toEqual(before);
+  });
+
+  it('cannot qualify prospective capture retention after multi-batch audit deletion', async () => {
+    const id = 'WI-capture-pruned-receipts';
+    await seed(id, 'feature');
+    for (let i = 0; i < 7; i += 1) await claim(id, `su-retained-${i}`);
+    const before = await captured(id);
+    const attribution = await history(id);
+    expect(before).toHaveLength(8);
+    let removed = 0;
+    let batches = 0;
+    for (;;) {
+      const batch = await sql`
+        WITH batch AS (
+          SELECT id FROM harness_shared.audit_log
+           WHERE workspace_id = 'default' AND subject = ${id}
+             AND action = 'work_items:custody:capture'
+           ORDER BY ts, id LIMIT 3
+        ) DELETE FROM harness_shared.audit_log a USING batch
+          WHERE a.id = batch.id RETURNING a.id`;
+      if (batch.length === 0) break;
+      removed += batch.length;
+      batches += 1;
+      expect(batches).toBeLessThanOrEqual(before.length);
+    }
+    expect(batches).toBe(3);
+    expect(removed).toBe(before.length);
+    expect(await captured(id)).toEqual([]);
+    expect(await history(id)).toEqual(attribution);
+    // This is a private deletion control, not a production retention-job run.
+    // Newly resumed capture cannot reconstruct the missing prefix.
+    await claim(id, 'su-recovered');
+    const receipts = await captured(id);
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]?.details.after?.taken_by).toBe('su-recovered');
+  });
+
+  it('qualifies prospective capture database-role attribution without authenticating the named holder', async () => {
+    const id = 'WI-capture-role-attribution';
+    await seed(id, 'feature');
+    const [identity] = await sql<{ role: string }[]>`SELECT current_user AS role`;
+    await sql.begin(async tx => {
+      // application_name and payload are caller-controlled. Neither is an
+      // authenticated agent binding, even when they name the same holder.
+      await tx`SELECT set_config('application_name', 'su-claimed-actor', true)`;
+      await tx`UPDATE harness_shared.work_items
+        SET taken_by = 'su-claimed-actor',
+            payload = payload || '{"actor":"su-claimed-actor","databaseRole":"su-forged-role"}'::jsonb
+        WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    });
+    const [receipt] = await sql<{ actor: string; details: { databaseRole: string; after: Record<string, unknown> } }[]>`
+      SELECT actor, details FROM harness_shared.audit_log
+       WHERE workspace_id = 'default' AND subject = ${id}
+         AND action = 'work_items:custody:capture' AND details->>'operation' = 'UPDATE'`;
+    expect(receipt?.actor).toBe(`database:${identity!.role}`);
+    expect(receipt?.details.databaseRole).toBe(identity!.role);
+    expect(receipt?.details.after.taken_by).toBe('su-claimed-actor');
+    expect(receipt?.details.after.payload).toMatchObject({ actor: 'su-claimed-actor', databaseRole: 'su-forged-role' });
+    expect(receipt?.details).not.toHaveProperty('authenticatedAgentId');
+  });
 });
