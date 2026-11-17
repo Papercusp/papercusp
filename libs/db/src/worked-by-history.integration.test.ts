@@ -466,6 +466,80 @@ describe('R-46 qualification — holder-history interval and evidence boundaries
     }
   });
 
+  it('omits a holder transition before the later stamp normalizes remote origin', async () => {
+    const id = 'WI-custody-origin-restore';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    expect(baseline).toHaveLength(1);
+
+    // Qualify the base-table branch used by origin-heal writers. This is not
+    // an invocation of selfHealOwnNodeOriginIfStranded: its author-key and
+    // workspace checks have their own operator-core integration suite.
+    await sql`
+      UPDATE harness_shared.work_items SET origin = 'remote'
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    const [remote] = await sql`
+      SELECT origin FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(remote?.origin).toBe('remote');
+    await claim(id, 'su-other');
+    const [changed] = await sql`
+      SELECT taken_by, origin FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    // record_work_item_worked_by_history runs before the federation stamp.
+    // It skips NEW.origin='remote', then the stamp normalizes the local write.
+    expect(changed).toMatchObject({ taken_by: 'su-other', origin: 'local' });
+    expect(await history(id)).toEqual(baseline);
+    await claim(id, 'su-original');
+    const [restored] = await sql`
+      SELECT taken_by, origin FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(restored).toMatchObject({ taken_by: 'su-original', origin: 'local' });
+    // Recording resumes, but cannot reconstruct the omitted su-other entry.
+    expect((await history(id)).slice(baseline.length).map(entry => entry.owner))
+      .toEqual(['su-original']);
+  });
+
+  it('does not witness a changed and restored physical key or author identity', async () => {
+    const id = 'WI-custody-key-restore';
+    const movedId = 'WI-custody-key-moved';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    expect(baseline).toHaveLength(1);
+    const [before] = await sql`
+      SELECT author_pubkey FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history' AND feature_id = ${id}`;
+
+    await sql`
+      UPDATE harness_shared.work_items
+         SET harness_slug = 'worked-history-moved', feature_id = ${movedId}, author_pubkey = 'r46-moved-author'
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history' AND feature_id = ${id}`;
+    const originalKey = await sql`
+      SELECT feature_id FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history' AND feature_id = ${id}`;
+    expect(originalKey).toHaveLength(0);
+    const [moved] = await sql`
+      SELECT taken_by, author_pubkey, worked_by_history FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history-moved' AND feature_id = ${movedId}`;
+    expect(moved).toMatchObject({ taken_by: 'su-original', author_pubkey: 'r46-moved-author', worked_by_history: baseline });
+
+    await sql`
+      UPDATE harness_shared.work_items
+         SET harness_slug = 'worked-history', feature_id = ${id}, author_pubkey = ${before!.author_pubkey}
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history-moved' AND feature_id = ${movedId}`;
+    const [restored] = await sql`
+      SELECT taken_by, author_pubkey FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history' AND feature_id = ${id}`;
+    expect(restored).toMatchObject({ taken_by: 'su-original', author_pubkey: before!.author_pubkey });
+    expect(await history(id)).toEqual(baseline);
+    const movedKey = await sql`
+      SELECT feature_id FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history-moved' AND feature_id = ${movedId}`;
+    expect(movedKey).toHaveLength(0);
+  });
+
   it('does not make processed outbox rows into retained interval evidence', async () => {
     const id = 'WI-custody-outbox-retention';
     await seed(id, 'feature');
