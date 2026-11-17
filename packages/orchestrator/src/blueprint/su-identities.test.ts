@@ -58,7 +58,7 @@ test('P-020 — the identity-homed part documents are exactly the four identitie
     // inspect the merged document.
     const path = builtinBlueprintPath(id!);
     const raw = parseYaml(readFileSync(path, 'utf8')) as Record<string, unknown>;
-    assert.equal(raw.extends, 'base', `${id} extends base (a layer in an extends stack)`);
+    assert.equal(raw.extends, 'identity-root', `${id} extends the portable identity root`);
     const merged = resolveLayers(raw, resolveBuiltinExtends, path).merged as Record<string, unknown>;
     assert.equal(merged.id, id);
     assert.equal(isIdentitySourceDocument(parseBlueprintSourceDocument(raw)), true, `${id} declares its identity kind in its own source (D-028)`);

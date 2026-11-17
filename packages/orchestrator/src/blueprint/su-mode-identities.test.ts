@@ -316,7 +316,7 @@ test('P-021 — the four mode-axis identities + the four audience identities are
     assert.ok((MODE_AXES as readonly string[]).includes(d.slot), `${d.id} sits on a mode axis`);
     const path = builtinBlueprintPath(d.id);
     const raw = parseYaml(readFileSync(path, 'utf8')) as Record<string, unknown>;
-    assert.equal(raw.extends, 'base', `${d.id} extends base`);
+    assert.equal(raw.extends, 'identity-root', `${d.id} extends the portable identity root`);
     const merged = resolveLayers(raw, resolveBuiltinExtends, path).merged as Record<string, unknown>;
     assert.equal(merged.id, d.id);
     assert.equal(isIdentitySourceDocument(parseBlueprintSourceDocument(raw)), true, `${d.id} declares its identity kind in its own source (D-028)`);
