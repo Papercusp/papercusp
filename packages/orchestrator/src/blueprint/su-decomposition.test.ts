@@ -8,7 +8,8 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LAYER_ORDER, SLOT_IDS, isSlotId, slotSpec } from './slots.js';
@@ -28,11 +29,35 @@ import {
   suPartDocumentHome,
   suTilingProblems,
   tilesOfDocument,
+  writeSuPartDocuments,
 } from './su-decomposition.js';
 
 /** The real shipped harness package dir (…/orchestrator/src/blueprint → …/harness). */
 const HARNESS_PKG = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'harness');
 const su = () => readFileSync(join(HARNESS_PKG, SU_SOURCE_REL), 'utf8');
+
+test('portable practice assets share the canonical tiles and missing or changed package bytes fail the drift check', () => {
+  const root = mkdtempSync(join(tmpdir(), 'portable-practice-assets-'));
+  try {
+    const source = join(root, SU_SOURCE_REL);
+    mkdirSync(dirname(source), { recursive: true });
+    writeFileSync(source, su());
+    const paths = writeSuPartDocuments(root);
+    const practice = SU_PART_DOCUMENTS.find((doc) => doc.id === 'su.practice')!;
+    assert.equal(practice.portablePath, 'blueprints/su.practice/prompts/practice.md');
+    const asset = join(root, practice.portablePath!);
+    assert.ok(paths.includes(asset));
+    assert.equal(readFileSync(asset, 'utf8'), extractSuPart(su(), 'su.practice'));
+    assert.equal(readFileSync(asset, 'utf8'), readFileSync(join(root, practice.path), 'utf8'));
+    assert.deepEqual(suPartDocumentDrift(root).filter((row) => row.status !== 'ok'), []);
+    writeFileSync(asset, 'stale portable practice');
+    assert.equal(suPartDocumentDrift(root).find((row) => row.path === practice.portablePath)?.status, 'stale');
+    rmSync(asset);
+    assert.equal(suPartDocumentDrift(root).find((row) => row.path === practice.portablePath)?.status, 'missing');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('the tiling is SOUND over the live su.md — every anchor unique + in order, first tile on line 1, every heading and splice marker classified', () => {
   const problems = suTilingProblems(su());

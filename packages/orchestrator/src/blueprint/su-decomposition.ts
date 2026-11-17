@@ -556,6 +556,8 @@ export interface SuPartDocument {
   posture?: FleetPostureRole;
   /** Harness-relative path the verbatim extraction is written to. */
   path: string;
+  /** Package-local asset emitted from the same tiles while legacy renderers use path. */
+  portablePath?: string;
   /** What the document is in the composition model, and who promotes it. */
   role: string;
 }
@@ -608,6 +610,7 @@ export const SU_PART_DOCUMENTS: readonly SuPartDocument[] = [
     id: 'su.practice',
     part: 'practice',
     path: 'blueprints/base/prompts/su.practice.md',
+    portablePath: 'blueprints/su.practice/prompts/practice.md',
     role: 'the one additive `practice` document su.md carries today (anti-babysitting); more practices stack beside it',
   },
   {
@@ -674,12 +677,12 @@ export interface SuPartDrift {
 /** Compare every committed part document with its derivation from the live su.md. */
 export function suPartDocumentDrift(harnessDir?: string): SuPartDrift[] {
   const su = readSuSource(harnessDir);
-  return SU_PART_DOCUMENTS.map((d) => {
-    const abs = harnessDir ? join(harnessDir, d.path) : harnessPath(...d.path.split('/'));
-    if (!existsSync(abs)) return { id: d.id, path: d.path, status: 'missing' as const };
+  return SU_PART_DOCUMENTS.flatMap((d) => [d.path, ...(d.portablePath ? [d.portablePath] : [])].map((path) => {
+    const abs = harnessDir ? join(harnessDir, path) : harnessPath(...path.split('/'));
+    if (!existsSync(abs)) return { id: d.id, path, status: 'missing' as const };
     const want = extractSuPart(su, d.id);
-    return { id: d.id, path: d.path, status: readFileSync(abs, 'utf8') === want ? ('ok' as const) : ('stale' as const) };
-  });
+    return { id: d.id, path, status: readFileSync(abs, 'utf8') === want ? ('ok' as const) : ('stale' as const) };
+  }));
 }
 
 /** (Re)write every part document from the live su.md; returns the paths written. */
@@ -687,10 +690,12 @@ export function writeSuPartDocuments(harnessDir?: string): string[] {
   const su = readSuSource(harnessDir);
   const out: string[] = [];
   for (const d of SU_PART_DOCUMENTS) {
-    const abs = harnessDir ? join(harnessDir, d.path) : harnessPath(...d.path.split('/'));
-    mkdirSync(dirname(abs), { recursive: true });
-    writeFileSync(abs, extractSuPart(su, d.id), 'utf8');
-    out.push(abs);
+    for (const path of [d.path, ...(d.portablePath ? [d.portablePath] : [])]) {
+      const abs = harnessDir ? join(harnessDir, path) : harnessPath(...path.split('/'));
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, extractSuPart(su, d.id), 'utf8');
+      out.push(abs);
+    }
   }
   return out;
 }

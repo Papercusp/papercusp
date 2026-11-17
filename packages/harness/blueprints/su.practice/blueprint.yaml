@@ -1,7 +1,7 @@
 id: su.practice
 extends: identity-root
 version: 0.1.1
-description: "The SU's reusable additive working practice; its text remains in base/prompts/su.practice.md until the render migration."
+description: "The SU's reusable additive working practice, with its portable prompt generated from the canonical practice tiles."
 slots:
   - slot: practice
 contributions:
@@ -10,7 +10,7 @@ contributions:
     source: fixed
     refresh: source-change
     inputKind: prompt-file
-    ref: base:su.practice
+    ref: su.practice:practice
   - id: turn-start-orientation
     purpose: prompt
     source: provider
