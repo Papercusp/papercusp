@@ -1,0 +1,50 @@
+-- EI-28957830517847385: prospective capture at the existing base/audit seam.
+-- Attribution remains unchanged. No backfill, continuous-capture attestation,
+-- retention guarantee or authenticated agent identity is inferred from this.
+-- Keep DRAFT pending the remaining qualification and independent acceptance.
+CREATE OR REPLACE FUNCTION harness_shared.capture_work_item_custody_audit()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = pg_catalog
+AS $custody_audit$
+DECLARE
+  before_row jsonb;
+  after_row jsonb;
+  event_id text := gen_random_uuid()::text;
+  recorded_at timestamptz := clock_timestamp();
+  event_details jsonb;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN before_row := to_jsonb(OLD) - '_search'; END IF;
+  IF TG_OP <> 'DELETE' THEN after_row := to_jsonb(NEW) - '_search'; END IF;
+  IF before_row IS NOT DISTINCT FROM after_row THEN RETURN NULL; END IF;
+  event_details := jsonb_build_object(
+    'schemaVersion', 1, 'eventId', event_id, 'operation', TG_OP,
+    'recordedAt', recorded_at, 'transactionId', txid_current()::text,
+    'databaseRole', current_user, 'before', before_row, 'after', after_row);
+  -- Capture every base writer, including fed_ts/origin changes, history-only
+  -- writes, held INSERT and DELETE/reseed. A failed audit INSERT rolls back the
+  -- mutation. Database-role attribution never trusts a caller-provided GUC.
+  IF before_row IS NOT NULL THEN
+    INSERT INTO harness_shared.audit_log
+      (id, ts, actor, action, subject, details, workspace_id)
+    VALUES (event_id || ':before', floor(extract(epoch FROM recorded_at) * 1000)::bigint,
+      'database:' || current_user, 'work_items:custody:capture',
+      before_row->>'feature_id', event_details, before_row->>'workspace_id');
+  END IF;
+  -- An identity move is discoverable from either endpoint, linked by eventId.
+  IF after_row IS NOT NULL AND (before_row IS NULL
+      OR ROW(before_row->>'workspace_id', before_row->>'feature_id')
+         IS DISTINCT FROM ROW(after_row->>'workspace_id', after_row->>'feature_id')) THEN
+    INSERT INTO harness_shared.audit_log
+      (id, ts, actor, action, subject, details, workspace_id)
+    VALUES (event_id || ':after', floor(extract(epoch FROM recorded_at) * 1000)::bigint,
+      'database:' || current_user, 'work_items:custody:capture',
+      after_row->>'feature_id', event_details, after_row->>'workspace_id');
+  END IF;
+  RETURN NULL;
+END;
+$custody_audit$;
+DROP TRIGGER IF EXISTS capture_work_item_custody_audit_trg ON harness_shared.work_items;
+CREATE TRIGGER capture_work_item_custody_audit_trg
+  AFTER INSERT OR UPDATE OR DELETE ON harness_shared.work_items
+  FOR EACH ROW EXECUTE FUNCTION harness_shared.capture_work_item_custody_audit();
+COMMENT ON TRIGGER capture_work_item_custody_audit_trg ON harness_shared.work_items IS
+  'Prospective audit receipts; historical, DDL and retention continuity require independent qualification. Database role is not agent identity.';

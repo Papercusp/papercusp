@@ -807,3 +807,83 @@ describe('migration 1037 — the control that makes the cases above discriminati
     expect(await firstClaimedAt('WI-fc-control-post')).not.toBeNull();
   });
 });
+
+describe('draft 1643 — prospective custody capture on the existing audit seam', () => {
+  beforeAll(async () => {
+    await sql.unsafe(await readFile(join(SQL_DIR, '1643-work-item-custody-audit-capture.sql.DRAFT'), 'utf8'));
+  });
+
+  async function captured(id: string) {
+    return sql<{ details: { eventId: string; operation: string; databaseRole: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null } }[]>`
+      SELECT details FROM harness_shared.audit_log
+       WHERE workspace_id = 'default' AND subject = ${id}
+         AND action = 'work_items:custody:capture' ORDER BY ts, id`;
+  }
+
+  it('captures transfer/restore even when fed_ts bypasses attribution history', async () => {
+    const id = 'WI-capture-fed-clock';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const prefix = await history(id);
+    const before = await captured(id);
+    for (const holder of ['su-other', 'su-original']) {
+      await sql`UPDATE harness_shared.work_items
+        SET taken_by = ${holder}, fed_ts = COALESCE(fed_ts, 0) + 1
+        WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    }
+    expect(await history(id)).toEqual(prefix);
+    const suffix = (await captured(id)).filter(row => !before.some(prior => prior.details.eventId === row.details.eventId));
+    expect(suffix).toHaveLength(2);
+    expect(suffix.map(row => row.details.after?.taken_by).sort()).toEqual(['su-original', 'su-other']);
+    expect(suffix.every(row => row.details.databaseRole.length > 0)).toBe(true);
+  });
+
+  it('retains history replacement and restoration independently of the restored field', async () => {
+    const id = 'WI-capture-history-restore';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const prefix = await history(id);
+    const before = await captured(id);
+    await sql`UPDATE harness_shared.work_items SET worked_by_history = '[]'::jsonb
+      WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    await sql`UPDATE harness_shared.work_items SET worked_by_history = ${sql.json(prefix)}::jsonb
+      WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(await history(id)).toEqual(prefix);
+    const suffix = (await captured(id)).filter(row => !before.some(prior => prior.details.eventId === row.details.eventId));
+    expect(suffix).toHaveLength(2);
+    expect(suffix.some(row => Array.isArray(row.details.after?.worked_by_history) && row.details.after.worked_by_history.length === 0)).toBe(true);
+    expect(suffix.some(row => JSON.stringify(row.details.after?.worked_by_history) === JSON.stringify(prefix))).toBe(true);
+  });
+
+  it('captures DELETE/reseed despite the same final identity and holder', async () => {
+    const id = 'WI-capture-delete-reseed';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const before = await captured(id);
+    await sql`DELETE FROM harness_shared.work_items WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const suffix = (await captured(id)).filter(row => !before.some(prior => prior.details.eventId === row.details.eventId));
+    expect(suffix.map(row => row.details.operation).sort()).toEqual(['DELETE', 'INSERT', 'UPDATE']);
+    expect(suffix.find(row => row.details.operation === 'DELETE')?.details.after).toBeNull();
+    expect(suffix.find(row => row.details.operation === 'INSERT')?.details.before).toBeNull();
+  });
+
+  it('rolls back a source mutation when the existing audit seam refuses its receipt', async () => {
+    const id = 'WI-capture-atomic';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const before = await captured(id);
+    await sql.unsafe(`ALTER TABLE harness_shared.audit_log ADD CONSTRAINT r46_refuse_capture
+      CHECK (action <> 'work_items:custody:capture') NOT VALID`);
+    try {
+      await expect(claim(id, 'su-other')).rejects.toThrow(/r46_refuse_capture/);
+    } finally {
+      await sql.unsafe('ALTER TABLE harness_shared.audit_log DROP CONSTRAINT r46_refuse_capture');
+    }
+    const [row] = await sql`SELECT taken_by FROM harness_shared.work_items
+      WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(row?.taken_by).toBe('su-original');
+    expect(await captured(id)).toEqual(before);
+  });
+});
