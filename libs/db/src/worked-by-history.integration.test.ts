@@ -886,4 +886,114 @@ describe('draft 1643 — prospective custody capture on the existing audit seam'
     expect(row?.taken_by).toBe('su-original');
     expect(await captured(id)).toEqual(before);
   });
+
+  it('links both endpoints of a physical identity move and retains the restored author', async () => {
+    const id = 'WI-capture-identity';
+    const movedId = 'WI-capture-identity-moved';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const [original] = await sql`SELECT author_pubkey FROM harness_shared.work_items
+      WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    const before = await captured(id);
+    await sql`UPDATE harness_shared.work_items
+      SET harness_slug = 'worked-history-moved', feature_id = ${movedId}, author_pubkey = 'r46-capture-moved-author'
+      WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    await sql`UPDATE harness_shared.work_items
+      SET harness_slug = 'worked-history', feature_id = ${id}, author_pubkey = ${original!.author_pubkey}
+      WHERE workspace_id = 'default' AND feature_id = ${movedId}`;
+
+    const restored = (await captured(id)).filter(row => !before.some(prior => prior.details.eventId === row.details.eventId));
+    const moved = await captured(movedId);
+    expect(restored).toHaveLength(2);
+    expect(moved).toHaveLength(2);
+    expect(restored.map(row => row.details.eventId).sort()).toEqual(moved.map(row => row.details.eventId).sort());
+    expect(restored.every(row => row.details.before?.taken_by === 'su-original'
+      && row.details.after?.taken_by === 'su-original')).toBe(true);
+    expect(restored.some(row => row.details.after?.harness_slug === 'worked-history-moved'
+      && row.details.after?.feature_id === movedId
+      && row.details.after?.author_pubkey === 'r46-capture-moved-author')).toBe(true);
+    expect(restored.some(row => row.details.after?.harness_slug === 'worked-history'
+      && row.details.after?.feature_id === id
+      && row.details.after?.author_pubkey === original!.author_pubkey)).toBe(true);
+  });
+
+  it('captures claim and release through both compatibility views', async () => {
+    const feature = 'WI-capture-feature-view';
+    const issue = 'EI-capture-issue-view';
+    await seed(feature, 'feature');
+    await seed(issue, 'bug');
+    for (const holder of ['su-view', null]) {
+      await sql`UPDATE harness_shared.harness_features_consolidated SET taken_by = ${holder}
+        WHERE workspace_id = 'default' AND feature_id = ${feature}`;
+      await sql`UPDATE harness_shared.engineer_issues SET assignee = ${holder}
+        WHERE workspace_id = 'default' AND issue_id = ${issue}`;
+    }
+    for (const id of [feature, issue]) {
+      const receipts = (await captured(id)).filter(row => row.details.operation === 'UPDATE');
+      expect(receipts).toHaveLength(2);
+      expect(receipts.some(row => row.details.before?.taken_by === null
+        && row.details.after?.taken_by === 'su-view')).toBe(true);
+      expect(receipts.some(row => row.details.before?.taken_by === 'su-view'
+        && row.details.after?.taken_by === null)).toBe(true);
+    }
+  });
+
+  it('retains the terminal and reopen suffix when the holder never changes', async () => {
+    const id = 'WI-capture-terminal-reopen';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    const before = await captured(id);
+    for (let i = 0; i < 7; i += 1) {
+      await sql`UPDATE harness_shared.work_items SET status = 'passed'
+        WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      await sql`UPDATE harness_shared.work_items SET status = 'open'
+        WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    }
+    expect(await history(id)).toEqual(baseline);
+    const suffix = (await captured(id)).filter(row => !before.some(prior => prior.details.eventId === row.details.eventId));
+    expect(suffix).toHaveLength(14);
+    const closes = suffix.filter(row => row.details.before?.status === 'open' && row.details.after?.status === 'passed');
+    const reopens = suffix.filter(row => row.details.before?.status === 'passed' && row.details.after?.status === 'open');
+    expect(closes).toHaveLength(7);
+    expect(reopens).toHaveLength(7);
+    expect(suffix.every(row => row.details.before?.taken_by === 'su-original'
+      && row.details.after?.taken_by === 'su-original')).toBe(true);
+    expect(new Set(closes.map(row => (row.details.after?.payload as Record<string, unknown>)._completionEventIntentId)).size).toBe(7);
+  });
+
+  it('requires every keyset page rather than a bounded audit prefix to retain the interval', async () => {
+    const id = 'WI-capture-multi-page';
+    await seed(id, 'feature');
+    for (let i = 0; i < 13; i += 1) {
+      await sql`UPDATE harness_shared.work_items SET title = ${`capture page ${i}`}
+        WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    }
+    const all = await captured(id);
+    expect(all).toHaveLength(14);
+    const ids: string[] = [];
+    const events: string[] = [];
+    let cursor: { ts: string; id: string } | null = null;
+    let pages = 0;
+    for (;;) {
+      const batch: Array<{ id: string; ts: string; details: { eventId: string } }> = await sql`
+        SELECT id, ts::text AS ts, details FROM harness_shared.audit_log
+        WHERE workspace_id = 'default' AND subject = ${id}
+          AND action = 'work_items:custody:capture'
+          AND (${cursor?.ts ?? null}::bigint IS NULL
+            OR (ts, id) > (${cursor?.ts ?? null}::bigint, ${cursor?.id ?? null}::text))
+        ORDER BY ts, id LIMIT 3`;
+      if (batch.length === 0) break;
+      pages += 1;
+      ids.push(...batch.map(row => row.id));
+      events.push(...batch.map(row => row.details.eventId));
+      cursor = batch[batch.length - 1]!;
+      // A stuck cursor fails the test instead of leaving an unbounded query loop.
+      expect(pages).toBeLessThanOrEqual(all.length);
+    }
+    expect(pages).toBe(5);
+    expect(new Set(ids).size).toBe(14);
+    expect(events).toEqual(all.map(row => row.details.eventId));
+    expect(events.slice(0, 3)).not.toEqual(events);
+  });
 });
