@@ -72,12 +72,23 @@ describe('blueprint source authoring', () => {
   it.each([
     [{ slots: [{ slot: 'unknown-slot' }] }, 'slot-unknown'],
     [{ slots: [{ slot: 'kernel' }] }, 'slot-reserved-layer'],
-    [{ slots: [{ slot: 'practice' }, { slot: 'practice' }] }, 'slot-duplicate'],
     [{ slots: [{ slot: 'domain', cardinality: 'additive' }] }, 'slot-cardinality-mismatch'],
-    [{ bundles: [{ kind: 'recipe', ref: 'one' }, { kind: 'recipe', ref: 'one' }] }, 'bundle-duplicate'],
-    [{ slots: [{ slot: 'autonomy' }], knobs: { maxCostUsd: 100 } }, 'authority-on-mode-axis'],
   ])('rejects invalid source declarations %j', (override, code) => {
     expect(errorCodes({ ...identity, ...override })).toContain(code);
+  });
+
+  it('refuses multiple source slots and workspace fields before semantic validation', () => {
+    expect(() => resolveBlueprintSource({ ...identity, slots: [{ slot: 'practice' }, { slot: 'practice' }] }))
+      .toThrow(/one slot/);
+    expect(() => resolveBlueprintSource({ ...identity, bundles: [{ kind: 'recipe', ref: 'one' }] }))
+      .toThrow(/Unrecognized key.*bundles/);
+    expect(() => resolveBlueprintSource({ ...identity, slots: [{ slot: 'autonomy' }], knobs: { maxCostUsd: 100 } }))
+      .toThrow(/Unrecognized key.*knobs/);
+  });
+
+  it('retains the duplicate-bundle guard for workspace sources', () => {
+    expect(errorCodes({ id: 'workspace', bundles: [{ kind: 'recipe', ref: 'one' }, { kind: 'recipe', ref: 'one' }] }))
+      .toContain('bundle-duplicate');
   });
 
   it.each(['email.send', 'CRM.email@1.0.0', 'crm.email@1'])('rejects malformed grant %s at the source schema', ref => {
@@ -98,12 +109,12 @@ describe('blueprint source authoring', () => {
     expect(result.validation.errors.some(e => e.code === 'slot-cardinality-mismatch' && e.message.includes('parent'))).toBe(true);
   });
 
-  it('shares the exact bundle conflict guard for abstract source stacks', () => {
+  it('shares the exact bundle conflict guard for abstract workspace source stacks', () => {
     const resolve = parents({
-      a: { id: 'a', slots: [], bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },
-      b: { id: 'b', slots: [], bundles: [{ kind: 'recipe', ref: 'shared', version: '2.0.0' }] },
+      a: { id: 'a', bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }] },
+      b: { id: 'b', bundles: [{ kind: 'recipe', ref: 'shared', version: '2.0.0' }] },
     });
-    const result = resolveBlueprintSource({ ...identity, extends: ['a', 'b'] }, { resolve });
+    const result = resolveBlueprintSource({ id: 'workspace-stack', extends: ['a', 'b'] }, { resolve });
     expect(result.validation.errors.map(e => e.code)).toContain('bundle-version-conflict');
   });
 
