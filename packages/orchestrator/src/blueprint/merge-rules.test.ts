@@ -148,11 +148,16 @@ test('the decided deviations from last-writer-wins are declared exactly, and eve
     assert.equal(MERGE_RULES[p]?.rule, 'set-union', `${p} composes by set union (D-020)`);
     assert.equal(MERGE_RULES[p]?.key, undefined, `${p} unions by structural value`);
   }
-  // Everything else = the pre-P-019 mergeRaw: records key-overlay; arrays / scalars / unions / lazy / catchall replace.
+  // D-009: own maxima and whole-stack restrictions remain source-layer
+  // metadata. Key-overlay would erase their origins before authorization.
+  const layerPolicyRecords = new Set(['ceiling', 'floors']);
+  for (const path of layerPolicyRecords) assert.equal(MERGE_RULES[path]?.rule, 'explicit-replacement');
+  // Other records key-overlay; arrays / scalars / unions / lazy / catchall replace.
   const nonReplacementArrays = new Set(['bundles', 'grants.requires', 'grants.optional', 'roles', ...declarationSets]);
   for (const leaf of enumerateBlueprintLeaves()) {
     const rule = MERGE_RULES[leaf.path];
     assert.ok(rule, `no rule for ${leaf.path}`);
+    if (layerPolicyRecords.has(leaf.path)) continue;
     if (leaf.kind === 'record')
       assert.equal(rule.rule, 'keyed-overlay', `${leaf.path}: a record composes by keyed overlay (today's deep-merge)`);
     else if (leaf.path === 'slots' || nonReplacementArrays.has(leaf.path) || caps.includes(leaf.path)) continue;
