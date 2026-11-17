@@ -540,6 +540,76 @@ describe('R-46 qualification — holder-history interval and evidence boundaries
     expect(movedKey).toHaveLength(0);
   });
 
+  it('does not make mutable audit rows into retained interval evidence', async () => {
+    const id = 'WI-custody-audit-retention';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    // These are controlled audit records, not a claim that the production
+    // custody writer already emits them. Qualify the proposed retention seam
+    // independently of worked_by_history and of the current holder endpoint.
+    for (let i = 0; i < 7; i += 1) {
+      await sql`
+        INSERT INTO harness_shared.audit_log
+          (id, ts, actor, action, subject, details, workspace_id)
+        VALUES (${`r46-audit-retention-${i}`}, ${7_000 + i}, 'private-r46-probe',
+          'work_items:custody:qualification', ${id}, ${sql.json({ sequence: i })}, 'default')`;
+    }
+    const records = () => sql`
+      SELECT id FROM harness_shared.audit_log
+       WHERE workspace_id = 'default' AND subject = ${id}
+         AND action = 'work_items:custody:qualification' ORDER BY ts, id`;
+    expect(await records()).toHaveLength(7);
+
+    let removed = 0;
+    for (;;) {
+      const batch = await sql`
+        WITH batch AS (
+          SELECT id FROM harness_shared.audit_log
+           WHERE workspace_id = 'default' AND subject = ${id}
+             AND action = 'work_items:custody:qualification'
+           ORDER BY ts, id LIMIT 2
+        ) DELETE FROM harness_shared.audit_log a USING batch
+           WHERE a.id = batch.id RETURNING a.id`;
+      removed += batch.length;
+      if (batch.length === 0) break;
+    }
+    expect(removed).toBe(7);
+    expect(await records()).toEqual([]);
+    expect(await history(id)).toEqual(baseline);
+    const [endpoint] = await sql`
+      SELECT taken_by FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(endpoint?.taken_by).toBe('su-original');
+    // An empty audit result after these deletions cannot establish zero
+    // transitions. This control does not invoke any production retention job.
+  });
+
+  it('cannot infer audit integrity from a restored audit row', async () => {
+    const id = 'WI-custody-audit-restore';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    await sql`
+      INSERT INTO harness_shared.audit_log
+        (id, ts, actor, action, subject, details, workspace_id)
+      VALUES ('r46-audit-restore', 8_000, 'private-r46-probe',
+        'work_items:custody:qualification', ${id}, '{"holder":"su-original"}'::jsonb, 'default')`;
+    const record = () => sql`
+      SELECT id, ts, actor, action, subject, details, workspace_id
+        FROM harness_shared.audit_log WHERE id = 'r46-audit-restore'`;
+    const before = await record();
+    await sql`
+      UPDATE harness_shared.audit_log SET details = '{"holder":"su-other"}'::jsonb
+       WHERE id = 'r46-audit-restore'`;
+    expect((await record())[0]?.details).toEqual({ holder: 'su-other' });
+    await sql`
+      UPDATE harness_shared.audit_log SET details = '{"holder":"su-original"}'::jsonb
+       WHERE id = 'r46-audit-restore'`;
+    expect(await record()).toEqual(before);
+    expect(await history(id)).toEqual(baseline);
+  });
+
   it('does not make processed outbox rows into retained interval evidence', async () => {
     const id = 'WI-custody-outbox-retention';
     await seed(id, 'feature');
