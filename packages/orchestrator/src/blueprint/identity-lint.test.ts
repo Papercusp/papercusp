@@ -19,7 +19,7 @@ import {
   CLIENT_SEAM_MARKER,
   type StackLayerInput,
 } from './identity-lint.js';
-import { resolveBlueprint, layerTrust, builtinBlueprintPath } from './loader.js';
+import { resolveBlueprint, resolveBlueprintSource, layerTrust, builtinBlueprintPath } from './loader.js';
 import type { StackDocument } from './render-stack.js';
 
 /** The minimum a ROOT document needs to parse (a layer in an `extends` stack may be abstract; the loaded root may not). */
@@ -112,10 +112,10 @@ function withTempStack(files: Record<string, string>, run: (resolve: (id: string
 }
 
 test('loader fixture — a hostile identity that claims the KERNEL slot fails STRUCTURALLY at load (validation + identity-lint agree)', () => {
-  assert.throws(
-    () => resolveBlueprint({ id: 'hostile', description: 'I am the kernel now', slots: [{ slot: 'kernel' }], ...runnable }),
-    (e: unknown) => e instanceof Error && /slot-reserved-layer/.test(e.message) && /kernel-slot-claim/.test(e.message),
-  );
+  const result = resolveBlueprintSource({ id: 'hostile', description: 'I am the kernel now', slots: [{ slot: 'kernel' }] });
+  assert.equal(result.validation.ok, false);
+  assert.ok(result.validation.errors.some(e => e.code === 'slot-reserved-layer'));
+  assert.ok(result.validation.errors.some(e => e.code === 'kernel-slot-claim'));
 });
 
 test('loader fixture — two individually-CLEAN identities whose composition conflicts FAIL the stack load', () => {
@@ -125,26 +125,26 @@ test('loader fixture — two individually-CLEAN identities whose composition con
       salesman: 'id: salesman\nslots:\n  - slot: domain\n',
     },
     (resolve) => {
-      assert.equal(resolveBlueprint({ id: 'engineer', slots: [{ slot: 'domain' }], ...runnable }, { resolve }).validation.ok, true);
-      assert.equal(resolveBlueprint({ id: 'salesman', slots: [{ slot: 'domain' }], ...runnable }, { resolve }).validation.ok, true);
-      assert.throws(
-        () => resolveBlueprint({ id: 'both', extends: ['engineer', 'salesman'], ...runnable }, { resolve }),
-        (e: unknown) => e instanceof Error && /slot-exclusive-conflict/.test(e.message) && !/exclusive-double-claim/.test(e.message),
-      );
+      assert.equal(resolveBlueprintSource({ id: 'engineer', slots: [{ slot: 'domain' }] }, { resolve }).validation.ok, true);
+      assert.equal(resolveBlueprintSource({ id: 'salesman', slots: [{ slot: 'domain' }] }, { resolve }).validation.ok, true);
+      const result = resolveBlueprintSource({ id: 'both', slots: [], extends: ['engineer', 'salesman'] }, { resolve });
+      assert.equal(result.validation.ok, false);
+      assert.ok(result.validation.errors.some(e => e.code === 'slot-exclusive-conflict'));
+      assert.ok(!result.validation.errors.some(e => e.code === 'exclusive-double-claim'));
     },
   );
 });
 
 test('loader fixture — a mode-axis identity carrying authority (knobs) fails the load; the same document without it loads', () => {
-  // A mode-axis identity is a LAYER; to load it as a root it needs the runnable minimum, which is
-  // authority-bearing itself — so the fixture stacks it under a runnable root via `extends`.
+  // Workspace fields are refused at the source schema before structural lint;
+  // the pure lint test above still pins the mode-axis authority detector itself.
   withTempStack(
     {
       armed: 'id: armed\nslots:\n  - slot: autonomy\nknobs:\n  maxCostUsd: 5\n',
       flavour: 'id: flavour\nslots:\n  - slot: autonomy\ndescription: how AUTO reads for a potato salesman\n',
     },
     (resolve) => {
-      assert.throws(() => resolveBlueprint({ id: 'root', extends: 'armed', ...runnable }, { resolve }), /authority-on-mode-axis.*`knobs`/);
+      assert.throws(() => resolveBlueprint({ id: 'root', extends: 'armed', ...runnable }, { resolve }), /Unrecognized key.*knobs/);
       const ok = resolveBlueprint({ id: 'root', extends: 'flavour', ...runnable }, { resolve });
       assert.equal(ok.validation.ok, true);
       assert.deepEqual(ok.layers[0]!.fields.sort(), ['description', 'id', 'slots']);
@@ -156,26 +156,25 @@ test('loader fixture — a mode-axis identity carrying authority (knobs) fails t
 
 test('loader — a root document parses only with the runnable minimum (the guard above depends on it)', () => {
   assert.throws(() => resolveBlueprint({ id: 'bare', slots: [{ slot: 'autonomy' }] }));
-  const ok = resolveBlueprint({ id: 'root', slots: [{ slot: 'domain' }], ...runnable });
+  assert.equal(resolveBlueprintSource({ id: 'bare', slots: [{ slot: 'autonomy' }] }).validation.ok, true);
+  const ok = resolveBlueprint({ id: 'root', ...runnable });
   assert.equal(ok.validation.ok, true);
-  assert.deepEqual(ok.layers[0]!.fields.sort(), ['id', 'slots', 'spine', 'workItem']);
+  assert.deepEqual(ok.layers[0]!.fields.sort(), ['id', 'spine', 'workItem']);
   assert.equal(ok.layers[0]!.trust, 'local');
   assert.equal(ok.layers[0]!.grants, null);
 });
 
 test('loader fixture — the D-005 ceiling is a load option; the empty default refuses an exact grant', () => {
-  assert.throws(
-    () => resolveBlueprint(
+  const result = resolveBlueprintSource(
       {
         id: 'g',
         slots: [{ slot: 'domain' }],
         grants: { requires: ['fs.write@1.0.0'] },
-        ...runnable,
       },
       { lint: { ceiling: [] } },
-    ),
-    /grant-outside-ceiling/,
   );
+  assert.equal(result.validation.ok, false);
+  assert.ok(result.validation.errors.some(e => e.code === 'grant-outside-ceiling'));
 });
 
 // ── the prose tier ────────────────────────────────────────────────────────────
