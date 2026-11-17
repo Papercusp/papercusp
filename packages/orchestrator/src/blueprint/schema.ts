@@ -1552,7 +1552,14 @@ export const IdentitySourceDocumentSchema = BlueprintSourceDocumentSchema.pick({
   attestation: true,
 }).extend({
   slots: z.array(SlotDeclarationSchema),
-}).strict();
+}).strict().superRefine((identity, context) => {
+  // Inspect the authored source: inherited layer grants are preserved after
+  // resolution, but a slotless named composition owns no permissions.
+  if (identity.slots.length === 0 && identity.grants !== undefined) {
+    context.addIssue({ code: 'custom', path: ['grants'],
+      message: 'a named stack cannot declare grants of its own' });
+  }
+});
 
 export const BlueprintSourceKindSchema = z.enum(['blueprint', 'identity']);
 export type BlueprintSourceKind = z.infer<typeof BlueprintSourceKindSchema>;

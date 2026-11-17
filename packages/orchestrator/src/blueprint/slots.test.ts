@@ -5,9 +5,11 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { compileAgentSpecification } from './composition-compiler.js';
 import {
   LAYER_ORDER,
   RESERVED_LAYERS,
@@ -23,6 +25,32 @@ import {
   findExclusiveSlotConflicts,
   renderSlotRegistryMarkdown,
 } from './slots.js';
+
+test('R-13: two layers in any single-layer slot are refused, naming the slot', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'exclusive-stack-slots-'));
+  try {
+    for (const spec of SLOT_REGISTRY.filter((slot) => slot.cardinality === 'exclusive')) {
+      const paths = new Map(['first', 'second'].map((id) => {
+        const path = join(dir, id + '.yaml');
+        writeFileSync(path, JSON.stringify({ id, slots: [{ slot: spec.slot }] }));
+        return [id, path];
+      }));
+      assert.throws(() => compileAgentSpecification({
+        source: { id: 'conflicting-stack', slots: [], extends: ['first', 'second'] },
+        resolve: (id) => paths.get(id) ?? null,
+      }), new RegExp(`exclusive slot "${spec.slot}"`), spec.slot);
+    }
+    for (const id of ['first', 'second']) {
+      writeFileSync(join(dir, id + '.yaml'), JSON.stringify({ id, slots: [{ slot: 'practice' }] }));
+    }
+    assert.equal(compileAgentSpecification({
+      source: { id: 'additive-stack', slots: [], extends: ['first', 'second'] },
+      resolve: (id) => join(dir, id + '.yaml'),
+    }).configuration.id, 'additive-stack');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('the registry is in layering order, every slot sits on a declarable layer, ids are unique', () => {
   assert.deepEqual([...LAYER_ORDER], ['kernel', 'client', 'domain', 'fleet-posture', 'modes', 'practices', 'instance']);
