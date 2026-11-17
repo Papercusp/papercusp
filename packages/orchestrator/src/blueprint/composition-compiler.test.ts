@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'vitest';
-import { resolveBlueprint } from './loader.js';
+import { builtinBlueprintPath, resolveBlueprint } from './loader.js';
 import {
   COMPOSITION_COMPILER_VERSION,
   CompositionCompilerError,
@@ -54,6 +54,72 @@ function rootSource() {
     spine: { edges: { DONE: { to: 'done' } } },
   };
 }
+
+test('R-13: a named stack carrying its own permissions is refused', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'named-stack-authority-'));
+  try {
+    const layer = join(dir, 'layer.yaml');
+    writeFileSync(layer, JSON.stringify({ id: 'domain', slots: [{ slot: 'domain' }],
+      grants: { requires: ['claims.record@1.0.0'] } }));
+    const source = { id: 'named-stack', extends: ['domain'], slots: [] };
+    const resolve = (id: string) => id === 'domain' ? layer : null;
+    // Inherited layer grants are valid; the named stack cannot own any.
+    const valid = compileAgentSpecification({ source, resolve });
+    assert.deepEqual(valid.configuration.grants?.requires, ['claims.record@1.0.0']);
+    for (const key of ['grants', 'asks', 'ceiling', 'floors']) {
+      assert.throws(() => compileAgentSpecification({
+        source: { ...source, [key]: { requires: ['email.message@1.0.0'] } }, resolve,
+      }), new RegExp(`(?:named stack|Unrecognized key).*${key}`), key);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('R-13: su and the SC-009 stack compile', () => {
+  const practice = join(dirname(builtinBlueprintPath('su.practice')), 'prompts', 'practice.md');
+  const su = compileAgentSpecification({
+    sourcePath: builtinBlueprintPath('su'),
+    promptFiles: [{ ref: 'su.practice:practice', path: practice }],
+    settings: [
+      { ref: 'mode', revision: '1', producerRef: 'papercusp.mode-state@1', value: [] },
+      { ref: 'assignment', revision: '1', producerRef: 'papercusp.current-assignment@1',
+        value: { ownerId: 'su-fixture', intent: null, currentPlanSlug: null } },
+    ],
+    contributionOmissions: [
+      { id: 'turn-start-orientation', reason: 'not-requested' },
+      { id: 'coord-orientation', reason: 'not-requested' },
+    ],
+  });
+  assert.equal(su.configuration.id, 'su');
+  assert.deepEqual(su.configuration.slots?.map((entry) => entry.slot).sort(),
+    ['collaboration-stance', 'domain', 'practice']);
+  assert.equal(su.inputs.some((entry) => entry.kind === 'blueprint-layer' && entry.ref === 'base'), false);
+  assert.deepEqual(replayAgentSpecification(JSON.parse(JSON.stringify(su))), su);
+
+  const dir = mkdtempSync(join(tmpdir(), 'sc009-claims-assistant-'));
+  try {
+    // SC-009's five parts; per-install permission results are tested separately.
+    const parts = [
+      ['claims-adjuster', 'domain'], ['collaboration-stance', 'collaboration-stance'],
+      ['email-triage', 'practice'], ['sheet-reporting', 'practice'], ['pii-guard', 'practice'],
+    ] as const;
+    const paths = new Map<string, string>(parts.map(([id, slot]) => {
+      const path = join(dir, id + '.yaml');
+      writeFileSync(path, JSON.stringify({ id, slots: [{ slot }] }));
+      return [id, path];
+    }));
+    const specification = compileAgentSpecification({
+      source: { id: 'claims-assistant', slots: [], extends: parts.map(([id]) => id) },
+      resolve: (id) => paths.get(id) ?? null,
+    });
+    assert.deepEqual(specification.inputs.filter((entry) => entry.kind === 'blueprint-layer').map((entry) => entry.ref),
+      [...parts.map(([id]) => id), 'claims-assistant']);
+    assert.deepEqual(replayAgentSpecification(JSON.parse(JSON.stringify(specification))), specification);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('P-038 compiler snapshots the resolved blueprint, prompt bytes, closure and provenance deterministically', () => {
   const f = fixture();
