@@ -302,6 +302,161 @@ describe('R-46 qualification — holder-history interval and evidence boundaries
     expect(trigger?.tgenabled).toBe('O');
     expect(await history(id)).toEqual(baseline);
   });
+
+  it('keeps a same-holder positive control stable across more than five writes', async () => {
+    const id = 'WI-custody-no-transition';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    expect(baseline).toHaveLength(1);
+
+    for (let i = 0; i < 8; i += 1) {
+      await sql`
+        UPDATE harness_shared.harness_features_consolidated
+           SET taken_by = 'su-original', title = ${`same holder ${i}`}
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    }
+    const [row] = await sql`
+      SELECT taken_by, title FROM harness_shared.work_items
+       WHERE workspace_id = 'default' AND feature_id = ${id}`;
+    expect(row).toMatchObject({ taken_by: 'su-original', title: 'same holder 7' });
+    expect(await history(id)).toEqual(baseline);
+  });
+
+  it('cannot infer a zero terminal/reopen suffix from unchanged holder history', async () => {
+    const id = 'WI-custody-terminal-reopen';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    const intents = new Set<string>();
+
+    // Exercise real terminal and reopen writes with all production triggers
+    // enabled. The holder is deliberately unchanged throughout the interval.
+    for (let i = 0; i < 7; i += 1) {
+      await sql`
+        UPDATE harness_shared.work_items SET status = 'passed'
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      const [closed] = await sql`
+        SELECT status, payload->>'_completionEventIntentId' AS intent
+          FROM harness_shared.work_items
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      expect(closed?.status).toBe('passed');
+      expect(typeof closed?.intent).toBe('string');
+      intents.add(closed!.intent);
+      await sql`
+        UPDATE harness_shared.work_items SET status = 'open'
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      const [reopened] = await sql`
+        SELECT status, payload->>'_completionEventIntentId' AS intent
+          FROM harness_shared.work_items
+         WHERE workspace_id = 'default' AND feature_id = ${id}`;
+      expect(reopened).toMatchObject({ status: 'open', intent: null });
+    }
+    expect(intents.size).toBe(7);
+    expect(await history(id)).toEqual(baseline);
+  });
+
+  it('cannot detect a replaced/restored history function from its endpoint definition', async () => {
+    const id = 'WI-custody-replaced-function';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const baseline = await history(id);
+    const definition = async () => {
+      const [row] = await sql`
+        SELECT pg_get_functiondef('harness_shared.record_work_item_worked_by_history()'::regprocedure) AS body`;
+      return row!.body as string;
+    };
+    const original = await definition();
+    await sql.unsafe(`CREATE OR REPLACE FUNCTION harness_shared.record_work_item_worked_by_history()
+      RETURNS trigger LANGUAGE plpgsql AS $gap$ BEGIN RETURN NEW; END; $gap$`);
+    try {
+      expect(await definition()).not.toBe(original);
+      await claim(id, 'su-other');
+      await claim(id, 'su-original');
+    } finally {
+      await sql.unsafe(original);
+    }
+    expect(await definition()).toBe(original);
+    expect(await history(id)).toEqual(baseline);
+    // Prove restoration actually executes, rather than trusting its text.
+    await claim(id, 'su-after-restore');
+    expect((await history(id)).at(-1)?.owner).toBe('su-after-restore');
+  });
+
+  it('cannot infer uninterrupted outbox capture from a restored enabled trigger', async () => {
+    const id = 'WI-custody-disabled-capture';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    const count = async () => {
+      const [row] = await sql`
+        SELECT count(*)::int AS n FROM harness_shared.substrate_outbox
+         WHERE workspace_id = 'default' AND harness_slug = 'worked-history'
+           AND table_name = 'harness_features_consolidated' AND key = ${id}`;
+      return row!.n as number;
+    };
+    const before = await count();
+    expect(before).toBeGreaterThan(0);
+    const prefix = await history(id);
+    await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER capture_work_items_feature_upd_trg');
+    try {
+      await claim(id, 'su-other');
+      await claim(id, 'su-original');
+    } finally {
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_items_feature_upd_trg');
+    }
+    const [trigger] = await sql`
+      SELECT tgenabled FROM pg_trigger
+       WHERE tgrelid = 'harness_shared.work_items'::regclass
+         AND tgname = 'capture_work_items_feature_upd_trg'`;
+    expect(trigger?.tgenabled).toBe('O');
+    expect(await count()).toBe(before);
+    expect((await history(id)).slice(prefix.length).map(entry => entry.owner))
+      .toEqual(['su-other', 'su-original']);
+    await claim(id, 'su-after-restore');
+    expect(await count()).toBeGreaterThan(before);
+  });
+
+  it('does not make processed outbox rows into retained interval evidence', async () => {
+    const id = 'WI-custody-outbox-retention';
+    await seed(id, 'feature');
+    await claim(id, 'su-original');
+    for (let i = 0; i < 6; i += 1) {
+      await claim(id, `su-other-${i}`);
+      await claim(id, 'su-original');
+    }
+    const retainedHistory = await history(id);
+    expect(retainedHistory.length).toBeGreaterThan(5);
+    const rows = await sql`
+      UPDATE harness_shared.substrate_outbox SET drained_at = 1
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history'
+         AND table_name = 'harness_features_consolidated' AND key = ${id}
+       RETURNING id`;
+    expect(rows.length).toBeGreaterThan(5);
+    // Characterize deletability under the drainer's processed-row predicate,
+    // in bounded batches. This is not a claim to have run the background GC.
+    let removed = 0;
+    for (;;) {
+      const deleted = await sql`
+        WITH batch AS (
+          SELECT id FROM harness_shared.substrate_outbox
+           WHERE workspace_id = 'default' AND harness_slug = 'worked-history'
+             AND table_name = 'harness_features_consolidated' AND key = ${id}
+             AND drained_at IS NOT NULL AND drained_at < 2
+             AND (to_jsonb(substrate_outbox.*)->>'fanout_retry_at') IS NULL
+           ORDER BY id LIMIT 2 FOR UPDATE SKIP LOCKED
+        ) DELETE FROM harness_shared.substrate_outbox o USING batch
+           WHERE o.id = batch.id RETURNING o.id`;
+      removed += deleted.length;
+      if (deleted.length === 0) break;
+    }
+    expect(removed).toBe(rows.length);
+    const [remaining] = await sql`
+      SELECT count(*)::int AS n FROM harness_shared.substrate_outbox
+       WHERE workspace_id = 'default' AND harness_slug = 'worked-history'
+         AND table_name = 'harness_features_consolidated' AND key = ${id}`;
+    expect(remaining?.n).toBe(0);
+    expect(await history(id)).toEqual(retainedHistory);
+  });
 });
 
 async function firstClaimedAt(id: string): Promise<string | null> {

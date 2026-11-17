@@ -1,7 +1,7 @@
 # Shared domain identity for all non-su judge missions.
 # The host still owns role ceilings, evidence permissions, and scorecard writes.
 id: judge-domain
-extends: base
+extends: identity-root
 version: 0.1.0
 visibility: public
 description: >-

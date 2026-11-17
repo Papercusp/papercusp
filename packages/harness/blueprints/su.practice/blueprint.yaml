@@ -1,5 +1,5 @@
 id: su.practice
-extends: base
+extends: identity-root
 version: 0.1.1
 description: "The SU's reusable additive working practice; its text remains in base/prompts/su.practice.md until the render migration."
 slots:

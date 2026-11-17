@@ -11,7 +11,35 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { loadBuiltinBlueprint, resolveBlueprint } from './loader.js';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
+import { builtinBlueprintPath, loadBuiltinBlueprint, resolveBlueprint, resolveBlueprintSource } from './loader.js';
+import { IdentitySourceDocumentSchema, RunnableBlueprintSchema } from './schema.js';
+
+test('R-1: every built-in identity resolves without the workspace base', () => {
+  // Change detector over the independent filesystem population, not a maintained
+  // list of migrated identities. Before the migration these layers resolve base.
+  const root = dirname(dirname(builtinBlueprintPath('base')));
+  const identities = readdirSync(root).flatMap((id) => {
+    const file = join(root, id, 'blueprint.yaml');
+    if (!existsSync(file)) return [];
+    const raw = parseYaml(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    return Object.hasOwn(raw, 'slots') ? [{ file, raw }] : [];
+  });
+  assert.ok(identities.length > 0, 'the builtin population must not be empty');
+  for (const { file, raw } of identities) {
+    IdentitySourceDocumentSchema.parse(raw);
+    const resolved = resolveBlueprintSource(raw, { sourcePath: file });
+    assert.equal(resolved.validation.ok, true, JSON.stringify(resolved.validation.errors));
+    assert.equal(resolved.layers.some((layer) => layer.id === 'base'), false, `${raw.id} inherits workspace base`);
+    assert.ok(resolved.layers.some((layer) => layer.id === 'identity-root'), `${raw.id} lacks identity root`);
+    for (const key of ['workItem', 'spine', 'knobs', 'params', 'dispatch', 'environment']) {
+      assert.equal(Object.hasOwn(resolved.merged, key), false, `${raw.id} inherits workspace field ${key}`);
+    }
+    assert.equal(RunnableBlueprintSchema.safeParse(resolved.merged).success, false, `${raw.id} became runnable`);
+  }
+});
 
 test('base is abstract — loading it standalone throws (no workItem/spine)', () => {
   // BlueprintSchema requires workItem (+ spine); base supplies neither, so a

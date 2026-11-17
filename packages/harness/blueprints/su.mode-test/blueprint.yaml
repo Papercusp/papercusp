@@ -1,5 +1,5 @@
 id: su.mode-test
-extends: base
+extends: identity-root
 version: 0.1.0
 description: "Built-in TEST mode identity component; host policy remains in the mode registry."
 slots:

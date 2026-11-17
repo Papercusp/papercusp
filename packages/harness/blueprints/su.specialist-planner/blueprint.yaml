@@ -1,5 +1,5 @@
 id: su.specialist-planner
-extends: base
+extends: identity-root
 version: 0.1.0
 description: "Reusable planner specialization for an SU identity; assignment and launch profile remain host facts."
 slots:

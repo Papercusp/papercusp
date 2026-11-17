@@ -13,7 +13,7 @@
 # `prompts/<slot>.md` is the candidate naming for a non-domain slot document; P-003's
 # renderer fixes the convention.
 id: su-collaborator
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the interactive su's

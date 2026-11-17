@@ -1,6 +1,6 @@
 # Internal fixed identity for the semantic duplicate judge.
 id: semantic-code-judge
-extends: base
+extends: identity-root
 version: 0.1.0
 visibility: public
 description: >-

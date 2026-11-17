@@ -11,7 +11,7 @@
 # packages/operator-core/lib/scout/lenses.ts (an identity has ONE home). Scout lens
 # weights (`harness_shared.scout_lens_weights.lens`) are keyed by THIS id.
 id: scout.lens-constraint-removal
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the Scout "Constraint removal"

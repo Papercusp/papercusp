@@ -15,7 +15,7 @@
 # override of this audience wins over this file. Text: `prompts/audience.md` (moved
 # verbatim; an identity has ONE home — D-023 §1).
 id: operator.audience-novice
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the novice-mode AUDIENCE for

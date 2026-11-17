@@ -17,7 +17,7 @@
 # (D-018 §5, EI-22285277325728666). The flip — `coding` extending this identity, and
 # P-003's renderer producing the tier-appropriate rendering of it — is P-003 / P-023.
 id: papercusp-engineer
-extends: base
+extends: identity-root
 version: 0.1.2
 visibility: public
 description: >-

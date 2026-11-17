@@ -15,7 +15,7 @@
 # `enabled:false` detaches and VOIDS it. Text: `prompts/audit.md`, resolved THROUGH THE
 # PROMPT CHAIN.
 id: su.mode-audit
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the AUDIT mode definition — a

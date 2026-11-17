@@ -14,7 +14,7 @@
 # Attached by `mode:set { mode:'ideate' }` through the ⟦stack⟧ channel; `enabled:false`
 # detaches and VOIDS it. Text: `prompts/ideation.md`, resolved THROUGH THE PROMPT CHAIN.
 id: su.mode-ideate
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the IDEATE mode definition — the

@@ -15,7 +15,7 @@
 # channel; `enabled:false` detaches and VOIDS it. Text: `prompts/objective.md`, resolved
 # THROUGH THE PROMPT CHAIN.
 id: su.mode-drain
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the DRAIN mode definition — drive

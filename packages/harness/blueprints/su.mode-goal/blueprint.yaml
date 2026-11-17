@@ -1,5 +1,5 @@
 id: su.mode-goal
-extends: base
+extends: identity-root
 version: 0.1.2
 description: "Built-in GOAL mode identity component; host policy remains in the mode registry."
 slots:

@@ -1,7 +1,7 @@
 # Neutral execution identity for a pinned blueprint operation. This is an
 # abstract layer composed into an existing launch, not a second task runner.
 id: blueprint-operation-worker
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   Domain-neutral worker identity for one accepted blueprint operation.

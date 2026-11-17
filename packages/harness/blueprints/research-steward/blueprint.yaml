@@ -4,7 +4,7 @@
 # composed with the runnable `research` blueprint by the local proof fixture;
 # it is not a second scheduler, store, or product surface.
 id: research-steward
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): research and

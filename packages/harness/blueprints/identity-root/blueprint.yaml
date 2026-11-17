@@ -1,0 +1,6 @@
+# Portable identity root (identity-definitions-own-policy-2026-10-17 R-1).
+# It shares the existing blueprint loader and carries no workspace defaults.
+id: identity-root
+version: 0.1.0
+description: Abstract root for portable identity layers and named stacks.
+slots: []

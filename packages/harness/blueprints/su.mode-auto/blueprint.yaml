@@ -24,7 +24,7 @@
 # the mode is ON. Resolved THROUGH THE PROMPT CHAIN (`identityRoots`), so an installed
 # override of this identity wins over this file.
 id: su.mode-auto
-extends: base
+extends: identity-root
 version: 0.1.0
 description: >-
   IDENTITY (abstract — a layer, never runnable alone): the AUTO mode definition — the

@@ -21,7 +21,7 @@
 # hive's local / installed tier first, the built-in harness last), so an installed
 # override of this identity wins over this file.
 id: su.fleet-member
-extends: base
+extends: identity-root
 version: 0.1.2
 visibility: public
 description: >-

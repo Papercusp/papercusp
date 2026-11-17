@@ -1,6 +1,6 @@
 # Mission practice identity for ensemble aggregation judges.
 id: judge-ensemble
-extends: base
+extends: identity-root
 version: 0.1.0
 visibility: public
 description: >-
