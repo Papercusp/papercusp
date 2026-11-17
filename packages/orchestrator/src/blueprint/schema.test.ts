@@ -5,13 +5,45 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
+import { builtinBlueprintPath, resolveBlueprintSource } from './loader.js';
+import { stableStringify } from './merge.js';
 import {
   BlueprintSchema,
+  BlueprintSourceDocumentSchema,
   BlueprintHeaderSchema,
   SpineActionSchema,
   finalizeEntryRole,
   finalizeEntryExtras,
 } from './schema.js';
+
+test('R-1: built-in workspace blueprints parse unchanged', () => {
+  // Preservation control pinned before the identity schema changes. Compare both
+  // authored source parses and inherited source parses, including abstract base.
+  const baseline = JSON.parse(readFileSync(new URL('./workspace-parse-baseline.fixture.json', import.meta.url), 'utf8')) as {
+    schemaSourceSha256: string;
+    workspaces: Record<string, { source: string; resolved: string }>;
+  };
+  const root = dirname(dirname(builtinBlueprintPath('base')));
+  const actual: typeof baseline.workspaces = {};
+  const hash = (value: unknown) => createHash('sha256').update(stableStringify(value)).digest('hex');
+  for (const id of readdirSync(root).sort()) {
+    const file = join(root, id, 'blueprint.yaml');
+    if (!existsSync(file)) continue;
+    const raw = parseYaml(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    if (Object.hasOwn(raw, 'slots')) continue;
+    const resolved = resolveBlueprintSource(raw, { sourcePath: file });
+    actual[id] = {
+      source: hash(BlueprintSourceDocumentSchema.parse(raw)),
+      resolved: hash(BlueprintSourceDocumentSchema.parse(resolved.merged)),
+    };
+  }
+  assert.match(baseline.schemaSourceSha256, /^[0-9a-f]{64}$/);
+  assert.deepEqual(actual, baseline.workspaces);
+});
 
 /** Smallest blueprint that satisfies the required fields (id, workItem.kind, spine.edges). */
 const minimal = {
