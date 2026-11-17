@@ -416,6 +416,56 @@ describe('R-46 qualification — holder-history interval and evidence boundaries
     expect(await count()).toBeGreaterThan(before);
   });
 
+  it('cannot qualify a DDL event trigger from equal enabled endpoints and its own audit rows', async () => {
+    // Qualify the proposed existing-seam extension before trusting it: a DDL
+    // event trigger records ordinary ALTER TABLE, but cannot witness its own
+    // disabled/restored interval. Everything here is in createFreshTestDb.
+    await sql.unsafe(`CREATE FUNCTION harness_shared.r46_ddl_probe()
+      RETURNS event_trigger LANGUAGE plpgsql AS $probe$
+      BEGIN
+        INSERT INTO harness_shared.audit_log
+          (id, ts, actor, action, subject, details, workspace_id)
+        VALUES (gen_random_uuid()::text,
+          (extract(epoch FROM clock_timestamp()) * 1000)::bigint,
+          'private-r46-probe', 'work_items:custody:ddl-probe', 'r46-ddl-probe',
+          jsonb_build_object('commandTag', TG_TAG), 'default');
+      END; $probe$`);
+    await sql.unsafe(`CREATE EVENT TRIGGER r46_ddl_probe
+      ON ddl_command_end EXECUTE FUNCTION harness_shared.r46_ddl_probe()`);
+    const events = () => sql`
+      SELECT id, details->>'commandTag' AS tag FROM harness_shared.audit_log
+       WHERE workspace_id = 'default' AND subject = 'r46-ddl-probe'
+         AND action = 'work_items:custody:ddl-probe' ORDER BY ts, id`;
+    const enabled = async () => {
+      const [row] = await sql`SELECT evtenabled FROM pg_event_trigger WHERE evtname = 'r46_ddl_probe'`;
+      return row?.evtenabled;
+    };
+    try {
+      expect(await enabled()).toBe('O');
+      await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER capture_work_items_feature_upd_trg');
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_items_feature_upd_trg');
+      const before = await events();
+      expect(before).toHaveLength(2);
+      expect(before.map(row => row.tag)).toEqual(['ALTER TABLE', 'ALTER TABLE']);
+
+      await sql.unsafe('ALTER EVENT TRIGGER r46_ddl_probe DISABLE');
+      await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER capture_work_items_feature_upd_trg');
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_items_feature_upd_trg');
+      await sql.unsafe('ALTER EVENT TRIGGER r46_ddl_probe ENABLE');
+      expect(await enabled()).toBe('O');
+      expect(await events()).toEqual(before);
+
+      // The recorder really resumes; an empty interval is still not a zero.
+      await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER capture_work_items_feature_upd_trg');
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_items_feature_upd_trg');
+      expect(await events()).toHaveLength(4);
+    } finally {
+      await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_items_feature_upd_trg');
+      await sql.unsafe('DROP EVENT TRIGGER IF EXISTS r46_ddl_probe');
+      await sql.unsafe('DROP FUNCTION IF EXISTS harness_shared.r46_ddl_probe()');
+    }
+  });
+
   it('does not make processed outbox rows into retained interval evidence', async () => {
     const id = 'WI-custody-outbox-retention';
     await seed(id, 'feature');
