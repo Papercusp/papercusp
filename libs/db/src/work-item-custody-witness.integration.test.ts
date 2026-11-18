@@ -1,24 +1,52 @@
 /**
  * EI-28957830517847385 / R-46: qualify the existing PostgreSQL statement log as
  * a prospective, SQL-independent evidence source. This capture-only fixture
- * loads the exact draft writer; it does not arm a migration or certify a live
- * interval, authenticated agent, production retention policy or complete schema.
+ * loads the exact draft writer over the maintained migrated private schema. It
+ * does not arm a migration or certify a live interval, authenticated agent or
+ * production retention policy. Owned-schema fingerprints retain their explicit
+ * unknown connection-population boundary.
  */
 import { createHash } from 'node:crypto';
 import { readFile, truncate } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import postgres, { type Sql } from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createFreshTestDb, startDedicatedNativePg, type DedicatedNativePg, type FreshTestDb } from '@papercusp/test-config/pg';
+import { captureOwnedDatabaseSchema, createFreshTestDb, startDedicatedNativePg, type DedicatedNativePg, type FreshTestDb } from '@papercusp/test-config/pg';
 
-const DRAFT = join(dirname(fileURLToPath(import.meta.url)), '..', 'sql', '1643-work-item-custody-audit-capture.sql.DRAFT');
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SQL_DIR = join(HERE, '..', 'sql');
+const DRAFT = join(SQL_DIR, '1643-work-item-custody-audit-capture.sql.DRAFT');
+const RUNNER = join(HERE, '..', '..', '..', 'packages', 'embedded-postgres-server', 'src', 'migration-runner.js');
+// Reuse the full-schema prerequisite/replay order from worked-by-history. 797
+// remains parked in production; 1037 must follow 806 to preserve first_claimed_at.
+const REPLAY = [
+  '797-guard-engineer-issues-terminal-state.sql.PENDING-CODE-DEPLOY',
+  '799-guard-797-message-self-diagnosis.sql',
+  '804-fix-terminal-close-staging-remedy.sql',
+  '806-work-item-worked-history.sql',
+  '1037-work-item-first-claim-stamp.sql',
+];
+const BOOT_PREREQS_DDL = `
+  DO $pg$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_app') THEN CREATE ROLE harness_app LOGIN PASSWORD 'harness_app_pwd'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_admin') THEN CREATE ROLE harness_admin LOGIN SUPERUSER PASSWORD 'harness_admin_pwd'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='harness_zero') THEN CREATE ROLE harness_zero LOGIN REPLICATION SUPERUSER PASSWORD 'harness_zero_pwd'; END IF;
+  END $pg$;
+  CREATE EXTENSION IF NOT EXISTS pgcrypto;
+  CREATE EXTENSION IF NOT EXISTS pg_trgm;
+  CREATE EXTENSION IF NOT EXISTS vector;
+`;
 const APPLICATION = 'r46-private-witness';
 let cluster: DedicatedNativePg | undefined;
 let db: FreshTestDb | undefined;
 let sql: Sql;
 let logPath: string;
 let draftSha256: string;
+let schemaBefore: Awaited<ReturnType<typeof captureOwnedDatabaseSchema>>;
+let runtime: Record<string, unknown> | undefined;
+let appliedMigrations: Array<{ filename: string; sha256: string }> = [];
+const sourceDigests = new Map<string, string>();
 let fenceNumber = 0;
 const retained = new Set<string>();
 const priorAdminUrl = process.env.PAPERCUSP_TEST_PG_ADMIN_URL;
@@ -36,18 +64,37 @@ beforeAll(async () => {
   process.env.PAPERCUSP_TEST_PG_ADMIN_URL = cluster.getConnectionUri();
   const draft = await readFile(DRAFT, 'utf8');
   draftSha256 = digest(draft);
+  for (const path of [fileURLToPath(import.meta.url), RUNNER, DRAFT]) {
+    sourceDigests.set(path, digest(await readFile(path)));
+  }
   db = await createFreshTestDb({ prefix: 'custody-witness', provision: async url => {
     const client = postgres(url, { max: 1, onnotice: () => {} });
     try {
-      // Minimal capture contract, deliberately not the full migrated schema.
-      await client.unsafe(`CREATE SCHEMA harness_shared;
-        CREATE TABLE harness_shared.work_items (
-          workspace_id text NOT NULL, harness_slug text NOT NULL, feature_id text NOT NULL,
-          taken_by text, payload jsonb NOT NULL DEFAULT '{}',
-          PRIMARY KEY (workspace_id, harness_slug, feature_id));
-        CREATE TABLE harness_shared.audit_log (
-          id text PRIMARY KEY, ts bigint NOT NULL, actor text NOT NULL,
-          action text NOT NULL, subject text NOT NULL, details jsonb NOT NULL, workspace_id text NOT NULL)`);
+      await client.unsafe(BOOT_PREREQS_DDL);
+      const { applyPendingMigrations } = await import(pathToFileURL(RUNNER).href) as {
+        applyPendingMigrations: (options: { client: Sql; sqlDir: string;
+          migrationStatementTimeoutMs: number; beforeApply: (file: string, raw: string) => void;
+        }) => Promise<{ appliedCount: number; totalKnown: number }>;
+      };
+      const result = await applyPendingMigrations({ client, sqlDir: SQL_DIR,
+        migrationStatementTimeoutMs: 30_000,
+        beforeApply: (file, raw) => { sourceDigests.set(join(SQL_DIR, file), digest(raw)); },
+      });
+      expect(result.appliedCount).toBe(result.totalKnown);
+      expect(result.totalKnown).toBeGreaterThan(0);
+      appliedMigrations = (await client<{ filename: string; sha256: string }[]>`
+        SELECT filename, sha256 FROM harness_shared.schema_migrations ORDER BY filename`)
+        .map(row => ({ filename: row.filename, sha256: row.sha256 }));
+      expect(appliedMigrations).toHaveLength(result.totalKnown);
+      expect(appliedMigrations.some(row => row.filename.startsWith('1643-'))).toBe(false);
+      for (const row of appliedMigrations) {
+        expect(row.sha256).toBe(sourceDigests.get(join(SQL_DIR, row.filename)));
+      }
+      for (const file of REPLAY) {
+        const raw = await readFile(join(SQL_DIR, file), 'utf8');
+        sourceDigests.set(join(SQL_DIR, file), digest(raw));
+        await client.unsafe(raw);
+      }
       await client.unsafe(draft);
     } finally { await client.end({ timeout: 5 }); }
   } });
@@ -57,22 +104,44 @@ beforeAll(async () => {
   const [settings] = await sql`SELECT current_setting('log_statement') AS statements,
     current_setting('log_destination') AS destination, current_setting('logging_collector') AS collector`;
   expect(settings).toEqual({ statements: 'all', destination: 'jsonlog', collector: 'on' });
-}, 120_000);
+  [runtime] = await sql`SELECT current_database() AS database, current_user AS role,
+    current_setting('server_version_num') AS server_version_num,
+    inet_server_addr()::text AS address, inet_server_port() AS port,
+    pg_postmaster_start_time()::text AS started_at`;
+  schemaBefore = await captureOwnedDatabaseSchema(db.url);
+  expect(schemaBefore).not.toBeNull();
+}, 240_000);
 
 afterAll(async () => {
-  await sql?.end({ timeout: 5 });
-  await db?.drop();
-  await cluster?.stop();
-  if (priorAdminUrl === undefined) delete process.env.PAPERCUSP_TEST_PG_ADMIN_URL;
-  else process.env.PAPERCUSP_TEST_PG_ADMIN_URL = priorAdminUrl;
-  // Retain the actual independent source bytes in the normal test log before
-  // the run-owned cluster is removed. These are synthetic private statements.
-  const records = [...retained].join('\n');
-  console.info('R46_PRIVATE_WITNESS_EVIDENCE', JSON.stringify({
-    scope: 'private-capture-only; no historical, live-continuity or acceptance claim',
-    draftSha256, logSha256: digest(records), records,
-  }));
-}, 30_000);
+  let schemaAfter: typeof schemaBefore = null;
+  try {
+    if (db && schemaBefore) {
+      schemaAfter = await captureOwnedDatabaseSchema(db.url);
+      expect(schemaAfter).toEqual(schemaBefore);
+      for (const [path, expected] of sourceDigests) {
+        expect(digest(await readFile(path)), `source changed during private run: ${path}`).toBe(expected);
+      }
+    }
+  } finally {
+    try {
+      await sql?.end({ timeout: 5 });
+      await db?.drop();
+    } finally {
+      await cluster?.stop();
+      if (priorAdminUrl === undefined) delete process.env.PAPERCUSP_TEST_PG_ADMIN_URL;
+      else process.env.PAPERCUSP_TEST_PG_ADMIN_URL = priorAdminUrl;
+      // Synthetic private statements only; the schema helper emits digests,
+      // never role credentials or dump SQL. This is local fixture evidence.
+      const records = [...retained].join('\n');
+      console.info('R46_PRIVATE_WITNESS_EVIDENCE', JSON.stringify({
+        scope: 'private-migrated-schema; no historical, live-continuity or acceptance claim',
+        draftSha256, bootstrapSha256: digest(BOOT_PREREQS_DDL), runtime,
+        schemaBefore, schemaAfter, replay: REPLAY, appliedMigrations,
+        sourceDigests: Object.fromEntries(sourceDigests), logSha256: digest(records), records,
+      }));
+    }
+  }
+}, 60_000);
 
 async function fence(): Promise<{ bytes: Buffer; records: LogRecord[] }> {
   const marker = `r46-fence-${++fenceNumber}`;
@@ -90,7 +159,9 @@ async function fence(): Promise<{ bytes: Buffer; records: LogRecord[] }> {
 }
 
 async function seed(id: string): Promise<void> {
-  await sql.unsafe(`INSERT INTO harness_shared.work_items VALUES ('private', 'custody-witness', '${id}', 'su-original', '{}')`);
+  await sql`INSERT INTO harness_shared.work_items
+    (workspace_id, harness_slug, feature_id, title, summary, status, item_kind, origin, taken_by, payload)
+    VALUES ('private', 'custody-witness', ${id}, ${id}, 'private witness control', 'open', 'feature', 'local', 'su-original', '{}')`;
 }
 
 async function receipts(id: string) {
@@ -99,6 +170,22 @@ async function receipts(id: string) {
 }
 
 describe.sequential('R-46 private server-log witness controls', () => {
+  it('qualifies the migrated writer schema and detects a disabled trigger with equal restored endpoints', async () => {
+    const columns = await sql`SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'harness_shared' AND table_name = 'work_items'`;
+    expect(columns.map(row => row.column_name)).toEqual(expect.arrayContaining([
+      'status', 'worked_by_history', 'first_claimed_at', 'origin', 'fed_ts',
+    ]));
+    expect(schemaBefore?.populationStatus).toBe('unknown');
+    await sql.unsafe('ALTER TABLE harness_shared.work_items DISABLE TRIGGER capture_work_item_custody_audit_trg');
+    try {
+      const disabled = await captureOwnedDatabaseSchema(db!.url);
+      expect(disabled).not.toBeNull();
+      expect(disabled?.fingerprint).not.toBe(schemaBefore?.fingerprint);
+    } finally { await sql.unsafe('ALTER TABLE harness_shared.work_items ENABLE TRIGGER capture_work_item_custody_audit_trg'); }
+    expect(await captureOwnedDatabaseSchema(db!.url)).toEqual(schemaBefore);
+  }, 60_000);
+
   it('retains more than five committed mutations outside the mutable receipt store', async () => {
     const id = 'WI-witness-positive';
     await seed(id);
