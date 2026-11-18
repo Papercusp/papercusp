@@ -14,4 +14,4 @@ CREATE TABLE IF NOT EXISTS harness_shared.governance_host_authority_bindings (
   CHECK (kind <> 'user' OR subject_id = human_owner_id)
 );
 
-GRANT SELECT ON harness_shared.governance_host_authority_bindings TO papercusp_app;
+GRANT SELECT ON harness_shared.governance_host_authority_bindings TO harness_app;
