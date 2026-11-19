@@ -245,14 +245,14 @@
     },
     {
       "name": "record_review",
-      "description": "Record a reviewer verdict on a feature's accepted spec. Verdicts: 'approved' (keeps design_status=accepted, terminal), 'rejected' (flips design_status back to pending so the orchestrator re-spawns a designer), 'changes-requested' (same flip, with notes for the next designer). Plan §4.2.",
+      "description": "Record design feedback. Rejection or a request for changes resets the feature to pending when the reviewed spec is still accepted. The result includes the review disposition and actual design status. Stale or unbound feedback is retained in the review history.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "featureId": { "type": "string", "minLength": 1 },
           "verdict": { "enum": ["approved", "rejected", "changes-requested"] },
           "notes": { "type": "string" },
-          "specId": { "type": "string", "description": "Optional: the spec id this review applies to (recorded for audit)." }
+          "specId": { "type": "string", "description": "The spec ID returned by get_accepted_spec. When omitted, a sole recorded edition can identify the subject." }
         },
         "required": ["featureId", "verdict"]
       },

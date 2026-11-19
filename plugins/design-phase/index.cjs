@@ -923,51 +923,58 @@ async function record_review(input, ctx) {
   if (!REVIEW_VERDICTS.has(input.verdict)) {
     return { isError: true, content: [{ type: 'text', text: `record_review: input.verdict must be one of ${[...REVIEW_VERDICTS].join('|')}` }] };
   }
+  if (input.specId != null && (typeof input.specId !== 'string' || !input.specId.trim())) {
+    return { isError: true, content: [{ type: 'text', text: 'record_review: specId must be a nonempty string when supplied' }] };
+  }
   const postgres = require('postgres');
   const url = resolveAdminPgUrl();
   const sql = postgres(url, { max: 1, idle_timeout: 5 });
   try {
     const id = `review-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = Date.now();
-    const reviewPayload = {
-      verdict: input.verdict,
-      notes: typeof input.notes === 'string' ? input.notes : null,
-      reviewedSpecId: typeof input.specId === 'string' ? input.specId : null,
-    };
-    await sql.begin(async (tx) => {
+    const result = await sql.begin(async (tx) => {
       await tx.unsafe(`SELECT set_config('app.workspace_id', $1, true)`, [ctx.workspaceId]);
+      const [feature] = await tx`
+        SELECT design_status, design_spec_id FROM harness_shared.harness_features_consolidated
+         WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${ctx.harnessSlug}
+           AND feature_id = ${input.featureId} FOR UPDATE`;
+      if (!feature) return null;
+      let reviewedSpecId = input.specId ?? null;
+      if (reviewedSpecId === null) {
+        // An older caller without a pin can identify a sole edition. Once a successor exists,
+        // the current pointer alone cannot identify the edition the reviewer saw.
+        const [history] = await tx`
+          SELECT CASE WHEN count(*) = 1 THEN min(id) END AS sole_spec_id
+            FROM harness_shared.harness_design_artifacts
+           WHERE harness_slug = ${ctx.harnessSlug} AND feature_id = ${input.featureId} AND kind = 'spec'`;
+        reviewedSpecId = history.sole_spec_id;
+      }
+      const current = feature.design_status === 'accepted' && reviewedSpecId === feature.design_spec_id;
+      const disposition = reviewedSpecId === null ? 'unbound' : current ? 'applied' : 'stale';
+      const reviewPayload = { verdict: input.verdict, notes: typeof input.notes === 'string' ? input.notes : null,
+        reviewedSpecId, disposition };
       await tx`
         INSERT INTO harness_shared.harness_design_artifacts
           (id, harness_slug, feature_id, kind, payload, metadata, created_ts)
         VALUES (${id}, ${ctx.harnessSlug}, ${input.featureId}, 'review',
                 ${tx.json(reviewPayload)}, ${tx.json({ source: 'reviewer-agent' })}, ${now})
       `;
-      // Approved keeps design_status=accepted (terminal-ok).
-      // Rejected and changes-requested flip back to 'pending' so the
-      // orchestrator's spawn loop re-spawns a designer with the verdict
-      // notes as new input. Plan §4.2.
-      if (input.verdict !== 'approved') {
-        await tx`
+      let designStatusAfter = feature.design_status;
+      if (disposition === 'applied' && input.verdict !== 'approved') {
+        const [updated] = await tx`
           UPDATE harness_shared.harness_features_consolidated
              SET design_status   = 'pending',
                  design_spec_id  = NULL,
                  updated_ts      = ${now}
-           WHERE harness_slug = ${ctx.harnessSlug}
-             AND feature_id   = ${input.featureId}
-        `;
+           WHERE workspace_id = ${ctx.workspaceId} AND harness_slug = ${ctx.harnessSlug}
+             AND feature_id = ${input.featureId} AND design_spec_id = ${reviewedSpecId}
+           RETURNING design_status`;
+        designStatusAfter = updated.design_status;
       }
+      return { ok: true, reviewId: id, verdict: input.verdict, reviewedSpecId, disposition, designStatusAfter };
     });
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          ok: true,
-          reviewId: id,
-          verdict: input.verdict,
-          designStatusAfter: input.verdict === 'approved' ? 'accepted' : 'pending',
-        }, null, 2),
-      }],
-    };
+    if (!result) return { isError: true, content: [{ type: 'text', text: `no feature ${input.featureId} in the current harness` }] };
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   } finally {
     await sql.end({ timeout: 5 });
   }
