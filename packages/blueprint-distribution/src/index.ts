@@ -19,7 +19,10 @@
 export {
   makeComposedResolveExtends,
   blueprintFileIn,
+  builtinSupersedesInstalled,
+  type BuiltinSupersession,
   type ComposedResolveOptions,
+  type SupersessionInput,
 } from './resolve-extends-composed.ts';
 export {
   validateBlueprintDependencies,

@@ -13,7 +13,74 @@ import { loadBlueprintFromFile } from '@papercusp/orchestrator/blueprint';
 import {
   makeComposedResolveExtends,
   blueprintFileIn,
+  builtinSupersedesInstalled,
+  type BuiltinSupersession,
 } from './resolve-extends-composed.js';
+
+// WI-6554700010054458: stale installed stock must not shadow a newer or valid bundled built-in.
+function supersessionFixture(installedYaml: string, builtinYaml: string) {
+  const root = mkdtempSync(join(tmpdir(), 'bp-supersede-'));
+  const installedDir = join(root, 'installed');
+  const builtinFile = join(root, 'builtin', 'x', 'blueprint.yaml');
+  mkdirSync(join(installedDir, 'x'), { recursive: true });
+  mkdirSync(join(root, 'builtin', 'x'), { recursive: true });
+  writeFileSync(blueprintFileIn(installedDir, 'x'), installedYaml);
+  writeFileSync(builtinFile, builtinYaml);
+  const seen: BuiltinSupersession[] = [];
+  const resolve = makeComposedResolveExtends({
+    installedDir,
+    builtin: (id) => (id === 'x' ? builtinFile : null),
+    onSuperseded: (verdict) => seen.push(verdict),
+  });
+  return { root, installedFile: blueprintFileIn(installedDir, 'x'), builtinFile, resolve, seen, installedDir };
+}
+
+test('supersession: an installed identity carrying visibility yields to the valid same-version built-in', () => {
+  const f = supersessionFixture(
+    'id: x\nversion: 0.1.2\nvisibility: public\nslots: []\n',
+    'id: x\nversion: 0.1.2\nslots: []\n',
+  );
+  try {
+    assert.equal(f.resolve('x'), f.builtinFile);
+    assert.equal(f.seen.length, 1);
+    assert.equal(f.seen[0]!.reason, 'invalid-source');
+    assert.match(f.seen[0]!.detail, /visibility/);
+    assert.equal(f.seen[0]!.installedFile, f.installedFile);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('supersession: an older installed release yields to the newer built-in (numeric ordering)', () => {
+  const f = supersessionFixture('id: x\nversion: 0.1.9\n', 'id: x\nversion: 0.1.10\n');
+  try {
+    assert.equal(f.resolve('x'), f.builtinFile);
+    assert.equal(f.seen[0]!.reason, 'older-version');
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
+
+test('supersession: a valid same-version or newer installed copy still shadows the built-in', () => {
+  for (const version of ['0.1.2', '0.2.0']) {
+    const f = supersessionFixture(`id: x\nversion: ${version}\ndescription: activated\n`, 'id: x\nversion: 0.1.2\n');
+    try {
+      assert.equal(f.resolve('x'), f.installedFile, version);
+      assert.equal(f.seen.length, 0, version);
+    } finally { rmSync(f.root, { recursive: true, force: true }); }
+  }
+});
+
+test('supersession: unreadable or invalid built-in, non-numeric versions, and supersedes:null keep first-hit order', () => {
+  const f = supersessionFixture('id: x\nversion: 0.1.0\nvisibility: public\nslots: []\n', 'id: x\nbogus: 1\n');
+  try {
+    assert.equal(f.resolve('x'), f.installedFile, 'an invalid built-in never wins');
+    assert.equal(builtinSupersedesInstalled({ id: 'x', installedFile: f.installedFile, builtinFile: '/nope/blueprint.yaml' }), null);
+    writeFileSync(f.builtinFile, 'id: x\nversion: next\n');
+    writeFileSync(f.installedFile, 'id: x\nversion: 0.0.1\n');
+    assert.equal(f.resolve('x'), f.installedFile, 'non-numeric versions are not ordered');
+    writeFileSync(f.installedFile, 'id: x\nversion: 0.0.1\nvisibility: public\nslots: []\n');
+    writeFileSync(f.builtinFile, 'id: x\nversion: 0.0.1\nslots: []\n');
+    const strict = makeComposedResolveExtends({ installedDir: f.installedDir, builtin: () => f.builtinFile, supersedes: null });
+    assert.equal(strict('x'), f.installedFile);
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
 
 test('blueprintFileIn — <root>/<id>/blueprint.yaml layout', () => {
   assert.equal(blueprintFileIn('/a/b', 'coding'), join('/a/b', 'coding', 'blueprint.yaml'));
