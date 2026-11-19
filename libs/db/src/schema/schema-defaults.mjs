@@ -50,6 +50,29 @@ export function repairClippedArrayLiteralDefaults(schema) {
   return { schema: repaired, fixed };
 }
 
+/**
+ * Drizzle folds the owned plan_runs sequence into bigserial and omits its
+ * declaration. Restore the catalog options and the mirror's number-valued ID.
+ * @param {string} schema
+ * @param {{startWith:string, increment:string, minValue:string, maxValue:string, cache:string, cycle:boolean} | undefined} sequence
+ * @returns {string}
+ */
+export function repairPlanRunsOwnedSequence(schema, sequence) {
+  if (!sequence || schema.includes('harnessShared.sequence("plan_runs_id_seq"')) return schema;
+
+  const serialColumn = /^(export const planRunsInHarnessShared = harnessShared\.table\("plan_runs", \{\n(?:[\t ].*\n)*?)\tid: bigserial\(\{ mode: "bigint" \}\)(?=\.(?:primaryKey|notNull)\(\))/m;
+  return schema.replace(serialColumn, (_match, table) => {
+    const { startWith, increment, minValue, maxValue, cache, cycle } = sequence;
+    const declaration = 'export const planRunsIdSeqInHarnessShared = harnessShared.sequence("plan_runs_id_seq", {  ' +
+      `startWith: ${JSON.stringify(startWith)}, increment: ${JSON.stringify(increment)}, ` +
+      `minValue: ${JSON.stringify(minValue)}, maxValue: ${JSON.stringify(maxValue)}, ` +
+      `cache: ${JSON.stringify(cache)}, cycle: ${cycle} })`;
+    return `${declaration}\n\n${table}` +
+      '\t// You can use { mode: "bigint" } if numbers are exceeding js number limitations\n' +
+      '\tid: bigint({ mode: "number" }).default(sql`nextval(\'harness_shared.plan_runs_id_seq\'::regclass)`)';
+  });
+}
+
 // A default whose content opens with a bare identifier call, optionally inside
 // parentheses: `gen_random_uuid()`, `(gen_random_uuid())`, `now()`. A JS member
 // call such as `Date.now()` does not match, because of the dot.

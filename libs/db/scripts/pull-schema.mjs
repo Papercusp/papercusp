@@ -62,6 +62,7 @@ import { stripScratchTableDeclarations } from '../src/schema-scratch-tables.mjs'
 import {
   repairClippedArrayLiteralDefaults,
   repairEmptyArrayDefaults,
+  repairPlanRunsOwnedSequence,
   repairRawSqlCallDefaults,
 } from '../src/schema/schema-defaults.mjs';
 import { repairUnconstrainedVectorColumns } from '../src/schema/schema-vector-columns.mjs';
@@ -1015,6 +1016,43 @@ if (indexOpclasses.status === 0) {
   }
 } else {
   console.warn('    skipped Fix 10 (psql failed):', indexOpclasses.stderr);
+}
+
+// Drizzle drops the explicit declaration when it sees the owned nextval
+// default as bigserial. Restore it only when this catalog proves the binding.
+const planRunsSequenceQuery = `
+  SELECT json_build_object('startWith', s.seqstart::text, 'increment', s.seqincrement::text,
+    'minValue', s.seqmin::text, 'maxValue', s.seqmax::text, 'cache', s.seqcache::text,
+    'cycle', s.seqcycle)
+  FROM pg_sequence s
+  JOIN pg_depend d ON d.classid = 'pg_class'::regclass AND d.objid = s.seqrelid
+    AND d.objsubid = 0 AND d.refclassid = 'pg_class'::regclass AND d.deptype = 'a'
+  JOIN pg_attribute a ON a.attrelid = d.refobjid AND a.attnum = d.refobjsubid
+  JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+  WHERE s.seqrelid = to_regclass('harness_shared.plan_runs_id_seq')
+    AND s.seqtypid = 'bigint'::regtype
+    AND a.attrelid = to_regclass('harness_shared.plan_runs') AND a.attname = 'id'
+    AND a.atttypid = 'bigint'::regtype AND a.attidentity = ''
+    AND pg_get_expr(ad.adbin, ad.adrelid) = format('nextval(%L::regclass)', s.seqrelid::regclass::text)`;
+const planRunsSequenceResult = spawnSync('psql', [dbUrl, '-tA', '-c', planRunsSequenceQuery], { encoding: 'utf8' });
+let planRunsSequence;
+try {
+  if (planRunsSequenceResult.status !== 0) {
+    throw new Error(planRunsSequenceResult.stderr || planRunsSequenceResult.error?.message);
+  }
+  const row = planRunsSequenceResult.stdout.trim();
+  planRunsSequence = row ? JSON.parse(row) : undefined;
+} catch (error) {
+  rmSync(schemaPath, { force: true });
+  rmSync(relationsPath, { force: true });
+  console.error('==> REFUSING TO PROMOTE: could not read the plan_runs owned sequence catalog:', error.message);
+  process.exitCode = 1;
+  return;
+}
+const restoredSequenceSchema = repairPlanRunsOwnedSequence(schema, planRunsSequence);
+if (restoredSequenceSchema !== schema) {
+  schema = restoredSequenceSchema;
+  console.log('    restored the catalog-backed plan_runs_id_seq declaration and nextval default');
 }
 
 // Fix 12 (EI-22145279419639902): drizzle-kit emits table/sequence/view

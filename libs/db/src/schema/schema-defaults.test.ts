@@ -4,8 +4,46 @@ import { join } from 'node:path';
 import {
   repairClippedArrayLiteralDefaults,
   repairEmptyArrayDefaults,
+  repairPlanRunsOwnedSequence,
   repairRawSqlCallDefaults,
 } from './schema-defaults.mjs';
+import { findDroppedPgSchemaObjects } from './schema-policies.mjs';
+
+describe('repairPlanRunsOwnedSequence', () => {
+  const other = [
+    'export const other = harnessShared.table("other", {',
+    '\tid: bigserial({ mode: "bigint" }).primaryKey().notNull(),',
+    '});',
+  ].join('\n');
+  const planRuns = [
+    'export const planRunsInHarnessShared = harnessShared.table("plan_runs", {',
+    '\tid: bigserial({ mode: "bigint" }).primaryKey().notNull(),',
+    '});',
+  ].join('\n');
+  const source = [other, planRuns].join('\n');
+  const sequence = {
+    startWith: '7', increment: '2', minValue: '1', maxValue: '9223372036854775807', cache: '4', cycle: true,
+  };
+  const previous = 'export const planRunsIdSeqInHarnessShared = harnessShared.sequence("plan_runs_id_seq", {})';
+
+  it('retains the exact catalog options and the numeric ID without changing unrelated serial columns', () => {
+    const repaired = repairPlanRunsOwnedSequence(source, sequence);
+
+    expect(repaired).toContain('harnessShared.sequence("plan_runs_id_seq", {  startWith: "7", increment: "2", minValue: "1", maxValue: "9223372036854775807", cache: "4", cycle: true })');
+    expect(repaired).toContain('id: bigint({ mode: "number" }).default(sql`nextval(\'harness_shared.plan_runs_id_seq\'::regclass)`).primaryKey().notNull(),');
+    expect(repaired).toContain(other);
+    expect(findDroppedPgSchemaObjects({ previous, next: repaired })).toEqual([]);
+    expect(repairPlanRunsOwnedSequence(repaired, sequence)).toBe(repaired);
+  });
+
+  it('keeps the guard active when either the catalog binding or the serial column is missing', () => {
+    const differentColumn = [other, planRuns.replace('bigserial', 'bigint')].join('\n');
+    const expected = ['sequence:harness_shared.plan_runs_id_seq'];
+
+    expect(findDroppedPgSchemaObjects({ previous, next: repairPlanRunsOwnedSequence(source, undefined) })).toEqual(expected);
+    expect(findDroppedPgSchemaObjects({ previous, next: repairPlanRunsOwnedSequence(differentColumn, sequence) })).toEqual(expected);
+  });
+});
 
 describe('repairEmptyArrayDefaults', () => {
   it('turns drizzle-kits one-empty-string rendering into a real empty array', () => {
