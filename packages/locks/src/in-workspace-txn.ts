@@ -36,6 +36,7 @@ import { beginAcquireDiagnostic, txnTimeouts } from './config';
 export class WorkspaceContendedError extends Error {
   readonly coordinationDomain: string;
   readonly pgCode: string;
+  preservation?: WorkspacePreservationSnapshot;
   constructor(coordinationDomain: string, pgCode: string, cause: unknown) {
     super(`workspace "${coordinationDomain}" contended (pg ${pgCode}: lock/statement timeout)`);
     this.name = 'WorkspaceContendedError';
@@ -43,6 +44,19 @@ export class WorkspaceContendedError extends Error {
     this.pgCode = pgCode;
     this.cause = cause;
   }
+}
+
+export interface WorkspacePreservationSnapshot {
+  observedAtMs: number;
+  truncated: boolean;
+  unavailable?: { code: string; message: string };
+  holders: Array<{
+    owner: string;
+    backendPid: number;
+    startedAtMs: number;
+    phase: 'preservation';
+    ownerComplete: boolean;
+  }>;
 }
 
 /** PG SQLSTATEs that mean "couldn't serialize in time": lock_timeout +
@@ -248,23 +262,15 @@ function uniqueSortedPaths(paths: readonly string[] | undefined): string[] {
   );
 }
 
-export async function acquireAdvisoryScope(
-  tx: Sql,
+function advisoryScope(
   coordinationDomain: string,
   paths: readonly string[] | undefined,
   leaseRenewal = false,
   resources?: readonly string[],
-  session = false,
-): Promise<void> {
-  const lock = async (key: string, shared = false): Promise<void> => {
-    if (session) {
-      if (shared) await tx`SELECT pg_advisory_lock_shared(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
-      else await tx`SELECT pg_advisory_lock(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
-    } else if (shared) {
-      await tx`SELECT pg_advisory_xact_lock_shared(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
-    } else {
-      await tx`SELECT pg_advisory_xact_lock(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
-    }
+): Array<{ key: string; shared: boolean }> {
+  const scope: Array<{ key: string; shared: boolean }> = [];
+  const lock = (key: string, shared = false): void => {
+    scope.push({ key, shared });
   };
   const scopedPaths = uniqueSortedPaths(paths);
   const scopedResources = Array.from(
@@ -276,28 +282,28 @@ export async function acquireAdvisoryScope(
     }
     // Same shared gate as path-scoped work: a domain-global operation (or an
     // older process still taking the exclusive key for resource work) excludes us.
-    await lock('su:' + coordinationDomain, true);
+    lock('su:' + coordinationDomain, true);
     for (const resource of scopedResources) {
-      await lock('su-resource:' + coordinationDomain + ':' + resource);
+      lock('su-resource:' + coordinationDomain + ':' + resource);
     }
-    return;
+    return scope;
   }
   // Renewal and expiry/release serialize on the exact row. Waiting for the
   // workspace gate here lets an unrelated global operation expire every live
   // lease in the domain. A conditional UPDATE cannot resurrect a deleted or
   // expired row, including when it resumes after a concurrent row-lock wait.
-  if (leaseRenewal) return;
+  if (leaseRenewal) return scope;
   if (scopedPaths.length === 0) {
     // Preserve the original key for global operations and rolling
     // compatibility with processes that still use the workspace lock alone.
-    await lock('su:' + coordinationDomain);
-    return;
+    lock('su:' + coordinationDomain);
+    return scope;
   }
 
   // The shared gate prevents a path-scoped operation from racing a global
   // sweep/resource operation. The old workspace key is deliberately reused so
   // an old process holding the exclusive key still blocks new path work.
-  await lock('su:' + coordinationDomain, true);
+  lock('su:' + coordinationDomain, true);
   // Shared locks on strict ancestors make a subtree/exact-path exclusive lock
   // conflict with descendants, while siblings can share the same directory
   // ancestor. Lock all shared ancestors before any exclusive leaves, then all
@@ -307,11 +313,61 @@ export async function acquireAdvisoryScope(
     new Set(scopedPaths.flatMap(pathAncestors)),
   ).sort();
   for (const path of ancestors) {
-    await lock('su:' + coordinationDomain + ':' + path, true);
+    lock('su:' + coordinationDomain + ':' + path, true);
   }
   for (const path of scopedPaths) {
-    await lock('su:' + coordinationDomain + ':' + path);
+    lock('su:' + coordinationDomain + ':' + path);
   }
+  return scope;
+}
+
+export async function acquireAdvisoryScope(
+  tx: Sql,
+  coordinationDomain: string,
+  paths: readonly string[] | undefined,
+  leaseRenewal = false,
+  resources?: readonly string[],
+  session = false,
+): Promise<void> {
+  for (const { key, shared } of advisoryScope(coordinationDomain, paths, leaseRenewal, resources)) {
+    if (session) {
+      if (shared) await tx`SELECT pg_advisory_lock_shared(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+      else await tx`SELECT pg_advisory_lock(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+    } else if (shared) {
+      await tx`SELECT pg_advisory_xact_lock_shared(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+    } else {
+      await tx`SELECT pg_advisory_xact_lock(${SU_LOCKS_FEATURE_KEY}::int, hashtext(${key}))`;
+    }
+  }
+}
+
+async function readPreservationSnapshot(
+  tx: Sql, coordinationDomain: string, options: WorkspaceTxnOptions,
+): Promise<WorkspacePreservationSnapshot> {
+  const scope = advisoryScope(coordinationDomain, options.paths, options.leaseRenewal, options.resources);
+  const rows = await tx<{ pid: number; application_name: string }[]>`
+    SELECT DISTINCT activity.pid, activity.application_name
+    FROM pg_locks held JOIN pg_stat_activity activity ON activity.pid = held.pid
+    JOIN jsonb_to_recordset(${tx.json(scope)}::jsonb) AS request(key text, shared boolean)
+      ON held.objid = hashtext(request.key)::oid
+    WHERE held.locktype = 'advisory' AND held.granted
+      AND held.classid = ${SU_LOCKS_FEATURE_KEY}::oid AND held.objsubid = 2
+      AND held.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+      AND held.pid <> pg_backend_pid()
+      AND (NOT request.shared OR held.mode = 'ExclusiveLock')
+      AND activity.xact_start IS NULL AND activity.application_name LIKE 'su:pres:%'
+    ORDER BY activity.pid LIMIT 9`;
+  return {
+    observedAtMs: Date.now(),
+    truncated: rows.length > 8,
+    holders: rows.slice(0, 8).flatMap(row => {
+      const identity = /^su:pres:(\d+):(.+)$/.exec(row.application_name);
+      const startedAtMs = Number(identity?.[1]);
+      if (!identity || !Number.isSafeInteger(startedAtMs) || startedAtMs <= 0) return [];
+      return [{ owner: identity[2], backendPid: row.pid, startedAtMs,
+        phase: 'preservation' as const, ownerComplete: Buffer.byteLength(row.application_name) < 63 }];
+    }),
+  };
 }
 
 async function workspaceTransactionAttempt<T>(
@@ -512,7 +568,28 @@ export async function inWorkspaceTxn<T>(
         let cause: unknown = error;
         while (cause instanceof Error && cause !== context.pending && cause.cause) cause = cause.cause;
         const pending = context.pending as PreservationRequired | undefined;
-        if (!pending || cause !== pending) throw error;
+        if (!pending || cause !== pending) {
+          if (error instanceof WorkspaceContendedError) {
+            try {
+              // This is an observation AFTER the failed transaction, not a
+              // file-lease verdict. Read only incompatible granted keys from
+              // the same scope plan; compatible siblings must stay invisible.
+              error.preservation = await pool.begin(async diagnostic => {
+                await diagnostic`SELECT set_config('statement_timeout', '250ms', true),
+                  set_config('application_name', ${'papercusp-su:' + ownerId}, true)`;
+                return readPreservationSnapshot(diagnostic as unknown as Sql, coordinationDomain, options);
+              }) as WorkspacePreservationSnapshot;
+            } catch (diagnosticError) {
+              // An unavailable/budgeted-out diagnostic leaves the original
+              // timeout intact. It never authorizes a grant, unlock or retry.
+              const code = (diagnosticError as { code?: unknown } | null)?.code;
+              error.preservation = { observedAtMs: Date.now(), truncated: false, holders: [],
+                unavailable: { code: typeof code === 'string' ? code.slice(0, 80) : 'unknown',
+                  message: diagnosticError instanceof Error ? diagnosticError.message.slice(0, 200) : 'Observation unavailable' } };
+            }
+          }
+          throw error;
+        }
         // SET LOCAL is rolled back before capture, although the session still
         // holds its advisory fences. Retain the actor and this phase's onset
         // in the existing PG diagnostic label while no SQL transaction exists.
