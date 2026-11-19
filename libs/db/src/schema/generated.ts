@@ -12497,6 +12497,42 @@ export const substrateBootedHandlesStatusInHarnessShared = harnessShared.table("
 	primaryKey({ columns: [table.workspaceId], name: "substrate_booted_handles_status_pkey"}),
 ]);
 
+export const substrateFanoutDeliveriesInHarnessShared = harnessShared.table("substrate_fanout_deliveries", {
+	workspaceId: text("workspace_id").notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	outboxId: bigint("outbox_id", { mode: "number" }).notNull(),
+	subscriberId: text("subscriber_id").notNull(),
+	msgId: text("msg_id").notNull(),
+	objectKind: text("object_kind").notNull(),
+	objectRef: text("object_ref").notNull(),
+	targetKind: text("target_kind").notNull(),
+	targetRef: text("target_ref").notNull(),
+	delivery: jsonb().notNull(),
+	route: text().default('inbox').notNull(),
+	state: text().default('pending').notNull(),
+	attempts: integer().default(1).notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	nextRetryAt: bigint("next_retry_at", { mode: "number" }),
+	lastError: text("last_error"),
+	findingRef: text("finding_ref"),
+	findingArtifactId: text("finding_artifact_id"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	findingRetryAt: bigint("finding_retry_at", { mode: "number" }),
+	endReason: text("end_reason"),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	supersededByOutboxId: bigint("superseded_by_outbox_id", { mode: "number" }),
+	readAt: timestamp("read_at", { withTimezone: true, mode: 'string' }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("substrate_fanout_deliveries_due_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.nextRetryAt.asc().nullsLast().op("int8_ops")).where(sql`(state = 'pending'::text)`),
+	index("substrate_fanout_deliveries_finding_due_idx").using("btree", sql`workspace_id`, sql`COALESCE(finding_retry_at, (0)::bigint)`, sql`outbox_id`, sql`subscriber_id`).where(sql`(finding_ref IS NULL)`),
+	index("substrate_fanout_deliveries_subscriber_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.subscriberId.asc().nullsLast().op("text_ops"), table.objectKind.asc().nullsLast().op("text_ops"), table.objectRef.asc().nullsLast().op("text_ops")).where(sql`(state = 'pending'::text)`),
+	primaryKey({ columns: [table.outboxId, table.subscriberId, table.workspaceId], name: "substrate_fanout_deliveries_pkey"}),
+	check("substrate_fanout_deliveries_route_check", sql`route = ANY (ARRAY['inbox'::text, 'item-read'::text])`),
+	check("substrate_fanout_deliveries_state_check", sql`state = ANY (ARRAY['pending'::text, 'written'::text, 'failed'::text, 'superseded'::text])`),
+]);
+
 export const substrateMergeCursorInHarnessShared = harnessShared.table("substrate_merge_cursor", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
