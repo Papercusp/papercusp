@@ -57,6 +57,7 @@ export type WorkspaceTxnPhase =
   | 'transaction-settings'
   | 'advisory-scope'
   | 'operation'
+  | 'preservation'
   | 'transaction-settlement'
   | 'transaction-total';
 
@@ -466,6 +467,7 @@ export async function inWorkspaceTxn<T>(
   }) as unknown as Sql;
   const scopes = new Set<string>();
   let fenced = false;
+  let preservationApplicationName: string | undefined;
   const context: PreservationContext = {
     next: 0, completed: [], sql: connection as unknown as Sql,
     protect: async (domain, paths) => {
@@ -511,14 +513,34 @@ export async function inWorkspaceTxn<T>(
         while (cause instanceof Error && cause !== context.pending && cause.cause) cause = cause.cause;
         const pending = context.pending as PreservationRequired | undefined;
         if (!pending || cause !== pending) throw error;
-        const result = await pending.effect();
+        // SET LOCAL is rolled back before capture, although the session still
+        // holds its advisory fences. Retain the actor and this phase's onset
+        // in the existing PG diagnostic label while no SQL transaction exists.
+        // The canonical su UUID plus this prefix/timestamp fits PG's 63 bytes.
+        if (preservationApplicationName === undefined) {
+          const [previous] = await connection<{ application_name: string }[]>`
+            SELECT current_setting('application_name') AS application_name`;
+          preservationApplicationName = previous.application_name;
+        }
+        await connection`SELECT set_config('application_name',
+          ${`su:pres:${Date.now()}:${ownerId}`}, false)`;
+        const result = await measureAsyncPhase(options.onPhase, 'preservation', () => pending.effect());
         context.completed.push({ identity: pending.identity, result });
       }
     }
   } finally {
     preservationContexts.delete(tx);
     try {
-      if (fenced) await connection`SELECT pg_advisory_unlock_all()`;
+      if (fenced) {
+        if (preservationApplicationName === undefined) {
+          await connection`SELECT pg_advisory_unlock_all()`;
+        } else {
+          // Restore the exact prior label with fence release, on success and
+          // failure, before this reserved connection can return to the pool.
+          await connection`SELECT pg_advisory_unlock_all(),
+            set_config('application_name', ${preservationApplicationName}, false)`;
+        }
+      }
     } finally {
       connection.release();
       acquisition?.release();

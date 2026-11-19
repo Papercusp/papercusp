@@ -35,7 +35,10 @@ import type { WorkspaceTxnPhaseTiming } from './in-workspace-txn';
 function fakePool() {
   let active = false;
   const commands: string[] = [];
-  const tx = vi.fn(async (_strings: TemplateStringsArray, ..._values: unknown[]) => []);
+  const tx = vi.fn(async (strings: TemplateStringsArray, ..._values: unknown[]) =>
+    strings.join(' ').includes("current_setting('application_name') AS application_name")
+      ? [{ application_name: 'original-pool-label' }]
+      : []);
   const release = vi.fn();
   const unsafe = vi.fn(async (command: string) => {
     commands.push(command);
