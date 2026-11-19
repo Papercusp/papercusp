@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import postgres, { type Sql } from 'postgres';
+import postgres, { type JSONValue, type Sql } from 'postgres';
 import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/pg';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -814,7 +814,13 @@ describe('draft 1643 — prospective custody capture on the existing audit seam'
   });
 
   async function captured(id: string) {
-    return sql<{ details: { eventId: string; operation: string; databaseRole: string; before: Record<string, unknown> | null; after: Record<string, unknown> | null } }[]>`
+    return sql<{ details: {
+      eventId: string;
+      operation: string;
+      databaseRole: string;
+      before: Record<string, JSONValue> | null;
+      after: Record<string, JSONValue> | null;
+    } }[]>`
       SELECT details FROM harness_shared.audit_log
        WHERE workspace_id = 'default' AND subject = ${id}
          AND action = 'work_items:custody:capture' ORDER BY ts, id`;
