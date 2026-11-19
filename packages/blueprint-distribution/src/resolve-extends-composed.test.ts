@@ -30,10 +30,25 @@ function supersessionFixture(installedYaml: string, builtinYaml: string) {
   const resolve = makeComposedResolveExtends({
     installedDir,
     builtin: (id) => (id === 'x' ? builtinFile : null),
+    supersedes: builtinSupersedesInstalled,
     onSuperseded: (verdict) => seen.push(verdict),
   });
   return { root, installedFile: blueprintFileIn(installedDir, 'x'), builtinFile, resolve, seen, installedDir };
 }
+
+test('supersession is OPT-IN: by default an installed copy wins even when the policy would supersede it', () => {
+  // WI-6554700010054458: a default-on policy re-targeted valid identity roots onto same-id workspace built-ins.
+  const f = supersessionFixture('id: x\nversion: 0.1.2\nvisibility: public\nslots: []\n', 'id: x\nversion: 0.1.2\nslots: []\n');
+  try {
+    const seen: BuiltinSupersession[] = [];
+    const byDefault = makeComposedResolveExtends({
+      installedDir: f.installedDir, builtin: () => f.builtinFile, onSuperseded: (verdict) => seen.push(verdict),
+    });
+    assert.equal(byDefault('x'), f.installedFile);
+    assert.equal(seen.length, 0);
+    assert.equal(f.resolve('x'), f.builtinFile, 'the same fixture is superseded once the policy is passed');
+  } finally { rmSync(f.root, { recursive: true, force: true }); }
+});
 
 test('supersession: an installed identity carrying visibility yields to the valid same-version built-in', () => {
   const f = supersessionFixture(

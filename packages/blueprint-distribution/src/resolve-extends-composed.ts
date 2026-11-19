@@ -80,10 +80,16 @@ function sourceProblem(document: unknown): string | null {
 }
 
 /**
- * The default supersession policy. It decides whether the bundled built-in
+ * The OPT-IN supersession policy. It decides whether the bundled built-in
  * replaces an installed copy with the same id. The only arm is
  * `invalid-source`: the installed YAML does not parse, or the current source
  * schema rejects it, while the built-in is valid.
+ *
+ * It validates both sides with the HARNESS source schema, so pass it only where
+ * that is the consumer's own schema. A consumer that reads another kind (an
+ * identity root, say) can see a copy that is valid for it fail that schema; the
+ * policy would then swap in a same-id built-in of the wrong kind
+ * (WI-6554700010054458: 23 install-blueprint-core / identity-activation reds).
  *
  * A valid installed copy always wins, whatever its version or kind, so the
  * documented first-hit tier order holds for every copy that loads. If either side
@@ -145,9 +151,10 @@ export interface ComposedResolveOptions {
   exists?: (path: string) => boolean;
   /**
    * Decides whether the built-in replaces an installed copy of the same id.
-   * The default is `builtinSupersedesInstalled`; pass `null` for strict
-   * first-hit order. Local roots are never superseded, because they are
-   * deliberate project authoring.
+   * Omitted or `null` keeps strict first-hit order, which is the default:
+   * supersession is OPT-IN. Pass `builtinSupersedesInstalled` only where the
+   * harness source schema is the consumer's own (see its doc). Local roots are
+   * never superseded, because they are deliberate project authoring.
    */
   supersedes?: ((input: SupersessionInput) => BuiltinSupersession | null) | null;
   /** Called each time a built-in replaces an installed copy, so the replacement is visible. */
@@ -174,7 +181,7 @@ export function makeComposedResolveExtends(opts: ComposedResolveOptions = {}): R
   const installedDir = opts.installedDir ?? null;
   const builtin = opts.builtin ?? resolveBuiltinExtends;
   const exists = opts.exists ?? existsSync;
-  const supersedes = opts.supersedes === undefined ? builtinSupersedesInstalled : opts.supersedes;
+  const supersedes = opts.supersedes ?? null;
 
   return (id: string): string | null => {
     for (const dir of localDirs) {
