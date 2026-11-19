@@ -14,6 +14,7 @@ import {
   makeComposedResolveExtends,
   blueprintFileIn,
   builtinSupersedesInstalled,
+  supersedesInstalledFor,
   type BuiltinSupersession,
 } from './resolve-extends-composed.js';
 
@@ -30,7 +31,7 @@ function supersessionFixture(installedYaml: string, builtinYaml: string) {
   const resolve = makeComposedResolveExtends({
     installedDir,
     builtin: (id) => (id === 'x' ? builtinFile : null),
-    supersedes: builtinSupersedesInstalled,
+    supersedes: supersedesInstalledFor('identity'),
     onSuperseded: (verdict) => seen.push(verdict),
   });
   return { root, installedFile: blueprintFileIn(installedDir, 'x'), builtinFile, resolve, seen, installedDir };
@@ -71,7 +72,7 @@ test('supersession: a VALID older installed release still shadows the newer buil
   try {
     assert.equal(f.resolve('x'), f.installedFile);
     assert.equal(f.seen.length, 0);
-    assert.equal(builtinSupersedesInstalled({ id: 'x', installedFile: f.installedFile, builtinFile: f.builtinFile }), null);
+    assert.equal(builtinSupersedesInstalled({ id: 'x', installedFile: f.installedFile, builtinFile: f.builtinFile }, { kind: 'blueprint' }), null);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
@@ -89,7 +90,7 @@ test('supersession: unreadable or invalid built-in, non-numeric versions, and su
   const f = supersessionFixture('id: x\nversion: 0.1.0\nvisibility: public\nslots: []\n', 'id: x\nbogus: 1\n');
   try {
     assert.equal(f.resolve('x'), f.installedFile, 'an invalid built-in never wins');
-    assert.equal(builtinSupersedesInstalled({ id: 'x', installedFile: f.installedFile, builtinFile: '/nope/blueprint.yaml' }), null);
+    assert.equal(builtinSupersedesInstalled({ id: 'x', installedFile: f.installedFile, builtinFile: '/nope/blueprint.yaml' }, { kind: 'identity' }), null);
     writeFileSync(f.builtinFile, 'id: x\nversion: next\n');
     writeFileSync(f.installedFile, 'id: x\nversion: 0.0.1\n');
     assert.equal(f.resolve('x'), f.installedFile, 'non-numeric versions are not ordered');

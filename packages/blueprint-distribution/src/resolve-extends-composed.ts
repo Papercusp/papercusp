@@ -53,6 +53,8 @@ export interface BuiltinSupersession {
   id: string;
   installedFile: string;
   builtinFile: string;
+  /** The document kind the consumer reads. The replacing built-in is always of this kind. */
+  kind: SourceDocumentKind;
   reason: 'invalid-source';
   detail: string;
 }
@@ -63,42 +65,51 @@ export interface SupersessionInput {
   builtinFile: string;
 }
 
-function sourceProblem(document: unknown): string | null {
+/**
+ * The engine's own source classification (`parseBlueprintSourceDocument`): an
+ * authored layer with its own `slots` is an `identity`, anything else a
+ * workspace `blueprint`. Reused rather than restated, so the policy cannot drift
+ * from the loader's discriminator.
+ */
+export type SourceDocumentKind = ReturnType<typeof parseBlueprintSourceDocument>['kind'];
+
+function classifySource(document: unknown): { kind: SourceDocumentKind; problem: null } | { kind: null; problem: string } {
   try {
-    parseBlueprintSourceDocument(document);
-    return null;
+    return { kind: parseBlueprintSourceDocument(document).kind, problem: null };
   } catch (error) {
     const issues = (error as { issues?: Array<{ path?: unknown[]; message?: string; keys?: unknown[] }> }).issues;
     const first = Array.isArray(issues) ? issues[0] : undefined;
     if (first) {
       const keys = Array.isArray(first.keys) && first.keys.length > 0 ? ` [${first.keys.join(', ')}]` : '';
       const path = Array.isArray(first.path) && first.path.length > 0 ? `${first.path.join('.')}: ` : '';
-      return `${path}${first.message ?? 'invalid'}${keys}`;
+      return { kind: null, problem: `${path}${first.message ?? 'invalid'}${keys}` };
     }
-    return error instanceof Error ? error.message : String(error);
+    return { kind: null, problem: error instanceof Error ? error.message : String(error) };
   }
 }
 
 /**
- * The OPT-IN supersession policy. It decides whether the bundled built-in
- * replaces an installed copy with the same id. The only arm is
- * `invalid-source`: the installed YAML does not parse, or the current source
- * schema rejects it, while the built-in is valid.
+ * The OPT-IN, KIND-AWARE supersession policy (WI-6554700010055768). It decides
+ * whether the bundled built-in replaces an installed copy with the same id, for
+ * a consumer that reads `deps.kind` documents. The only arm is `invalid-source`:
+ * the installed YAML does not parse, or the engine's classify-and-validate
+ * rejects it, while the built-in is a VALID document of the consumer's kind.
  *
- * It validates both sides with the HARNESS source schema, so pass it only where
- * that is the consumer's own schema. A consumer that reads another kind (an
- * identity root, say) can see a copy that is valid for it fail that schema; the
- * policy would then swap in a same-id built-in of the wrong kind
- * (WI-6554700010054458: 23 install-blueprint-core / identity-activation reds).
+ * The built-in must be of the consumer's kind, so a same-id built-in of another
+ * kind is never swapped in. The installed identity root `base` and the built-in
+ * workspace blueprint `base` are the measured case (WI-6554700010054458: 23
+ * install-blueprint-core / identity-activation reds while the old
+ * harness-schema-only policy was on by default). Pass `supersedesInstalledFor(kind)`
+ * with the kind the consumer actually loads.
  *
  * A valid installed copy always wins, whatever its version or kind, so the
  * documented first-hit tier order holds for every copy that loads. If either side
- * cannot be read or parsed (or the built-in itself is invalid), the policy
+ * cannot be read, or the built-in is invalid or of another kind, the policy
  * returns `null` and resolution keeps the documented first-hit order.
  */
 export function builtinSupersedesInstalled(
   input: SupersessionInput,
-  deps: { readFile?: (path: string) => string } = {},
+  deps: { kind: SourceDocumentKind; readFile?: (path: string) => string },
 ): BuiltinSupersession | null {
   const readFile = deps.readFile ?? ((path: string) => readFileSync(path, 'utf8'));
   let builtinDocument: unknown;
@@ -107,7 +118,7 @@ export function builtinSupersedesInstalled(
   } catch {
     return null;
   }
-  if (sourceProblem(builtinDocument) !== null) return null;
+  if (classifySource(builtinDocument).kind !== deps.kind) return null;
   let installedText: string;
   try {
     installedText = readFile(input.installedFile);
@@ -118,12 +129,19 @@ export function builtinSupersedesInstalled(
   try {
     installedDocument = parseYaml(installedText);
   } catch (error) {
-    return { ...input, reason: 'invalid-source',
+    return { ...input, kind: deps.kind, reason: 'invalid-source',
       detail: `installed YAML does not parse: ${error instanceof Error ? error.message : String(error)}` };
   }
-  const problem = sourceProblem(installedDocument);
-  if (problem !== null) return { ...input, reason: 'invalid-source', detail: problem };
-  return null;
+  const { problem } = classifySource(installedDocument);
+  return problem === null ? null : { ...input, kind: deps.kind, reason: 'invalid-source', detail: problem };
+}
+
+/** The supersession policy for a consumer that loads `kind` documents (pass as `supersedes`). */
+export function supersedesInstalledFor(
+  kind: SourceDocumentKind,
+  deps: { readFile?: (path: string) => string } = {},
+): (input: SupersessionInput) => BuiltinSupersession | null {
+  return (input) => builtinSupersedesInstalled(input, { ...deps, kind });
 }
 
 export interface ComposedResolveOptions {
@@ -152,9 +170,9 @@ export interface ComposedResolveOptions {
   /**
    * Decides whether the built-in replaces an installed copy of the same id.
    * Omitted or `null` keeps strict first-hit order, which is the default:
-   * supersession is OPT-IN. Pass `builtinSupersedesInstalled` only where the
-   * harness source schema is the consumer's own (see its doc). Local roots are
-   * never superseded, because they are deliberate project authoring.
+   * supersession is OPT-IN. Pass `supersedesInstalledFor(kind)` with the
+   * document kind this consumer actually loads (see `builtinSupersedesInstalled`).
+   * Local roots are never superseded, because they are deliberate project authoring.
    */
   supersedes?: ((input: SupersessionInput) => BuiltinSupersession | null) | null;
   /** Called each time a built-in replaces an installed copy, so the replacement is visible. */
