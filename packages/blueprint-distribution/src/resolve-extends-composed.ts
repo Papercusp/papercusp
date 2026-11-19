@@ -38,8 +38,13 @@ import {
 /**
  * Why a bundled built-in replaced an installed copy of the same id
  * (WI-6554700010054458). Installed copies normally shadow built-ins, but an
- * installed copy that is an OLDER release, or that the current source schema
- * rejects, must not shadow the built-in that ships with this platform build. A
+ * installed copy that the current source schema rejects must not shadow the
+ * built-in that ships with this platform build. Such a copy would make every
+ * resolution through it throw, so swapping in the built-in can never change how
+ * a copy that LOADS resolves. Version is deliberately NOT a criterion: a valid
+ * installed copy keeps first-hit order even when it is older, because an
+ * installed id may be a different document kind (an identity root named `base`
+ * versus the built-in workspace blueprint `base`) or a deliberate pin. A
  * stale Cupboard install of `papercusp-engineer` still carried `visibility:` after
  * identities stopped accepting it. Because it shadowed the built-in, every
  * headless and judge launch failed.
@@ -48,7 +53,7 @@ export interface BuiltinSupersession {
   id: string;
   installedFile: string;
   builtinFile: string;
-  reason: 'older-version' | 'invalid-source';
+  reason: 'invalid-source';
   detail: string;
 }
 
@@ -56,21 +61,6 @@ export interface SupersessionInput {
   id: string;
   installedFile: string;
   builtinFile: string;
-}
-
-const NUMERIC_VERSION = /^(\d+)\.(\d+)\.(\d+)$/;
-
-/** Numeric `x.y.z` ordering; `null` when either side is not a plain numeric triple. */
-function compareNumericVersions(a: unknown, b: unknown): number | null {
-  if (typeof a !== 'string' || typeof b !== 'string') return null;
-  const left = NUMERIC_VERSION.exec(a.trim());
-  const right = NUMERIC_VERSION.exec(b.trim());
-  if (!left || !right) return null;
-  for (let index = 1; index <= 3; index += 1) {
-    const delta = Number(left[index]) - Number(right[index]);
-    if (delta !== 0) return delta;
-  }
-  return 0;
 }
 
 function sourceProblem(document: unknown): string | null {
@@ -91,15 +81,12 @@ function sourceProblem(document: unknown): string | null {
 
 /**
  * The default supersession policy. It decides whether the bundled built-in
- * replaces an installed copy with the same id:
+ * replaces an installed copy with the same id. The only arm is
+ * `invalid-source`: the installed YAML does not parse, or the current source
+ * schema rejects it, while the built-in is valid.
  *
- * - `older-version`: both versions are numeric `x.y.z`, and the installed one is
- *   strictly lower.
- * - `invalid-source`: the current source schema rejects the installed document
- *   but accepts the built-in.
- *
- * A valid installed copy with the same or a newer version still wins, so a
- * deliberate same-version Cupboard activation keeps working. If either side
+ * A valid installed copy always wins, whatever its version or kind, so the
+ * documented first-hit tier order holds for every copy that loads. If either side
  * cannot be read or parsed (or the built-in itself is invalid), the policy
  * returns `null` and resolution keeps the documented first-hit order.
  */
@@ -130,13 +117,6 @@ export function builtinSupersedesInstalled(
   }
   const problem = sourceProblem(installedDocument);
   if (problem !== null) return { ...input, reason: 'invalid-source', detail: problem };
-  const installedVersion = (installedDocument as { version?: unknown } | null)?.version;
-  const builtinVersion = (builtinDocument as { version?: unknown } | null)?.version;
-  const order = compareNumericVersions(installedVersion, builtinVersion);
-  if (order !== null && order < 0) {
-    return { ...input, reason: 'older-version',
-      detail: `installed ${String(installedVersion)} is older than built-in ${String(builtinVersion)}` };
-  }
   return null;
 }
 

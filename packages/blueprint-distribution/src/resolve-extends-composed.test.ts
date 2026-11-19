@@ -49,11 +49,14 @@ test('supersession: an installed identity carrying visibility yields to the vali
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
-test('supersession: an older installed release yields to the newer built-in (numeric ordering)', () => {
+test('supersession: a VALID older installed release still shadows the newer built-in (first-hit order)', () => {
+  // Version is not a criterion: the consumer suites install fixture identity roots
+  // (e.g. `base` at a lower version) that must never be swapped for a built-in.
   const f = supersessionFixture('id: x\nversion: 0.1.9\n', 'id: x\nversion: 0.1.10\n');
   try {
-    assert.equal(f.resolve('x'), f.builtinFile);
-    assert.equal(f.seen[0]!.reason, 'older-version');
+    assert.equal(f.resolve('x'), f.installedFile);
+    assert.equal(f.seen.length, 0);
+    assert.equal(builtinSupersedesInstalled({ id: 'x', installedFile: f.installedFile, builtinFile: f.builtinFile }), null);
   } finally { rmSync(f.root, { recursive: true, force: true }); }
 });
 
