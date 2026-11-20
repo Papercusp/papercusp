@@ -1,5 +1,6 @@
 -- EI-28042943843506687 / D-001. FORWARD-COMPAT: additive draft ledger;
 -- no legacy writer uses it. Original bindings and uniqueness stay unchanged.
+-- Filename follows the original migration_reservations entry for 1623.
 CREATE TABLE harness_shared.blind_review_continuation_custody (
   id bigserial PRIMARY KEY,
   workspace_id text NOT NULL,
