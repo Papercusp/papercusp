@@ -9,6 +9,7 @@ import { createFreshTestDb, type MigratedTestDb } from '@papercusp/test-config/p
 import { getOrgPg, getOrgPgApp, withPriorityOrgPg, _resetForTests, _resetUrlCacheForTests } from './connection';
 import { withWorkspace } from './workspace-context';
 import { pgResultDiagnosticSnapshot } from './acquire-registry';
+import { restoreRawDateSerializers } from './raw-serializers';
 
 let db: MigratedTestDb;
 const keys = ['HARNESS_ADMIN_DATABASE_URL', 'HARNESS_DATABASE_URL', 'PAPERCUSP_DB_POOL_MAX', 'PAPERCUSP_PGBOUNCER'] as const;
@@ -129,6 +130,7 @@ describe('priority client slots behind a real transaction pooler', () => {
 
   beforeAll(async () => {
     direct = postgres(db.url, { max: 1, onnotice: () => {} });
+    restoreRawDateSerializers(direct);
     appRole = `${db.name}_app`;
     const appPassword = `${db.name}_secret`;
     await direct.unsafe(`CREATE ROLE "${appRole}" LOGIN PASSWORD '${appPassword}' NOSUPERUSER NOBYPASSRLS`);
@@ -179,6 +181,13 @@ describe('priority client slots behind a real transaction pooler', () => {
   const readPolicy = (role: typeof roles[number]) => role === 'admin'
     ? getOrgPg().sql`SELECT revision FROM harness_shared.priority_policy WHERE workspace_id = 'scope-a'`
     : withWorkspace('scope-a', tx => tx`SELECT revision FROM priority_policy`);
+
+  it('preserves PostgreSQL microseconds when the direct observer binds a retained timestamp', async () => {
+    const retained = '2026-11-20 20:28:24.753847+00';
+    const [proof] = await direct`SELECT ${retained}::timestamptz =
+      TIMESTAMPTZ '2026-11-20 20:28:24.753847+00' AS exact`;
+    expect(proof!.exact).toBe(true);
+  });
 
   it.each(['scope-a', 'scope-b'])('retains same-SELECT physical server scalars through PgBouncer for %s', async workspace => {
     await withWorkspace(workspace, async tx => {
