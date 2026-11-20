@@ -1,0 +1,64 @@
+-- Local recovery for the existing fact-change consumer. Retractions and
+-- supersessions of the same original version are distinct events.
+CREATE TABLE IF NOT EXISTS harness_shared.fact_change_cascades (
+  workspace_id text NOT NULL,
+  version_id bigint NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('retracted', 'superseded')),
+  scope text NOT NULL,
+  scope_ref text NOT NULL,
+  fact_key text NOT NULL,
+  successor_id bigint,
+  actor text,
+  reason text,
+  cursor_harness text,
+  cursor_item text,
+  scanned bigint NOT NULL DEFAULT 0,
+  matched bigint NOT NULL DEFAULT 0,
+  remaining bigint,
+  scan_finished boolean NOT NULL DEFAULT false,
+  completed_at timestamptz,
+  last_error text,
+  last_attempt timestamptz NOT NULL DEFAULT clock_timestamp(),
+  created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+  PRIMARY KEY (workspace_id, version_id, kind),
+  CHECK ((cursor_harness IS NULL) = (cursor_item IS NULL)),
+  CHECK ((kind = 'superseded') = (successor_id IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS fact_change_cascades_pending
+  ON harness_shared.fact_change_cascades (last_attempt, created_at, workspace_id, version_id, kind)
+  WHERE completed_at IS NULL;
+CREATE INDEX IF NOT EXISTS fact_change_cascades_history
+  ON harness_shared.fact_change_cascades (workspace_id, scope, scope_ref, fact_key, version_id DESC, kind DESC);
+
+-- A match and its flag commit together. Keep the original item identity
+-- and its addressee until the ordinary inbox has accepted the delivery.
+CREATE TABLE IF NOT EXISTS harness_shared.fact_change_cascade_deliveries (
+  workspace_id text NOT NULL,
+  version_id bigint NOT NULL,
+  kind text NOT NULL,
+  harness_slug text NOT NULL,
+  feature_id text NOT NULL,
+  recipient text,
+  title text,
+  terminal_status text NOT NULL,
+  delivered_at timestamptz,
+  PRIMARY KEY (workspace_id, version_id, kind, harness_slug, feature_id),
+  FOREIGN KEY (workspace_id, version_id, kind)
+    REFERENCES harness_shared.fact_change_cascades (workspace_id, version_id, kind) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS fact_change_cascade_deliveries_pending
+  ON harness_shared.fact_change_cascade_deliveries (workspace_id, version_id, kind, recipient)
+  WHERE delivered_at IS NULL;
+
+ALTER TABLE harness_shared.fact_change_cascades ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS fact_change_cascade_workspace ON harness_shared.fact_change_cascades;
+CREATE POLICY fact_change_cascade_workspace ON harness_shared.fact_change_cascades
+  USING (workspace_id = current_setting('app.workspace_id', true))
+  WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+ALTER TABLE harness_shared.fact_change_cascade_deliveries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS fact_change_delivery_workspace ON harness_shared.fact_change_cascade_deliveries;
+CREATE POLICY fact_change_delivery_workspace ON harness_shared.fact_change_cascade_deliveries
+  USING (workspace_id = current_setting('app.workspace_id', true))
+  WITH CHECK (workspace_id = current_setting('app.workspace_id', true));
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_shared.fact_change_cascades,
+  harness_shared.fact_change_cascade_deliveries TO harness_app;
