@@ -191,17 +191,22 @@ describe('priority client slots behind a real transaction pooler', () => {
         diagnostic_statement_at: setup.serverStatementAt });
       expect(setup.physicalBackendPid).toBeGreaterThan(0);
       expect(setup.serverStatementAt).toMatch(/\.\d{1,6}[+-]/);
-      const activity = await direct`SELECT pid, state,
+      const activity = await direct`SELECT pid, state, xact_start::text AS transaction_started_at,
+        query_start::text AS query_started_at, clock_timestamp()::text AS observed_at,
         ${setup.serverStatementAt}::timestamptz BETWEEN xact_start AND clock_timestamp() AS in_transaction
         FROM pg_stat_activity WHERE pid = ${setup.physicalBackendPid}`;
       expect(activity).toHaveLength(1);
-      expect(activity[0]).toMatchObject({ pid: setup.physicalBackendPid,
-        state: 'idle in transaction', in_transaction: true });
       const rows = await tx`SELECT pg_backend_pid() AS physical_pid,
+        transaction_timestamp()::text AS held_transaction_at,
         current_setting('app.workspace_id') AS workspace, revision FROM priority_policy`;
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ physical_pid: setup.physicalBackendPid, workspace,
         revision: workspace === 'scope-a' ? 1 : 99 });
+      const clocks = { retained: setup.serverStatementAt, transactionStart: activity[0]!.transaction_started_at,
+        queryStart: activity[0]!.query_started_at, observed: activity[0]!.observed_at,
+        heldTransaction: rows[0]!.held_transaction_at };
+      expect(activity[0], JSON.stringify(clocks)).toMatchObject({ pid: setup.physicalBackendPid,
+        state: 'idle in transaction', in_transaction: true });
       // Existing protocol PID stays a separate field, and default snapshots
       // expose neither result rows nor the workspace/GUC values.
       expect(typeof setup.backendPid).toBe('number');

@@ -1506,10 +1506,14 @@ export const blueprintPackageInstallationsInHarnessShared = harnessShared.table(
 	phase: text().default('preparing').notNull(),
 	error: text(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	humanOwnership: jsonb("human_ownership"),
+	scopedGrants: jsonb("scoped_grants"),
 }, (table) => [
 	index("blueprint_package_installations_owner_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops")).where(sql`(phase <> 'released'::text)`),
 	primaryKey({ columns: [table.dependentId, table.workspaceId], name: "blueprint_package_installations_pkey"}),
 	pgPolicy("blueprint_package_installations_workspace", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
+	check("blueprint_installation_human_ownership_shape", sql`(human_ownership IS NULL) OR (((jsonb_typeof(human_ownership) = 'object'::text) AND ((human_ownership -> 'schemaVersion'::text) = '1'::jsonb) AND (jsonb_typeof((human_ownership -> 'declaration'::text)) = 'string'::text) AND (jsonb_typeof((human_ownership -> 'authMethod'::text)) = 'string'::text) AND (jsonb_typeof((human_ownership -> 'workspaceId'::text)) = 'string'::text) AND (jsonb_typeof((human_ownership -> 'ownerId'::text)) = 'string'::text) AND (jsonb_typeof((human_ownership -> 'specificationRevision'::text)) = 'string'::text) AND (jsonb_typeof((human_ownership -> 'principalRevision'::text)) = 'string'::text) AND ((human_ownership ->> 'declaration'::text) = 'self'::text) AND ((human_ownership ->> 'authMethod'::text) = 'cookie-session'::text) AND ((human_ownership ->> 'workspaceId'::text) = workspace_id) AND ((human_ownership ->> 'ownerId'::text) = owner_id) AND ((human_ownership ->> 'specificationRevision'::text) = specification_revision) AND (jsonb_typeof((human_ownership -> 'userId'::text)) = 'string'::text) AND (length(btrim((human_ownership ->> 'userId'::text))) > 0) AND ((human_ownership ->> 'userId'::text) <> '*'::text) AND ((human_ownership ->> 'specificationRevision'::text) ~ '^[a-f0-9]{64}$'::text) AND ((human_ownership ->> 'principalRevision'::text) ~ '^[a-f0-9]{64}$'::text) AND ((human_ownership - ARRAY['schemaVersion'::text, 'declaration'::text, 'authMethod'::text, 'workspaceId'::text, 'ownerId'::text, 'userId'::text, 'specificationRevision'::text, 'principalRevision'::text]) = '{}'::jsonb)) IS TRUE)`),
+	check("blueprint_installation_scoped_grants_shape", sql`(scoped_grants IS NULL) OR (((human_ownership IS NOT NULL) AND harness_shared.blueprint_installation_scoped_grants_valid(scoped_grants)) IS TRUE)`),
 	check("blueprint_package_installations_expected_resources_check", sql`jsonb_typeof(expected_resources) = 'object'::text`),
 	check("blueprint_package_installations_phase_check", sql`phase = ANY (ARRAY['preparing'::text, 'applied'::text, 'releasing'::text, 'released'::text, 'cleanup_failed'::text])`),
 ]);
@@ -4021,6 +4025,29 @@ export const docRevisionsInHarnessShared = harnessShared.table("doc_revisions", 
 	unique("doc_revisions_ws_harness_doc_seq_key").on(table.docId, table.harnessSlug, table.seq, table.workspaceId),
 ]);
 
+export const docSectionPredecessorsInHarnessShared = harnessShared.table("doc_section_predecessors", {
+	sourceKey: text("source_key").notNull(),
+	slug: text().notNull(),
+	successorAnchor: text("successor_anchor").notNull(),
+	successorSha: text("successor_sha").notNull(),
+	anchor: text().notNull(),
+	title: text().notNull(),
+	url: text().notNull(),
+	content: text().notNull(),
+	pageSha: text("page_sha").notNull(),
+	sectionIdx: integer("section_idx").notNull(),
+	embedding: unboundedVectorCustom().notNull(),
+	profileId: text("profile_id").notNull(),
+	requiredLegacyMode: text("required_legacy_mode"),
+}, (table) => [
+	foreignKey({
+			columns: [table.sourceKey, table.slug, table.successorAnchor, table.successorSha],
+			foreignColumns: [docSectionsInHarnessShared.sourceKey, docSectionsInHarnessShared.slug, docSectionsInHarnessShared.anchor, docSectionsInHarnessShared.pageSha],
+			name: "doc_section_predecessors_source_key_slug_successor_anchor__fkey"
+		}).onDelete("cascade"),
+	primaryKey({ columns: [table.anchor, table.slug, table.sourceKey, table.successorSha], name: "doc_section_predecessors_pkey"}),
+]);
+
 export const docSectionsInHarnessShared = harnessShared.table("doc_sections", {
 	sourceKey: text("source_key").notNull(),
 	slug: text().notNull(),
@@ -5169,6 +5196,25 @@ export const governanceDelegationsInHarnessShared = harnessShared.table("governa
 
 ]);
 
+export const governanceHostAuthorityBindingsInHarnessShared = harnessShared.table("governance_host_authority_bindings", {
+	workspaceId: text("workspace_id").notNull(),
+	kind: text().notNull(),
+	subjectId: text("subject_id").notNull(),
+	humanOwnerId: text("human_owner_id").notNull(),
+	requestPrincipalRevision: text("request_principal_revision").notNull(),
+	reason: text().notNull(),
+	recordedAt: timestamp("recorded_at", { withTimezone: true, mode: 'string' }).default(sql`clock_timestamp()`).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.kind, table.subjectId, table.workspaceId], name: "governance_host_authority_bindings_pkey"}),
+	check("governance_host_authority_bind_request_principal_revision_check", sql`request_principal_revision ~ '^[a-f0-9]{64}$'::text`),
+	check("governance_host_authority_bindings_check", sql`(kind <> 'user'::text) OR (subject_id = human_owner_id)`),
+	check("governance_host_authority_bindings_human_owner_id_check", sql`(human_owner_id <> ''::text) AND (human_owner_id = btrim(human_owner_id))`),
+	check("governance_host_authority_bindings_kind_check", sql`kind = ANY (ARRAY['user'::text, 'platform'::text, 'organization'::text, 'department'::text, 'workspace'::text])`),
+	check("governance_host_authority_bindings_reason_check", sql`length(btrim(reason)) > 0`),
+	check("governance_host_authority_bindings_subject_id_check", sql`(subject_id <> ''::text) AND (subject_id = btrim(subject_id))`),
+	check("governance_host_authority_bindings_workspace_id_check", sql`(workspace_id <> ''::text) AND (workspace_id = btrim(workspace_id)) AND (workspace_id <> '*'::text)`),
+]);
+
 export const governancePolicyLayerVersionsInHarnessShared = harnessShared.table("governance_policy_layer_versions", {
 	layerId: text("layer_id").notNull(),
 	version: integer().notNull(),
@@ -5211,9 +5257,9 @@ export const governancePolicyLayersInHarnessShared = harnessShared.table("govern
 			foreignColumns: [table.layerId],
 			name: "governance_policy_layers_parent_layer_id_fkey"
 		}),
-	check("governance_policy_layers_level_check", sql`level = ANY (ARRAY['organization'::text, 'department'::text, 'workspace'::text])`),
+	check("governance_policy_layers_level_check", sql`level = ANY (ARRAY['organization'::text, 'department'::text, 'workspace'::text, 'user'::text, 'platform'::text])`),
 	check("governance_policy_layers_no_self_parent", sql`parent_layer_id IS DISTINCT FROM layer_id`),
-	check("governance_policy_layers_root_is_org", sql`(parent_layer_id IS NULL) = (level = 'organization'::text)`),
+	check("governance_policy_layers_root_is_org", sql`(parent_layer_id IS NULL) = (level = ANY (ARRAY['organization'::text, 'user'::text, 'platform'::text]))`),
 	check("governance_policy_layers_version_check", sql`version >= 1`),
 	primaryKey({ columns: [table.layerId], name: "governance_policy_layers_pkey"}),
 
@@ -5557,6 +5603,7 @@ export const harnessDocsInHarnessShared = harnessShared.table("harness_docs", {
 	projectedClients: jsonb("projected_clients").default({}).notNull(),
 	retiredAt: timestamp("retired_at", { withTimezone: true, mode: 'string' }),
 	retiredReason: text("retired_reason"),
+	lastReview: jsonb("last_review"),
 }, (table) => [
 	index("harness_docs_anchor_paths_idx").using("gin", table.anchorPaths.asc().nullsLast().op("array_ops")),
 	index("harness_docs_live_authored_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.harnessSlug.asc().nullsLast().op("text_ops")).where(sql`((retired_at IS NULL) AND (content_mode = 'authored'::text))`),
@@ -11306,6 +11353,7 @@ export const semanticCodeFilesInHarnessShared = harnessShared.table("semantic_co
 	normalizationVersion: text("normalization_version").notNull(),
 	dimensions: integer().notNull(),
 	state: text().notNull(),
+	refreshId: uuid("refresh_id"),
 }, (table) => [
 	primaryKey({ columns: [table.embeddingProfile, table.path, table.repositoryId, table.workspaceId], name: "semantic_code_files_pkey"}),
 	check("semantic_code_files_dimensions_check", sql`dimensions > 0`),
@@ -11326,6 +11374,7 @@ export const semanticCodeFunctionsInHarnessShared = harnessShared.table("semanti
 	normalizedBody: text("normalized_body").notNull(),
 	embedding: unboundedVectorCustom().notNull(),
 	searchText: tsvectorCustom("search_text").generatedAlwaysAs(sql`to_tsvector('simple'::regconfig, ((summary || ' '::text) || normalized_body))`),
+	inputSha256: text("input_sha256"),
 }, (table) => [
 	index("semantic_code_functions_text_idx").using("gin", table.searchText.asc().nullsLast().op("tsvector_ops")),
 	foreignKey({
@@ -12890,6 +12939,9 @@ export const testingRunSnapshotsInHarnessShared = harnessShared.table("testing_r
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 	taskId: text("task_id"),
 	documentationInput: jsonb("documentation_input"),
+	nativeProofInput: jsonb("native_proof_input"),
+	nativeProofEvents: jsonb("native_proof_events"),
+	nativeProofChildLaunch: jsonb("native_proof_child_launch"),
 }, (table) => [
 	index("testing_run_snapshots_finished_idx").using("btree", table.finishedAt.desc().nullsFirst().op("timestamptz_ops"), table.runId.asc().nullsLast().op("text_ops")).where(sql`(finished_at IS NOT NULL)`),
 	index("testing_run_snapshots_updated_idx").using("btree", table.updatedAt.desc().nullsFirst().op("timestamptz_ops"), table.runId.asc().nullsLast().op("text_ops")),
