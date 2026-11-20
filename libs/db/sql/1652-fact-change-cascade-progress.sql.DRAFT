@@ -31,6 +31,67 @@ CREATE TABLE IF NOT EXISTS harness_shared.fact_change_cascades (
 );
 ALTER TABLE harness_shared.fact_change_cascades
   ADD COLUMN IF NOT EXISTS citation_after_version bigint;
+
+-- Equivalent local refreshes carry the same lower bound. An unavailable
+-- predecessor leaves the bound unknown, even if an earlier citation survives.
+CREATE OR REPLACE FUNCTION harness_shared.fact_citation_floor(subject harness_shared.agent_facts)
+RETURNS bigint LANGUAGE sql STABLE AS $$
+  WITH RECURSIVE lineage(id, supersedes_id, body, floor) AS (
+    SELECT (subject).id, (subject).supersedes_id, (subject).body, (subject).citation_after_version
+    UNION ALL
+    SELECT p.id, p.supersedes_id, p.body, p.citation_after_version
+      FROM lineage l JOIN harness_shared.agent_facts p ON p.id = l.supersedes_id
+     WHERE l.floor IS NULL AND p.id < l.id AND p.retracted_at IS NULL AND p.body = l.body
+       AND p.workspace_id = (subject).workspace_id AND p.scope = (subject).scope AND p.key = (subject).key
+       AND coalesce(p.scope_ref, '') = coalesce((subject).scope_ref, '') AND p.source_hive IS NULL
+  )
+  SELECT coalesce(l.floor, CASE WHEN l.supersedes_id IS NULL THEN l.id - 1 ELSE boundary.id END)
+    FROM lineage l LEFT JOIN harness_shared.agent_facts boundary ON boundary.id = l.supersedes_id
+     AND boundary.id < l.id AND boundary.workspace_id = (subject).workspace_id
+     AND boundary.scope = (subject).scope AND boundary.key = (subject).key AND boundary.source_hive IS NULL
+     AND coalesce(boundary.scope_ref, '') = coalesce((subject).scope_ref, '')
+   ORDER BY l.id LIMIT 1
+$$;
+
+CREATE OR REPLACE FUNCTION harness_shared.stamp_fact_citation_floor()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  NEW.citation_after_version := harness_shared.fact_citation_floor(NEW);
+  RETURN NEW;
+END
+$$;
+CREATE OR REPLACE TRIGGER stamp_fact_citation_floor
+  BEFORE INSERT ON harness_shared.agent_facts FOR EACH ROW
+  WHEN (NEW.source_hive IS NULL AND NEW.citation_after_version IS NULL)
+  EXECUTE FUNCTION harness_shared.stamp_fact_citation_floor();
+
+CREATE OR REPLACE FUNCTION harness_shared.stamp_cascade_citation_floor()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  -- Keep the generation even on a database without the optional fact column.
+  IF EXISTS (SELECT FROM pg_attribute WHERE attrelid = 'harness_shared.agent_facts'::regclass
+             AND attname = 'citation_after_version' AND NOT attisdropped) THEN
+    SELECT harness_shared.fact_citation_floor(f) INTO NEW.citation_after_version
+      FROM harness_shared.agent_facts f
+     WHERE f.id = NEW.version_id AND f.workspace_id = NEW.workspace_id AND f.scope = NEW.scope
+       AND coalesce(f.scope_ref, '') = NEW.scope_ref AND f.key = NEW.fact_key AND f.source_hive IS NULL;
+  END IF;
+  RETURN NEW;
+END
+$$;
+CREATE OR REPLACE TRIGGER stamp_cascade_citation_floor
+  BEFORE INSERT ON harness_shared.fact_change_cascades FOR EACH ROW
+  WHEN (NEW.kind = 'superseded' AND NEW.citation_after_version IS NULL)
+  EXECUTE FUNCTION harness_shared.stamp_cascade_citation_floor();
+
+-- Older pending generations retain their cursors and deliveries. Freeze any
+-- recoverable statement boundary before the next expiry sweep.
+UPDATE harness_shared.fact_change_cascades g SET citation_after_version = harness_shared.fact_citation_floor(f)
+  FROM harness_shared.agent_facts f
+ WHERE g.completed_at IS NULL AND g.kind = 'superseded' AND g.citation_after_version IS NULL
+   AND f.id = g.version_id AND f.workspace_id = g.workspace_id AND f.scope = g.scope
+   AND coalesce(f.scope_ref, '') = g.scope_ref AND f.key = g.fact_key AND f.source_hive IS NULL;
+
 CREATE INDEX IF NOT EXISTS fact_change_cascades_pending
   ON harness_shared.fact_change_cascades (last_attempt, created_at, workspace_id, version_id, kind)
   WHERE completed_at IS NULL;
