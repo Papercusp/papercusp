@@ -1,5 +1,10 @@
 -- Local recovery for the existing fact-change consumer. Retractions and
 -- supersessions of the same original version are distinct events.
+-- Pins above this exclusive bound belong to the uninterrupted statement.
+-- A version written before this migration can recover its boundary from its predecessors.
+ALTER TABLE harness_shared.agent_facts
+  ADD COLUMN IF NOT EXISTS citation_after_version bigint;
+
 CREATE TABLE IF NOT EXISTS harness_shared.fact_change_cascades (
   workspace_id text NOT NULL,
   version_id bigint NOT NULL,
@@ -24,6 +29,8 @@ CREATE TABLE IF NOT EXISTS harness_shared.fact_change_cascades (
   CHECK ((cursor_harness IS NULL) = (cursor_item IS NULL)),
   CHECK ((kind = 'superseded') = (successor_id IS NOT NULL))
 );
+ALTER TABLE harness_shared.fact_change_cascades
+  ADD COLUMN IF NOT EXISTS citation_after_version bigint;
 CREATE INDEX IF NOT EXISTS fact_change_cascades_pending
   ON harness_shared.fact_change_cascades (last_attempt, created_at, workspace_id, version_id, kind)
   WHERE completed_at IS NULL;
