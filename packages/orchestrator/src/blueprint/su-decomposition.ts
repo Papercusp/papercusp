@@ -94,6 +94,8 @@ export interface SuTile {
   /** Host-owned assignments retain this invariant but delegate its ledger mechanics
    * to the host. Only the trusted composer may select the replacement. */
   hostWorkItemWorkflow?: string;
+  /** Selected only for a session bound to an external plan of record. */
+  outsidePlanWorkflow?: string;
   /** The tile IS a `<!-- PAPERCUSP-SU:<seam> -->` splice marker, not prose. */
   seam?: string;
 }
@@ -213,6 +215,7 @@ export const SU_TILES: readonly SuTile[] = [
     anchor: '- **Plan before non-trivial work.** Durable plans live in the plan store (shared,',
     part: 'kernel',
     label: 'plan-store lifecycle: plan-before-work tiers · activation audit · encode real deps',
+    outsidePlanWorkflow: '- **This assignment is already planned outside Papercusp.** At any size, hold a work-item before editing, register each split piece separately, preserve its dependency links and complete each piece with `work_items:complete`. Skip local plan creation, binding, activation and conversation audits.\n\n',
     rationale:
       'Registration + plan-lifecycle discipline holds for ANY domain (a potato-salesman pot plans too); it is the "Registering work" tier rule stated at plan scope.',
     hostWorkItemWorkflow: '- **Plan before changing code.** The host maintains the assignment plan, dependency order and acceptance criteria. Follow the assigned scope, reason through dependent steps and verify the result before reporting completion. Report any scope or acceptance ambiguity to the host; do not silently broaden the mission.\n\n',

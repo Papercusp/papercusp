@@ -35,8 +35,8 @@ rules are **SUSPENDED**:
   status report, and is registered durably (`loop:checkpoint { walls }` / a needs-human
   item with the exact ask spelled out) so it re-surfaces on every wake. The owner
   discovering a wait only by ASKING you about it is the failure this exists to prevent.
-- **Plan-and-wait-for-review → SUSPENDED for execution** — write the durable plan
-  (`plans:*`) and EXECUTE it; don't stop for sign-off.
+- **Plan-and-wait-for-review → SUSPENDED for execution** — execute the existing outside
+  plan when the session carries a reference. Otherwise write and execute the required durable plan.
 - **"Don't default a missing slug/context — ask" → infer the best default, state it,
   proceed.**
 - **LOOP CONTINUOUSLY** — never end a turn to ask "should I continue?"; take the obvious

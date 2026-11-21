@@ -83,6 +83,7 @@ export interface SuStackComposeOptions extends ComposeStackOptions {
   /** Selected from authoritative host confinement, never a solver launch option.
    * Keeps the sealed kernel and its invariants; delegates only ledger mechanics. */
   workItemWorkflow?: 'host-managed';
+  outsidePlan?: boolean;
   /** The harness install dir (default: the built-in harness via `harnessPath`). */
   harnessDir?: string;
   /** su.md text override (tests); default: read from the harness. */
@@ -155,8 +156,8 @@ export const SU_STATIC_LAYERS: readonly BoundLayer[] = [
 ];
 
 /** The fleet-posture layer for a role — what fleet:join / take-leadership attach. */
-export function suPostureLayer(role: FleetPostureRole): BoundLayer {
-  return { slot: 'fleet-posture', id: role === 'leader' ? 'su.fleet-leader' : 'su.fleet-member' };
+export function suPostureLayer(role: FleetPostureRole, outsidePlan = false): BoundLayer {
+  return { slot: 'fleet-posture', id: outsidePlan ? `su.outside-fleet-${role}` : `su.fleet-${role}` };
 }
 
 export function suPostureBinding(role: FleetPostureRole | null | undefined): StackBinding {
@@ -169,12 +170,12 @@ export function suPostureBinding(role: FleetPostureRole | null | undefined): Sta
  * table" of P-012: the binding is derived, and the control anchor projects it.
  */
 export function suSessionBinding(
-  session: { fleetRole?: string | null; modes?: readonly string[] | null },
+  session: { fleetRole?: string | null; modes?: readonly string[] | null; outsidePlan?: boolean },
   modeCatalog?: ModeCatalogSnapshot,
 ): StackBinding {
   const layers: BoundLayer[] = [];
   const role = (session.fleetRole ?? '').trim().toLowerCase();
-  if (role === 'leader' || role === 'member') layers.push(suPostureLayer(role));
+  if (role === 'leader' || role === 'member') layers.push(suPostureLayer(role, session.outsidePlan));
   // P-021: the ACTIVE registry modes (`agent_modes`, implication closure already applied by
   // the registry write) bind one mode-axis identity per axis — `su.mode-auto` on
   // `autonomy`, … — additive ACROSS axes, exclusive WITHIN one (D-008 amendment). Modes
@@ -233,10 +234,14 @@ function partDoc(id: SuPartDocument['id']): SuPartDocument {
 }
 
 function textOf(located: readonly LocatedSuTile[], doc: SuPartDocument, drop: ReadonlySet<LocatedSuTile> = new Set(),
-  workflow?: SuStackComposeOptions['workItemWorkflow']): string {
+  workflow?: SuStackComposeOptions['workItemWorkflow'], outsidePlan = false): string {
   return tilesOfDocument(located, doc)
     .filter((t) => !drop.has(t))
-    .map((t) => workflow === 'host-managed' && t.hostWorkItemWorkflow ? t.hostWorkItemWorkflow : t.text)
+    .map((t) => {
+      if (workflow === 'host-managed' && t.hostWorkItemWorkflow) return t.hostWorkItemWorkflow;
+      if (outsidePlan && t.outsidePlanWorkflow) return t.outsidePlanWorkflow;
+      return t.text;
+    })
     .join('');
 }
 
@@ -269,7 +274,7 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   const kernelDoc = partDoc('su.kernel');
   const docs: StackDocument[] = [
     { id: 'agent-base-preamble', layer: 'kernel', text: preamble, sourcePath: SU_PREAMBLE_REL },
-    { id: kernelDoc.id, layer: 'kernel', text: textOf(located, kernelDoc, drop, opts.workItemWorkflow), sourcePath: kernelDoc.path },
+    { id: kernelDoc.id, layer: 'kernel', text: textOf(located, kernelDoc, drop, opts.workItemWorkflow, opts.outsidePlan), sourcePath: kernelDoc.path },
   ];
   // The client seam tile renders AS the client layer — the per-client overlay is spliced there.
   const seam = located.filter((t) => t.part === 'client');
@@ -342,14 +347,17 @@ export function suBoundLayerDocument(
   const mode = suModeDocument(layer.id);
   const audience =
     AUDIENCE_IDENTITY_DOCUMENTS.find((document) => document.id === layer.id) ?? null;
-  const authored = mode ?? audience;
+  const outsidePosture = layer.id === 'su.outside-fleet-member' || layer.id === 'su.outside-fleet-leader'
+    ? { id: layer.id, slot: 'fleet-posture' as const, path: `blueprints/${layer.id}/prompts/fleet-posture.md` }
+    : null;
+  const authored = mode ?? audience ?? outsidePosture;
   if (authored) {
     if (authored.slot !== layer.slot) return null;
     const roots = resolve?.identityRoots ?? [harnessRoot()];
     const hit = resolveSuIdentityDocument(authored, roots);
     if (!hit) {
       throw new Error(
-        `su-stack: ${mode ? 'mode' : 'audience'} identity document for "${layer.slot}:${layer.id}" (${authored.path}) exists in none of the identity roots [${roots.join(', ')}] — the identity is not installed in any tier`,
+        `su-stack: ${mode ? 'mode' : outsidePosture ? 'fleet-posture' : 'audience'} identity document for "${layer.slot}:${layer.id}" (${authored.path}) exists in none of the identity roots [${roots.join(', ')}] — the identity is not installed in any tier`,
       );
     }
     return {

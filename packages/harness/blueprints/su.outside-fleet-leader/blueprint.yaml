@@ -1,0 +1,6 @@
+id: su.outside-fleet-leader
+extends: identity-root
+version: 0.1.0
+description: Fleet leader posture for a session bound to an outside plan reference.
+slots:
+  - slot: fleet-posture
