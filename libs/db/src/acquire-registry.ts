@@ -263,6 +263,7 @@ export const PG_DIAGNOSTIC_STAGES = [
 /** Source-defined query legs retained only as bounded diagnostic labels. */
 export const PG_DIAGNOSTIC_QUERY_LEGS = [
   'work-items-page', 'work-items-presentation',
+  'plan-binding-census', 'plan-readiness-fence',
 ] as const;
 export type PgDiagnosticQueryLeg = (typeof PG_DIAGNOSTIC_QUERY_LEGS)[number];
 
