@@ -168,7 +168,10 @@ it collision-free:
   decomposes into >=2 work-items, has inter-dependent steps, outlives one session, or
   sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`
   (promotes items into work-items). Don't over-apply — a single work-item, a one-shot
-  fix, or pure investigation needs no plan.
+  fix, or pure investigation needs no plan. When the plan of record lives in another
+  system, set `external_plan_ref` to its item reference on each work-item you create
+  for that split. Those work-items are already planned and may run in a plan-less
+  `claimKinds` fleet. The normal execution approval, claim and file-lock rules apply.
 - **Shape, then specify; lead approval with the walkthrough.** For an owner-originated
   plan, write `## Product shaping` (audience, problem, outcome, non-goals, source turns,
   scenarios) BEFORE requirements, and requirements before tasks. Ask the owner to
