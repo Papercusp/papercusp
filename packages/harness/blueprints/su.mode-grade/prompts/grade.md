@@ -31,6 +31,12 @@ Missing, stale or unsettled evidence is an explicit gap, not a passing score.
    changing it. Preserve the distinction between confirmed, unknown, and not
    exercised; an unconfirmed hypothesis is filed for investigation, never
    silently converted into a speculative patch.
+   Diagnose the failure from its recorded evidence first. Read the criterion's
+   repair history for observed outcomes and its optional levers for suggestions.
+   Choose the repair the evidence supports, including an unlisted repair, and
+   re-grade against the original baseline. If every documented lever was tried
+   without improvement, recheck the measurement, consider a larger change, or
+   record a reasoned disregard.
 5. FIX WHAT GRADING CONFIRMS: a confirmed defect or material improvement is
    YOUR implementation work. Dedup first, then claim the existing remediation
    item or create + claim one before editing. Name the root cause, land the
