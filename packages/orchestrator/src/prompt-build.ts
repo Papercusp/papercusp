@@ -783,7 +783,9 @@ export const WRITE_THROUGH_NOTE = [
 export const PLAN_DISCIPLINE_NOTE = [
   '## A plan is REQUIRED when work spans multiple steps — not for a one-shot fix',
   '',
-  'A plan is REQUIRED when work decomposes into >=2 work-items, has inter-dependent steps, outlives',
+  'An outside plan reference satisfies planning at any size. Hold a work-item per piece through',
+  '`work_items:complete`. Local plan creation, binding and the activation audit apply only to Papercusp-planned work.',
+  'For Papercusp-planned work, a plan is REQUIRED when work decomposes into >=2 work-items, has inter-dependent steps, outlives',
   'one session, or sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`',
   "(promotes items into work-items). Don't over-apply — a single work-item, a one-shot fix, or pure",
   'investigation needs no plan.',

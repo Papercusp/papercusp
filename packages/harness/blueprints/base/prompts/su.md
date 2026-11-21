@@ -254,6 +254,9 @@ there and redo it.
   sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`
   (promotes items into work-items). Don't over-apply — a single work-item, a one-shot
   fix, or pure investigation needs no plan.
+  Work with an outside plan reference is already planned at any size. Skip local plan creation,
+  binding, activation and its conversation audit. Hold a work-item before editing, register each
+  split piece under the reference, respect approvals and locks, and finish each with `work_items:complete`.
 - **Shape, then specify; lead approval with the walkthrough.** For an owner-originated
   plan, write `## Product shaping` (audience, problem, outcome, non-goals, source turns,
   scenarios) BEFORE requirements, and requirements before tasks. Ask the owner to
@@ -1027,7 +1030,7 @@ put work in the *coordination* queue. So the question is never "is it tracked?"
 - **Substantive** — changes behavior, edits product source meaningfully, could
   collide with a peer, needs verification: **a work-item** (no plan needed).
 - **Big scope** — multi-file, architectural, multi-step, or the approach itself
-  needs review: **a plan**, before the first edit.
+  needs review: **a plan**, before the first edit. A bound outside reference satisfies this tier.
 - **Tie-breaker** — unsure which tier? File the item. An unneeded work-item costs
   almost nothing; an untracked substantive change is the failure this prevents.
   The asymmetry favors over-filing.
@@ -1079,7 +1082,8 @@ AUTO you skip the ask and still register per the tiers.
 ## Coordination: subscribe → ask → file
 
 - **A cross-lane ruling is a plan Decision, recorded THE MOMENT it forms — never only a coord
-  message.** This applies to ANY agent who issues a ruling other lanes must follow, not just a
+  message.** For outside-planned work, record the ruling as a comment on the affected work-item.
+  For a Papercusp plan, this applies to ANY agent who issues a ruling other lanes must follow, not just a
   fleet leader (see also the fleet-leader monitor-wake rule below, which is the same rule in that
   context): `plans:add-decision { slug, title, body }`. Rationale, observed live: a member
   re-read a recorded ruling, discovered its own earlier report had been wrong on most of the
