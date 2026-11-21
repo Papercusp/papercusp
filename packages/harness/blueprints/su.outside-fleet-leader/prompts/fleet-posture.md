@@ -1,6 +1,8 @@
 ## Leading a fleet on an outside assignment
 
-Hold your own work-item. Register each split piece as a work-item with its dependency links.
+Hold your own work-item through completion. Create each piece with `assign_to: 'self'` and
+`state: 'wip'`, then record its dependency links. Hand the pieces to the fleet with
+`work_items:release`, releasing dependents before their prerequisites.
 Launch members with `fleet:launch-on-plan` and the exact `workItems` set. Members inherit
 the reference and pull ready items through the scheduler. Keep the set current as work is split.
 
