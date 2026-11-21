@@ -222,6 +222,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	retiredBy: text("retired_by"),
 	retiredReason: text("retired_reason"),
 	childLaunchSessionId: text("child_launch_session_id"),
+	outsidePlanRef: text("outside_plan_ref"),
 }, (table) => [
 	index("adv_sessions_app_operation_caller_idx").using("btree", sql`workspace_id`, sql`split_part((((launch_spec -> 'acceptedOperation'::text) -> 'pin'::text) ->> 'callerId'::text), '/'::text, 1)`).where(sql`(launch_spec ? 'acceptedOperation'::text)`),
 	index("adv_sessions_coord_owner_first_seen_idx").using("btree", table.coordOwnerId.asc().nullsLast().op("text_ops"), table.firstSeenAt.asc().nullsLast().op("timestamptz_ops")).where(sql`(coord_owner_id IS NOT NULL)`),
@@ -244,6 +245,7 @@ export const advSessionsInHarnessShared = harnessShared.table("adv_sessions", {
 	check("adv_sessions_ended_by_check", sql`(ended_by IS NULL) OR (ended_by = ANY (ARRAY['self'::text, 'signal'::text, 'reaper'::text, 'reconciler'::text, 'cleanup'::text]))`),
 	check("adv_sessions_ended_signal_check", sql`(ended_signal IS NULL) OR (ended_by = 'signal'::text)`),
 	check("adv_sessions_mode_check", sql`mode = ANY (ARRAY['omp'::text, 'console'::text])`),
+	check("adv_sessions_outside_plan_ref_valid", sql`(outside_plan_ref IS NULL) OR (((char_length(outside_plan_ref) >= 1) AND (char_length(outside_plan_ref) <= 200)) AND (plan_slug IS NULL))`),
 	check("adv_sessions_su_session_state_check", sql`(su_session_state IS NULL) OR (su_session_state = ANY (ARRAY['starting'::text, 'ready'::text, 'running'::text, 'waiting-for-owner'::text, 'resuming'::text, 'compacting'::text, 'interrupted'::text, 'ended'::text, 'failed'::text]))`),
 ]);
 
