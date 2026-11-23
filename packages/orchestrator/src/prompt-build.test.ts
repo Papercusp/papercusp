@@ -641,7 +641,10 @@ test('buildPrompt — every role gets the plan-discipline bright-line (P-016)', 
         extras: [],
       });
       assert.match(out, /## A plan is REQUIRED when work spans multiple steps/);
-      assert.match(out, /A plan is REQUIRED when work decomposes into >=2 work-items/);
+      // 43cbc1be (2026-11-21) scoped the rule to Papercusp-planned work ("For Papercusp-planned
+      // work, a plan is REQUIRED …") and added the outside-plan-reference exemption.
+      assert.match(out, /a plan is REQUIRED when work decomposes into >=2 work-items/);
+      assert.match(out, /An outside plan reference satisfies planning at any size/);
       assert.match(out, /plans:new/);
       assert.match(out, /plans:start/);
       // Don't over-apply — the other half of the bright line.
@@ -723,7 +726,8 @@ test('buildPrompt — every role gets the sharpened flag-on dangerous-set rule (
 test('the directive constants each carry their load-bearing phrase (single-source pin)', () => {
   assert.match(WORK_RECORD_NOTE, /Before your first code\/deliverable edit you MUST hold a work-item/);
   assert.match(WORK_RECORD_NOTE, /never a substitute/);
-  assert.match(PLAN_DISCIPLINE_NOTE, /A plan is REQUIRED when work decomposes into >=2 work-items/);
+  assert.match(PLAN_DISCIPLINE_NOTE, /a plan is REQUIRED when work decomposes into >=2 work-items/);
+  assert.match(PLAN_DISCIPLINE_NOTE, /An outside plan reference satisfies planning at any size/);
   assert.match(OBSERVATION_CAPTURE_NOTE, /Capture what you notice the moment you notice it/);
   assert.match(FINISH_THE_ROLLOUT_NOTE, /Ship features flag-ON by default/);
   assert.match(FINISH_THE_ROLLOUT_NOTE, /Default-OFF is ONLY for the dangerous set/);
