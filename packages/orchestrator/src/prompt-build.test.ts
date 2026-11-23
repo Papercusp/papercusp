@@ -1172,6 +1172,7 @@ test('rendered waiting policy preserves bounded custody and uncertainty without 
       role: 'worker', promptFile: join(fx.harnessDir, 'worker.md'),
       projectDir: fx.projectDir, harnessDir: fx.harnessDir, stateDir: fx.stateDir,
       runId: 'wait-policy-regression', extras: [],
+      promptOverride: '', cwdOverride: '', featureId: null,
     });
     assert.ok(out.includes(WAIT_LOOP_NOTE));
     assert.match(out, /SAME blocked-wait episode across work\/monitor labels/);
