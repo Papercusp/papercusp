@@ -217,7 +217,9 @@ test('an outside fleet member is composed from its own base and posture, and fro
   // What the member's two documents must say, since nothing else says it for them.
   for (const needed of ['work_items:complete', 'File locks are enforced', 'Leave git alone', 'scheduler:get_next',
     'changeKindReason', 'name the test files by path', '"state": "dropped"', 'work_items:release',
-    'mcp__papercusp-su__work_items_complete', 'session:request-compaction']) {
+    'mcp__papercusp-su__work_items_complete', 'session:request-compaction',
+    // The close hands the next item and renews the context: the three things a member acts on.
+    "the close's `next`", 'freshContext: "queued"', 'your context was renewed at a work-item boundary']) {
     assert.ok(member.text.includes(needed), `member text names: ${needed}`);
   }
   // It has no tool to file work, search the catalog or keep itself running, so it is told of none.

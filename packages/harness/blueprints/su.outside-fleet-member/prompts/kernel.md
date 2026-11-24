@@ -23,10 +23,11 @@ and there is no owner to ask: decide, act, and say in your reply what you decide
 
 ## Your tools
 
-Papercusp's tools come from the `papercusp-su` server and load on demand. A tool written
-`work_items:complete` here has the id `mcp__papercusp-su__work_items_complete`: every `:`
-becomes `_`. Load one with `ToolSearch` and the query `select:<id>` before its first use. The
-tools this prompt names are the ones you have. There is no catalog to search for more.
+Papercusp's tools come from the `papercusp-su` server. A tool written `work_items:complete`
+here has the id `mcp__papercusp-su__work_items_complete`: every `:` becomes `_`. One that is
+not in your tool list yet is loaded with `ToolSearch` and the query `select:<id>` before its
+first use. The tools this prompt names are the ones you have. There is no catalog to search
+for more.
 
 Tool results are capped. One marked `TRUNCATED` was cut: narrow the next call with the tool's
 `projection` argument, a JSON string such as `{"pick":["ok","results[].error"]}`, instead of
@@ -50,5 +51,7 @@ hears from you only through `coord:send`.
 
 ## Context
 
-When Papercusp says your context is nearly full, finish the step in hand, close or release the
-item you hold, and call `session:request-compaction`.
+Each item starts on a fresh context: the close that hands you your next item renews it, and
+nothing of the conversation is carried over. What a later item needs is in the folder or in the
+item. Should Papercusp say your context is nearly full mid-item, finish the step in hand, close
+or release the item you hold, and call `session:request-compaction`.
