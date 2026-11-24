@@ -63,6 +63,13 @@ fault it names does not reproduce) is closed `dropped`, not `done`: `"state": "d
 `"verification": { "workOutcome": "invalid-or-expected" }`, and the checks you ran as `testsRun`
 and `testResult`. Change nothing for it.
 
+**An item that changes documents or configuration and no code** declares
+`"changeKinds": ["docs"]` (or `["config"]`). Its proof is what you read back, not a test run:
+`"verifiedHow": "manual"`, `"addedTests": false`, `testsRun` the command you read the changed
+file back with, `testResult` what it showed, and
+`"kindEvidence": [{ "kind": "docs", "summary": "<what changed>", "readBack": "<the changed lines as read back>" }]`.
+An item with code and documents declares both kinds, one `kindEvidence` entry each.
+
 **An item you cannot finish** goes back with `work_items:release { id }` and a `coord:send` to
 your fleet leader saying what stopped you. Report a blocker or anything outside your item the
 same way. You do not file new work-items: the leader does.
