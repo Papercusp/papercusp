@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { composeSuStackSource, composeSuStackMutation, suEffectiveBinding, suPostureBinding, suSessionBinding, suStackDocuments } from './su-stack.js';
+import { composeSuStackSource, composeSuStackMutation, suEffectiveBinding, suPostureBinding, suSessionBinding, suStackDocuments, SU_OUTSIDE_MEMBER_BASE, SU_STATIC_LAYERS } from './su-stack.js';
 import { bindingRefs, STACK_INJECTION_STAMP } from './stack-mutation.js';
 import { KERNEL_SEAL_MARKER } from './render-stack.js';
 import { CLIENT_SEAM_MARKER } from './identity-lint.js';
@@ -185,4 +185,64 @@ test('composeSuStackMutation — attach member, swap to leader (one attach, `rep
   assert.deepEqual(bindingRefs(extra.runtimeBinding), ['practice:wait-loop-discipline']);
   assert.deepEqual(extra.nextRender.order.filter((e) => e.slot === 'practice').map((e) => e.id), ['su.practice', 'wait-loop-discipline']);
   assert.ok(extra.injection!.includes('## Waiting well'));
+});
+
+test('an outside fleet member is composed from its own base and posture, and from nothing of the interactive su', () => {
+  const su = composeSuStackSource({ harnessDir, outsidePlan: true, posture: null,
+    binding: suSessionBinding({ fleetRole: 'member', outsidePlan: true }) });
+  const member = composeSuStackSource({ harnessDir, outsidePlan: true, outsideMember: true,
+    binding: suSessionBinding({ fleetRole: 'member', outsidePlan: true }) });
+
+  // Its base is the one kernel document, under the seal; its posture the one layer above it.
+  assert.deepEqual(member.order.map((entry) => `${entry.layer}:${entry.id}`),
+    ['fleet-posture:su.outside-fleet-member', `kernel:${SU_OUTSIDE_MEMBER_BASE.id}`]);
+  const seal = member.text.indexOf(KERNEL_SEAL_MARKER);
+  assert.ok(seal > 0);
+  assert.ok(member.text.indexOf('## Working as a fleet member on an outside assignment') < seal);
+  assert.ok(member.text.indexOf('# Fleet member on an outside assignment: the base') > seal);
+  assert.ok(member.text.includes('Kernel documents, in order: `su.outside-member-base`.'));
+
+  // Positive control: the interactive su's composition for the same member carries all of this.
+  for (const suOnly of ['Superuser engineer-collaborator', '## Engineering discipline', '<!-- PAPERCUSP-SU:AUTO-MODE -->',
+    CLIENT_SEAM_MARKER, 'Anti-babysitting', 'Coordination: subscribe']) {
+    assert.ok(su.text.includes(suOnly), `positive control: ${suOnly}`);
+    assert.equal(member.text.includes(suOnly), false, `not a member's: ${suOnly}`);
+  }
+  for (const layer of SU_STATIC_LAYERS)
+    assert.equal(member.order.some((entry) => entry.id === layer.id), false, `static su layer ${layer.id}`);
+  // A member is given a fraction of the su's text.
+  assert.ok(member.text.length < 9000, `member source is ${member.text.length} chars`);
+  assert.ok(su.text.length > 8 * member.text.length);
+
+  // What the member's two documents must say, since nothing else says it for them.
+  for (const needed of ['work_items:complete', 'File locks are enforced', 'Leave git alone', 'scheduler:get_next',
+    'changeKindReason', 'name the test files by path', '"state": "dropped"', 'work_items:release',
+    'mcp__papercusp-su__work_items_complete', 'session:request-compaction']) {
+    assert.ok(member.text.includes(needed), `member text names: ${needed}`);
+  }
+  // It has no tool to file work, search the catalog or keep itself running, so it is told of none.
+  for (const absent of ['work_items:create', 'tools:find', 'tools:invoke', 'loop:arm', 'plans:', 'capability:']) {
+    assert.equal(member.text.includes(absent), false, `member text must not name: ${absent}`);
+  }
+});
+
+test('an outside fleet member always has its posture, keeps a layer the launch selected, and refuses what does not apply', () => {
+  // No binding given: the member posture is bound, never a render without one.
+  const bare = suStackDocuments({ harnessDir, outsideMember: true });
+  assert.deepEqual(bindingRefs(bare.binding), ['fleet-posture:su.outside-fleet-member']);
+  assert.deepEqual(bare.located, []);
+
+  // A layer the launch selected renders above the seal beside the posture.
+  const selected = suStackDocuments({ harnessDir, outsideMember: true,
+    binding: { layers: [{ slot: 'domain', id: 'product-rules' }] },
+    resolveLayer: (layer) => layer.id === 'product-rules'
+      ? { id: 'product-rules', layer: 'domain', slot: 'domain', text: 'PRODUCT RULES', sourcePath: null } : null });
+  assert.deepEqual(selected.docs.map((doc) => doc.id).sort(),
+    ['product-rules', SU_OUTSIDE_MEMBER_BASE.id, 'su.outside-fleet-member'].sort());
+
+  assert.throws(() => suStackDocuments({ harnessDir, outsideMember: true, workItemWorkflow: 'host-managed' }), /host-managed/);
+  assert.throws(() => suStackDocuments({ harnessDir, outsideMember: true, outsidePlan: false }), /outside plan/);
+  // The base missing from every tier refuses: there is no su text to fall back to.
+  assert.throws(() => suStackDocuments({ harnessDir, outsideMember: true, identityRoots: [join(here, 'no-such-root')] }),
+    /base document .* exists in none of the identity roots/);
 });

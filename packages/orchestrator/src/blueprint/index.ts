@@ -245,6 +245,7 @@ export {
   suPostureBinding,
   suPostureLayer,
   suSessionBinding,
+  SU_OUTSIDE_MEMBER_BASE,
   SU_STATIC_LAYERS,
 } from './su-stack.js';
 export type { SuIdentityDocumentHit } from './su-stack.js';

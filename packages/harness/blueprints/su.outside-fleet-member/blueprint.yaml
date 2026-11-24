@@ -1,6 +1,23 @@
+# The `su.outside-fleet-member` IDENTITY: a fleet member bound to an outside plan of record.
+#
+# ABSTRACT: a layer, never loaded standalone. It fills the EXCLUSIVE `fleet-posture` slot of a
+# session an outside system launched through a fleet leader to build that system's work.
+#
+# Unlike the other fleet postures it is not a layer over the interactive su. Such a member is
+# composed from this identity's two documents alone (`suStackDocuments({ outsideMember })`):
+#
+# - `prompts/kernel.md`, its base, rendered under the seal: the rules that always hold (work-items
+#   and their proof, file locks, git, staying inside the assignment, standing down), how its
+#   tools load, and what Papercusp adds to its turns;
+# - `prompts/fleet-posture.md`, this slot's text: the work loop, with the exact close that passes.
+#
+# None of su.md renders for it, and none of the su's static layers. Both documents are AUTHORED
+# here (no su.md tiles) and resolve through the prompt chain, so an installed override wins.
+# They name the tools a member has; the client that hosts the member decides the list it is
+# given, and should give it those and no more.
 id: su.outside-fleet-member
 extends: identity-root
-version: 0.1.0
-description: Fleet member posture for a session bound to an outside plan reference.
+version: 0.2.0
+description: Fleet member bound to an outside plan reference - its own base and work loop, not a layer over the interactive su.
 slots:
   - slot: fleet-posture

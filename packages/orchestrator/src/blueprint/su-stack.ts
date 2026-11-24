@@ -84,6 +84,17 @@ export interface SuStackComposeOptions extends ComposeStackOptions {
    * Keeps the sealed kernel and its invariants; delegates only ledger mechanics. */
   workItemWorkflow?: 'host-managed';
   outsidePlan?: boolean;
+  /**
+   * A fleet MEMBER bound to an outside plan of record. Its source is not the interactive
+   * su's: it is the member's own base document (`SU_OUTSIDE_MEMBER_BASE`) under the seal,
+   * with the layers bound for it above (its `su.outside-fleet-member` posture, and whatever
+   * the launch selected). None of su.md renders: no su kernel tiles, no preamble, no client
+   * seam, no instance tile, and none of `SU_STATIC_LAYERS`: the Papercusp engineer's
+   * profession, the stance toward an owner and the su practice describe a session this one
+   * is not. Such a member builds another system's work with a handful of tools and nobody
+   * to ask, so it is given what that work needs and no more.
+   */
+  outsideMember?: boolean;
   /** The harness install dir (default: the built-in harness via `harnessPath`). */
   harnessDir?: string;
   /** su.md text override (tests); default: read from the harness. */
@@ -154,6 +165,16 @@ export const SU_STATIC_LAYERS: readonly BoundLayer[] = [
   { slot: 'collaboration-stance', id: 'su-collaborator' },
   { slot: 'practice', id: 'su.practice' },
 ];
+
+/**
+ * The base document of a fleet member bound to an outside plan (`outsideMember`): the one
+ * kernel document of that composition, resolved through the prompt chain like the posture
+ * beside it.
+ */
+export const SU_OUTSIDE_MEMBER_BASE = {
+  id: 'su.outside-member-base',
+  path: 'blueprints/su.outside-fleet-member/prompts/kernel.md',
+} as const;
 
 /** The fleet-posture layer for a role — what fleet:join / take-leadership attach. */
 export function suPostureLayer(role: FleetPostureRole, outsidePlan = false): BoundLayer {
@@ -253,6 +274,7 @@ function textOf(located: readonly LocatedSuTile[], doc: SuPartDocument, drop: Re
 export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocuments {
   if (opts.workItemWorkflow !== undefined && opts.workItemWorkflow !== 'host-managed')
     throw new Error('su-stack: invalid host work-item workflow');
+  if (opts.outsideMember) return outsideMemberDocuments(opts);
   if (opts.workItemWorkflow === 'host-managed' && SU_TILES.filter(t => t.hostWorkItemWorkflow).some(expected =>
     !(opts.tiles ?? SU_TILES).some(t => t.anchor === expected.anchor && t.part === 'kernel' &&
       t.hostWorkItemWorkflow === expected.hostWorkItemWorkflow)))
@@ -294,6 +316,37 @@ export function suStackDocuments(opts: SuStackComposeOptions = {}): SuStackDocum
   const instance = partDoc('su.instance');
   docs.push({ id: instance.id, layer: 'instance', text: textOf(located, instance), sourcePath: instance.path });
   return { docs, located, droppedTiles, keptDedupeTiles, binding };
+}
+
+/**
+ * The documents of a fleet member bound to an outside plan (`outsideMember`): its base under
+ * the seal, and above it the layers bound for it alone. The member posture is bound when the
+ * caller's binding names no fleet posture, so the composition never renders without one.
+ */
+function outsideMemberDocuments(opts: SuStackComposeOptions): SuStackDocuments {
+  if (opts.workItemWorkflow !== undefined)
+    throw new Error('su-stack: an outside fleet member registers and closes its own work-items; a host-managed workflow does not apply to it');
+  if (opts.outsidePlan === false)
+    throw new Error('su-stack: an outside fleet member is bound to an outside plan');
+  const identityRoots = suIdentityRoots(opts);
+  const base = resolveSuIdentityDocument(SU_OUTSIDE_MEMBER_BASE, identityRoots);
+  if (!base) {
+    throw new Error(
+      `su-stack: the outside fleet member's base document (${SU_OUTSIDE_MEMBER_BASE.path}) exists in none of the identity roots [${identityRoots.join(', ')}]: the identity is not installed in any tier`,
+    );
+  }
+  let binding = normalizeStackBinding(opts.binding ? normalizeStackBinding(opts.binding).layers : []);
+  if (!binding.layers.some((layer) => layer.slot === 'fleet-posture'))
+    binding = attachLayer(binding, suPostureLayer('member', true)).after;
+  const docs: StackDocument[] = [
+    { id: SU_OUTSIDE_MEMBER_BASE.id, layer: 'kernel', text: base.text, sourcePath: base.path },
+  ];
+  for (const layer of binding.layers) {
+    const doc = opts.resolveLayer?.(layer, []) ?? suBoundLayerDocument([], layer, { identityRoots }) ?? null;
+    if (!doc) throw new Error(`su-stack: bound layer "${layer.slot}:${layer.id}" is not resolvable for an outside fleet member`);
+    docs.push(doc);
+  }
+  return { docs, located: [], droppedTiles: [], keptDedupeTiles: [], binding };
 }
 
 /** The identity-document roots a compose call resolves against (`identityRoots`, else the harness dir, else the built-in harness). */
