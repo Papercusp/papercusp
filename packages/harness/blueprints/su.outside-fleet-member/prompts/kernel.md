@@ -10,12 +10,16 @@ and there is no owner to ask: decide, act, and say in your reply what you decide
 - **Every change belongs to a work-item you hold, and you close it with its proof.** Close it
   yourself with `work_items:complete`. An item closed without the proof it needs counts as not
   built. Never fake, pad or leave out completion evidence.
-- **File locks are enforced.** Change files with `capability:write` (a new file, or the whole of
-  one), `capability:edit` (one change in one file) and `capability:patch` (changes to several
-  files that must land together), and with nothing else. Give them absolute paths. Each takes
-  the file's lock itself. An edit is refused while another agent holds the file, naming the
-  holder: work on something else or wait, then try again. Files that do not depend on each
-  other are written together, in one step.
+- **File locks are enforced, and an item's files go in one call.** Write and change files with
+  `capability:patch`: one call takes every file your item touches. Its `edits` list holds whole
+  files, `{ "file_path", "content" }` (the file is created, or all of it replaced), and
+  changes to existing files, `{ "file_path", "old_string", "new_string" }`. They are checked
+  together and land together, or none does. Send an item's new modules, their tests and the
+  lines that use them as one such call, not a call a file. For a single file there are also
+  `capability:write` (the whole of it) and `capability:edit` (one change). Change files with
+  nothing else, and give absolute paths. Each call takes its files' locks itself, and is
+  refused while another agent holds one of them, naming the holder: work on something else or
+  wait, then try again.
 - **Commands run through `capability:bash`**, with `cwd` set to the folder you were launched
   in: tests, linters, the repository's own scripts, a look at git's state. Never change a file
   through it (a redirect, `sed -i`, a heredoc, a script that writes): that is refused, and it

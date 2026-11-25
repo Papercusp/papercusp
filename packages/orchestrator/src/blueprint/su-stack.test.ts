@@ -211,7 +211,7 @@ test('an outside fleet member is composed from its own base and posture, and fro
   for (const layer of SU_STATIC_LAYERS)
     assert.equal(member.order.some((entry) => entry.id === layer.id), false, `static su layer ${layer.id}`);
   // A member is given a fraction of the su's text.
-  assert.ok(member.text.length < 10400, `member source is ${member.text.length} chars`);
+  assert.ok(member.text.length < 11000, `member source is ${member.text.length} chars`);
   assert.ok(su.text.length > 8 * member.text.length);
 
   // What the member's two documents must say, since nothing else says it for them.
@@ -224,7 +224,11 @@ test('an outside fleet member is composed from its own base and posture, and fro
     '"changeKinds": ["docs"]', 'readBack',
     // Its file and shell tools are Papercusp's own: the file tools lock the file themselves, and
     // the shell runs commands and never writes. A long run goes to the background.
-    'capability:write', 'capability:edit', 'capability:patch', 'Give them absolute paths',
+    'capability:write', 'capability:edit', 'capability:patch', 'give absolute paths',
+    // An item's files go in ONE call, and the member is told its two entry forms: its tools
+    // arrive compact, so nothing else tells it that the bulk call also creates files.
+    'an item\'s files go in one call', '{ "file_path", "content" }', '{ "file_path", "old_string", "new_string" }',
+    'not a call a file',
     'Commands run through `capability:bash`', 'Never change a file', 'run_in_background: true',
     'capability:bash_output',
     // The shell holds a work-item's long runs once they keep failing: the note that clears it.

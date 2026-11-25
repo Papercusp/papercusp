@@ -17,5 +17,7 @@ work-item. End the loop and return the result to the client once both conditions
 
 When your tool list has `capability:bash`, Claude Code's own `Bash`, `Edit` and `Write` are
 withdrawn from this session and Papercusp's stand in. Run a command with `capability:bash`,
-giving `cwd` as the folder you were launched in. Change a file with `capability:write`,
-`capability:edit` or `capability:patch`, giving absolute paths, and never through the shell.
+giving `cwd` as the folder you were launched in. Write and change files with
+`capability:patch`, which takes several in one call (whole files as `content`, changes as
+`old_string` and `new_string`), or with `capability:write` and `capability:edit` for a single
+file. Give absolute paths, and never change a file through the shell.
