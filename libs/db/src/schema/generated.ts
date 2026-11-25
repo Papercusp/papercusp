@@ -12584,6 +12584,16 @@ export const substrateFanoutDeliveriesInHarnessShared = harnessShared.table("sub
 	check("substrate_fanout_deliveries_state_check", sql`state = ANY (ARRAY['pending'::text, 'written'::text, 'failed'::text, 'superseded'::text])`),
 ]);
 
+export const substrateFanoutRecipientPositionsInHarnessShared = harnessShared.table("substrate_fanout_recipient_positions", {
+	workspaceId: text("workspace_id").notNull(),
+	subscriberId: text("subscriber_id").notNull(),
+	subject: text().notNull(),
+	// You can use { mode: "bigint" } if numbers are exceeding js number limitations
+	outboxId: bigint("outbox_id", { mode: "number" }).notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.subject, table.subscriberId, table.workspaceId], name: "substrate_fanout_recipient_positions_pkey"}),
+]);
+
 export const substrateMergeCursorInHarnessShared = harnessShared.table("substrate_merge_cursor", {
 	workspaceId: text("workspace_id").notNull(),
 	harnessSlug: text("harness_slug").notNull(),
@@ -13963,6 +13973,38 @@ export const workItemSpecRevisionEdgesInHarnessShared = harnessShared.table("wor
 	pgPolicy("work_item_spec_revision_edges_workspace_isolation", { as: "permissive", for: "all", to: ["public"], using: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`, withCheck: sql`(workspace_id = current_setting('app.workspace_id'::text, true))`  }),
 	check("work_item_spec_revision_edges_spec_fingerprint_check", sql`spec_fingerprint ~ '^[0-9a-f]{64}$'::text`),
 	check("work_item_spec_revision_edges_spec_revision_check", sql`spec_revision > 0`),
+]);
+
+export const workItemUnitOverflowPartsInHarnessShared = harnessShared.table("work_item_unit_overflow_parts", {
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	invocationId: text("invocation_id").notNull(),
+	partIndex: integer("part_index").notNull(),
+	unitRef: text("unit_ref").notNull(),
+	partCount: integer("part_count").notNull(),
+	content: text().notNull(),
+	contentSha256: text("content_sha256").notNull(),
+	unitSha256: text("unit_sha256").notNull(),
+	stagedToken: text("staged_token"),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+	deliveredAt: timestamp("delivered_at", { withTimezone: true, mode: 'string' }),
+}, (table) => [
+	index("work_item_unit_overflow_parts_pending_idx").using("btree", table.workspaceId.asc().nullsLast().op("text_ops"), table.ownerId.asc().nullsLast().op("text_ops"), table.createdAt.asc().nullsLast().op("timestamptz_ops"), table.invocationId.asc().nullsLast().op("text_ops"), table.partIndex.asc().nullsLast().op("int4_ops")).where(sql`(delivered_at IS NULL)`),
+	primaryKey({ columns: [table.invocationId, table.ownerId, table.partIndex, table.workspaceId], name: "work_item_unit_overflow_parts_pkey"}),
+	check("work_item_unit_overflow_parts_check", sql`part_count >= part_index`),
+	check("work_item_unit_overflow_parts_content_sha256_check", sql`content_sha256 ~ '^[a-f0-9]{64}$'::text`),
+	check("work_item_unit_overflow_parts_part_index_check", sql`part_index >= 1`),
+	check("work_item_unit_overflow_parts_unit_sha256_check", sql`unit_sha256 ~ '^[a-f0-9]{64}$'::text`),
+]);
+
+export const workItemUnitReceiptHooksInHarnessShared = harnessShared.table("work_item_unit_receipt_hooks", {
+	workspaceId: text("workspace_id").notNull(),
+	ownerId: text("owner_id").notNull(),
+	port: text().notNull(),
+	client: text().notNull(),
+	seenAt: timestamp("seen_at", { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.ownerId, table.workspaceId], name: "work_item_unit_receipt_hooks_pkey"}),
 ]);
 
 export const workItemsInHarnessShared = harnessShared.table("work_items", {
