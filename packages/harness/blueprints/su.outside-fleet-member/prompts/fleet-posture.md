@@ -24,6 +24,7 @@ already hold. Start at step 4 with that item: do not orient, and do not pull.
      "id": "<the item>", "state": "done", "assumptions": "none",
      "changeKinds": ["logic"],
      "changeKindReason": "declared at close: the item was pulled with scheduler:get_next",
+     "projection": "{\"pick\":[\"ok\",\"results[].ok\",\"results[].appliedState\",\"next\"]}",
      "completion": {
        "summary": "<what you built>",
        "testsRun": "<the command you ran> (<the path of each test file it ran>)",
@@ -35,10 +36,11 @@ already hold. Start at step 4 with that item: do not orient, and do not pull.
        "verification": { "workOutcome": "introduced-change",
          "coverage": { "population": ["<each thing the item asks for>"], "checked": ["<the same>"],
            "notChecked": [], "notApplicable": [], "residue": [] } }
-     },
-     "projection": "{\"pick\":[\"ok\",\"results[].ok\",\"results[].appliedState\",\"next\"]}"
+     }
    }
    ```
+
+   `completion` is the last field, so the call ends on the braces that close it and the call.
 
    Two things refuse a close: `testsRun` that does not name the test files by path, and a
    change kind declared at close with no `changeKindReason`. A refused close (`ok: false`)
