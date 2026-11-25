@@ -171,7 +171,7 @@ describe('loadHarnessBlueprintId (domain-generic-agent-personas P-013 — coding
     );
     expect(loadHarnessBlueprintPromptContext(dir)).toEqual({
       blueprintId: 'papercusp',
-      extendsChain: ['papercusp', 'papercusp-engineer', 'base'],
+      extendsChain: ['papercusp', 'papercusp-engineer', 'identity-root'],
     });
   });
 

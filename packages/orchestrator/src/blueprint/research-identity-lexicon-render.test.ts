@@ -94,7 +94,7 @@ test('P-014 clause 8 — the research IDENTITY declares a lexicon at the field t
   // It is the IDENTITY layer that carries the profession's nouns (P-025), so this
   // file must remain an abstract layer rather than becoming a second runnable hive.
   assert.equal(doc.id, 'research-steward');
-  assert.equal(doc.extends, 'base');
+  assert.equal(doc.extends, 'identity-root');
 });
 
 test('P-014 clause 8 — a research wearer RENDERS the profession nouns, not the coding ones', () => {

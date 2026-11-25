@@ -234,8 +234,7 @@ describe('P-002 component contribution binding', () => {
   const providerText = 'Current task supplied by the existing provider.';
   const providerInput = { kind: 'prompt-file' as const, ref: 'provider:task', bytes: providerText, producerRef: generated.producerRef,
     contentHash: createHash('sha256').update(providerText).digest('hex') };
-  const genericIdentity = { ...source, slots: [{ slot: 'domain' }],
-    bundles: [{ kind: 'recipe', ref: 'shared', version: '1.0.0' }],
+  const genericIdentity = { id: 'pinned-agent', slots: [{ slot: 'domain' }],
     contributions: [fixed, generated, resource, operational] };
 
   it('composes fixed and generated prompt bytes with resource and state pins in a generic identity', () => {
@@ -328,14 +327,14 @@ describe('P-002 component contribution binding', () => {
   it('compiles a complete non-SU identity source without authored workflow or assignment fields', () => {
     const dir = mkdtempSync(join(tmpdir(), 'generic-identity-'));
     try {
-      const parent = join(dir, 'runtime.yaml');
-      writeFileSync(parent, 'id: runtime\nworkItem: { kind: feature }\nspine: { edges: { DONE: { to: done } } }\n');
-      const identity = { id: 'react-identity', extends: 'runtime', slots: [{ slot: 'domain' }],
+      const parent = join(dir, 'identity-root.yaml');
+      writeFileSync(parent, 'id: identity-root\nslots: []\n');
+      const identity = { id: 'react-identity', extends: 'identity-root', slots: [{ slot: 'domain' }],
         contributions: [fixed, generated] };
       expect(Object.keys(identity)).not.toContain('spine');
       const artifact = compileAgentSpecification({
         source: identity,
-        resolve: (id) => id === 'runtime' ? parent : null,
+        resolve: (id) => id === 'identity-root' ? parent : null,
         prompt: { files: [{ ref: fixed.ref, bytes: 'Read, act and observe.' }] },
         inputClosure: [providerInput],
       });
