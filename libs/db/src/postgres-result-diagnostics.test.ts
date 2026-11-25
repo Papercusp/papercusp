@@ -4,6 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { Duplex } from 'node:stream';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
@@ -661,6 +662,44 @@ describe('postgres.js terminal result diagnostics patch', () => {
     expect(query.simple()).toBe(query);
     await broken.end();
     expect(socket).not.toHaveBeenCalled();
+  });
+
+  it.each(['esm', 'cjs'])('settles a type lookup interrupted by pool shutdown (%s)', async (runtime) => {
+    const factory: typeof postgres = runtime === 'esm' ? postgres : require_('postgres');
+    const typeLookup = Promise.withResolvers<void>();
+    let starting = true;
+    const socket = new Duplex({
+      read() {},
+      write(_chunk, _encoding, callback) {
+        callback();
+        if (starting) {
+          starting = false;
+          // ReadyForQuery, idle. Leave the following catalog lookup pending.
+          setImmediate(() => socket.push(Buffer.from([90, 0, 0, 0, 5, 73])));
+        }
+      },
+    });
+    const sql = factory({
+      socket: () => socket, max: 1, ssl: false,
+      connection: { application_name: 'array-type-test' },
+      debug(_connection, text) {
+        if (text.includes('from pg_catalog.pg_type')) typeLookup.resolve();
+      },
+    });
+    const warning = vi.spyOn(console, 'warn');
+    try {
+      const caller = expect(sql`select 1`).rejects.toMatchObject({ code: 'CONNECTION_DESTROYED' });
+      await typeLookup.promise;
+      await sql.end({ timeout: 0 });
+      await caller;
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(warning).toHaveBeenCalledWith('[postgres] array type fetch failed', {
+        code: 'CONNECTION_DESTROYED', pool: 'array-type-test', count: 1,
+      });
+    } finally {
+      warning.mockRestore();
+      await sql.end({ timeout: 0 });
+    }
   });
 
   it.each(BUILD_ROOTS)('records pool, query-origin and end-caller diagnostics when end timeout rejects a queued query (%s)', async (runtime) => {
