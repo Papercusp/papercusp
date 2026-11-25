@@ -57,6 +57,7 @@ __export(index_exports, {
   resolveGitnexusChildCwd: () => resolveGitnexusChildCwd,
   resolveGitnexusExecutable: () => resolveGitnexusExecutable,
   rolesFor: () => rolesFor,
+  scopeRepoInputSchema: () => scopeRepoInputSchema,
   tools: () => tools
 });
 module.exports = __toCommonJS(index_exports);
@@ -374,6 +375,29 @@ var MUTATING_TOOLS = /* @__PURE__ */ new Set(["rename", "group_sync"]);
 function isReadOnlyTool(toolName) {
   return !MUTATING_TOOLS.has(toolName);
 }
+var REPO_INPUT_DESCRIPTION = "Repository name in the bridge allowlist only. Filesystem paths and `@group` selectors are refused by the P-004 scope policy. Omit `repo` to use the configured default.";
+function scopeRepoInputSchema(inputSchema) {
+  if (!inputSchema || typeof inputSchema !== "object" || Array.isArray(inputSchema)) {
+    return inputSchema;
+  }
+  const schema = inputSchema;
+  const properties = schema.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+    return inputSchema;
+  }
+  const propertyMap = properties;
+  const repo = propertyMap.repo;
+  if (!repo || typeof repo !== "object" || Array.isArray(repo)) {
+    return inputSchema;
+  }
+  return {
+    ...schema,
+    properties: {
+      ...propertyMap,
+      repo: { ...repo, description: REPO_INPUT_DESCRIPTION }
+    }
+  };
+}
 function repoPolicyFromEnv(env = process.env) {
   const defaultRepo = (env.PAPERCUSP_GITNEXUS_REPO_NAME ?? "").trim() || "papercusp";
   const extra = (env.PAPERCUSP_GITNEXUS_ALLOWED_REPOS ?? "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
@@ -562,10 +586,15 @@ var plugin = {
       }
       const cap = `tools:gitnexus:${t.name}`;
       const override = TOOL_OVERRIDES[t.name];
+      const upstreamInputSchema = t.inputSchema ?? { type: "object", properties: {} };
+      const acceptsRepo = Boolean(
+        upstreamInputSchema.properties?.repo
+      );
+      const inputSchema = acceptsRepo ? scopeRepoInputSchema(upstreamInputSchema) : upstreamInputSchema;
       const def = {
         name: t.name,
         description: override?.description ?? t.description ?? `gitnexus.${t.name}`,
-        inputSchema: t.inputSchema ?? { type: "object", properties: {} },
+        inputSchema,
         capabilities: [cap, "compute:exec:gitnexus"],
         roles: rolesFor(t.name),
         rolesQuota: quotaFor(t.name),
@@ -577,9 +606,6 @@ var plugin = {
         ...override ? { guidance: override.guidance } : {}
       };
       definitions.push(def);
-      const acceptsRepo = Boolean(
-        t.inputSchema?.properties?.repo
-      );
       handlers[t.name] = makeHandler(t.name, acceptsRepo);
     }
     return { definitions, handlers };
@@ -625,6 +651,7 @@ function _resetChildrenForTests() {
   resolveGitnexusChildCwd,
   resolveGitnexusExecutable,
   rolesFor,
+  scopeRepoInputSchema,
   tools
 });
 
