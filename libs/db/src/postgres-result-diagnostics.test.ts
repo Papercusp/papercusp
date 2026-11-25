@@ -666,7 +666,8 @@ describe('postgres.js terminal result diagnostics patch', () => {
 
   it.each(['esm', 'cjs'])('settles a type lookup interrupted by pool shutdown (%s)', async (runtime) => {
     const factory: typeof postgres = runtime === 'esm' ? postgres : require_('postgres');
-    const typeLookup = Promise.withResolvers<void>();
+    let onTypeLookup!: () => void;
+    const typeLookup = new Promise<void>(resolve => { onTypeLookup = resolve; });
     let starting = true;
     const socket = new Duplex({
       read() {},
@@ -683,13 +684,13 @@ describe('postgres.js terminal result diagnostics patch', () => {
       socket: () => socket, max: 1, ssl: false,
       connection: { application_name: 'array-type-test' },
       debug(_connection, text) {
-        if (text.includes('from pg_catalog.pg_type')) typeLookup.resolve();
+        if (text.includes('from pg_catalog.pg_type')) onTypeLookup();
       },
     });
-    const warning = vi.spyOn(console, 'warn');
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const caller = expect(sql`select 1`).rejects.toMatchObject({ code: 'CONNECTION_DESTROYED' });
-      await typeLookup.promise;
+      await typeLookup;
       await sql.end({ timeout: 0 });
       await caller;
       await new Promise<void>(resolve => setImmediate(resolve));
