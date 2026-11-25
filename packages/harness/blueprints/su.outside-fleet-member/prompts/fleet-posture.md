@@ -26,21 +26,23 @@ already hold. Start at step 4 with that item: do not orient, and do not pull.
      "changeKindReason": "declared at close: the item was pulled with scheduler:get_next",
      "projection": "{\"pick\":[\"ok\",\"results[].ok\",\"results[].appliedState\",\"next\"]}",
      "completion": {
+       "verification": {
+         "coverage": { "population": ["<each thing the item asks for>"], "checked": ["<the same>"],
+           "notChecked": [], "notApplicable": [], "residue": [] },
+         "workOutcome": "introduced-change" },
        "summary": "<what you built>",
        "testsRun": "<the command you ran> (<the path of each test file it ran>)",
        "testResult": "<its passing result, as it was printed>",
        "verifiedHow": "unit", "addedTests": true,
-       "filesChanged": ["<each path you changed>"],
        "kindEvidence": [{ "kind": "logic", "summary": "<what the tests prove>",
          "testsRun": "<the same>", "testResult": "<the same>" }],
-       "verification": { "workOutcome": "introduced-change",
-         "coverage": { "population": ["<each thing the item asks for>"], "checked": ["<the same>"],
-           "notChecked": [], "notApplicable": [], "residue": [] } }
+       "filesChanged": ["<each path you changed>"]
      }
    }
    ```
 
-   `completion` is the last field, so the call ends on the braces that close it and the call.
+   Keep the fields in this order. The nested ones come first, so no run of closing braces is
+   longer than two and the call ends `"filesChanged": [...] } }`.
 
    Two things refuse a close: `testsRun` that does not name the test files by path, and a
    change kind declared at close with no `changeKindReason`. A refused close (`ok: false`)

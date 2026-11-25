@@ -237,6 +237,18 @@ test('an outside fleet member is composed from its own base and posture, and fro
     '**Without those tools** you have Claude Code\'s `Edit`, `Write` and `Bash`']) {
     assert.ok(member.text.includes(needed), `member text names: ${needed}`);
   }
+  // The example close is what a member copies, on every fresh context. Written with its nested
+  // objects last it ended on four closing braces, and a member sent five: every first close of
+  // a context was unreadable (measured, 9 of 9). With the nested objects first, no run is
+  // longer than two.
+  const example = /```json\n([\s\S]*?)```/.exec(member.text)?.[1];
+  assert.ok(example, 'the member text carries an example close');
+  const close = JSON.parse(example) as { completion: Record<string, unknown> };
+  assert.equal(Object.keys(close).at(-1), 'completion');
+  assert.equal(Object.keys(close.completion).at(-1), 'filesChanged');
+  const closingRuns = JSON.stringify(close).match(/\}+/g) ?? [];
+  assert.ok(Math.max(...closingRuns.map((run) => run.length)) <= 2, `closing-brace runs: ${closingRuns.join(' ')}`);
+
   // It has no tool to file work, search the catalog or keep itself running, so it is told of none.
   for (const absent of ['work_items:create', 'tools:find', 'tools:invoke', 'loop:arm', 'plans:', 'capability:git', 'capability:fetch']) {
     assert.equal(member.text.includes(absent), false, `member text must not name: ${absent}`);
