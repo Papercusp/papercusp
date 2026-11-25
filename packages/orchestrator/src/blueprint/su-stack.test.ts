@@ -211,7 +211,7 @@ test('an outside fleet member is composed from its own base and posture, and fro
   for (const layer of SU_STATIC_LAYERS)
     assert.equal(member.order.some((entry) => entry.id === layer.id), false, `static su layer ${layer.id}`);
   // A member is given a fraction of the su's text.
-  assert.ok(member.text.length < 9600, `member source is ${member.text.length} chars`);
+  assert.ok(member.text.length < 10400, `member source is ${member.text.length} chars`);
   assert.ok(su.text.length > 8 * member.text.length);
 
   // What the member's two documents must say, since nothing else says it for them.
@@ -221,11 +221,20 @@ test('an outside fleet member is composed from its own base and posture, and fro
     // The close hands the next item and renews the context: the three things a member acts on.
     "the close's `next`", 'freshContext: "queued"', 'your context was renewed at a work-item boundary',
     // A story is not always code: the close for a document or configuration change.
-    '"changeKinds": ["docs"]', 'readBack']) {
+    '"changeKinds": ["docs"]', 'readBack',
+    // Its file and shell tools are Papercusp's own: the file tools lock the file themselves, and
+    // the shell runs commands and never writes. A long run goes to the background.
+    'capability:write', 'capability:edit', 'capability:patch', 'Give them absolute paths',
+    'Commands run through `capability:bash`', 'Never change a file', 'run_in_background: true',
+    'capability:bash_output',
+    // The shell holds a work-item's long runs once they keep failing: the note that clears it.
+    'loop_audit_required', 'work_items:comment',
+    // With the flag off it has Claude Code's own, under the same rules.
+    '**Without those tools** you have Claude Code\'s `Edit`, `Write` and `Bash`']) {
     assert.ok(member.text.includes(needed), `member text names: ${needed}`);
   }
   // It has no tool to file work, search the catalog or keep itself running, so it is told of none.
-  for (const absent of ['work_items:create', 'tools:find', 'tools:invoke', 'loop:arm', 'plans:', 'capability:']) {
+  for (const absent of ['work_items:create', 'tools:find', 'tools:invoke', 'loop:arm', 'plans:', 'capability:git', 'capability:fetch']) {
     assert.equal(member.text.includes(absent), false, `member text must not name: ${absent}`);
   }
 });

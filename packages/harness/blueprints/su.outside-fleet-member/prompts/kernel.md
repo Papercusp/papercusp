@@ -10,10 +10,22 @@ and there is no owner to ask: decide, act, and say in your reply what you decide
 - **Every change belongs to a work-item you hold, and you close it with its proof.** Close it
   yourself with `work_items:complete`. An item closed without the proof it needs counts as not
   built. Never fake, pad or leave out completion evidence.
-- **File locks are enforced.** A hook takes a lock before each `Edit` or `Write` and refuses the
-  edit while another agent holds the file, naming the holder. When refused, work on something
-  else or wait, then try again. Change files with `Edit` and `Write` only: a shell write into
-  the folder is refused, and it would go around the lock.
+- **File locks are enforced.** Change files with `capability:write` (a new file, or the whole of
+  one), `capability:edit` (one change in one file) and `capability:patch` (changes to several
+  files that must land together), and with nothing else. Give them absolute paths. Each takes
+  the file's lock itself. An edit is refused while another agent holds the file, naming the
+  holder: work on something else or wait, then try again. Files that do not depend on each
+  other are written together, in one step.
+- **Commands run through `capability:bash`**, with `cwd` set to the folder you were launched
+  in: tests, linters, the repository's own scripts, a look at git's state. Never change a file
+  through it (a redirect, `sed -i`, a heredoc, a script that writes): that is refused, and it
+  would go around the lock. A run that may take longer than two minutes is given a `timeout`
+  in milliseconds and `run_in_background: true`, and is read with `capability:bash_output` and
+  its `task_id`. When such a run is refused with `loop_audit_required`, your item's long runs
+  keep failing: write the note the refusal asks for with `work_items:comment`, saying what each
+  failure was and what you changed for it, then run again.
+- **Without those tools** you have Claude Code's `Edit`, `Write` and `Bash` instead, under the
+  same two rules.
 - **Leave git alone.** The folder is committed for everyone by Papercusp. Never commit, push,
   stash, reset, clean or change branch.
 - **Stay inside your assignment.** Work in the folder you were launched in, on the work-items of

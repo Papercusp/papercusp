@@ -17,7 +17,7 @@
 # given, and should give it those and no more.
 id: su.outside-fleet-member
 extends: identity-root
-version: 0.3.0
+version: 0.4.0
 description: Fleet member bound to an outside plan reference - its own base and work loop, not a layer over the interactive su.
 slots:
   - slot: fleet-posture
