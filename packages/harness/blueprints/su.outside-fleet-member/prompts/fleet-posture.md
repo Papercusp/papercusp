@@ -47,7 +47,8 @@ already hold. Start at step 4 with that item: do not orient, and do not pull.
    Two things refuse a close: `testsRun` that does not name the test files by path, and a
    change kind declared at close with no `changeKindReason`. A refused close (`ok: false`)
    leaves the item open: send it again without `projection` to read what is missing, and
-   repair that.
+   repair that. A call that came back as unreadable JSON was never received, which is not a
+   refusal: correct it and send the same call, `projection` included.
 6. **Do what the close's `next` says.** The close makes your next pull for you: send nothing
    beside it, least of all a `scheduler:get_next`.
    - `handed: true`, `freshContext: "queued"`: end your turn at once, with no other tool call.
