@@ -249,11 +249,10 @@ there and redo it.
 ## Engineering discipline
 
 - **Plan before non-trivial work.** Durable plans live in the plan store (shared,
-  fleet-visible), never only in a client-local task list. A plan is REQUIRED when work
-  decomposes into >=2 work-items, has inter-dependent steps, outlives one session, or
-  sequences multiple subsystems: `plans:new` + `plans:add-item`, then `plans:start`
-  (promotes items into work-items). Don't over-apply — a single work-item, a one-shot
-  fix, or pure investigation needs no plan.
+  fleet-visible).
+  Keep a bounded fix and its regression test on one work item. Create or amend a plan when a decision, dependency, coordination need or acceptance condition changes. Once an approved item is eligible, take its first verifiable implementation step. Record progress and test results on the work item.
+  Use `plans:new` and `plans:add-item` to register a new plan. After review and
+  approval, `plans:start` promotes eligible items into work-items.
   Work with an outside plan reference is already planned at any size. Skip local plan creation,
   binding, activation and its conversation audit. Hold a work-item before editing, register each
   split piece under the reference, respect approvals and locks, and finish each with `work_items:complete`.
@@ -278,8 +277,8 @@ there and redo it.
   cannot defer those answers until implementation. Inspect the existing proof cache,
   cite its current evidence, remove duplicate warming work, and retain only the
   evidenced gap before finalizing discovery and requesting implementation review.
-- **Audit the complete source conversation before activating a draft plan.** Before
-  `draft → ready` / `active` or `plans:start`, use `sessions:search` / `sessions:read`
+- **Audit the complete source conversation before activating a draft plan.** For
+  first activation, use `sessions:search` / `sessions:read`
   to re-read the full plan-related conversation — never rely on memory or a summary.
   Extract every requirement, scope boundary, constraint, correction, rejected
   alternative, decision, dependency, sequence, acceptance condition, unresolved
@@ -287,12 +286,12 @@ there and redo it.
   repair every omission; then record `plans:audit { phase:'activation', ... }` before
   activating. The audit also checks the reverse: each non-dropped item needs an
   owner-typed turn in some mapping, or an `itemProvenance` entry declaring it `derived`
-  or `agent-added` with a reason; your own turns never count as the owner. A later
-  edit PRESERVES that audit. Read the edit response's
-  `activationAudit` metadata, compare its audited/current revisions, and re-audit when
-  the edit changes meaning (requirements, scope, constraints, decisions, dependencies,
-  sequencing, acceptance criteria, open questions, or promised follow-ups). Spelling,
-  formatting, and other cosmetic-only edits do not need another audit.
+  or `agent-added` with a reason; your own turns never count as the owner. Preserve
+  the independent checks required for first activation. On later edits, use the
+  existing source mappings and the edit response's `activationAudit` metadata.
+  Revisit the decisions whose inputs could change the result. Submit related mapping
+  and discovery corrections together. Follow the returned action within its scope
+  and obtain independent review where the affected decision requires it.
 - **Decompose deliberately; don't reflex-parallelize.** Encode real `blocked-by` deps;
   fan out only when items are genuinely independent AND touch disjoint files (same-file
   "parallel" work just serializes on the locks).
@@ -1024,13 +1023,13 @@ traceable — the git-sync routine commits it with authorship. A work-item exist
 put work in the *coordination* queue. So the question is never "is it tracked?"
 (always yes) but "does it need coordination?" — a scope/risk judgment:
 
-- **Trivial** — one file, no behavior change, no peer-collision risk (a typo, a
+- **Trivial** — no behavior change or peer-collision risk (a typo, a
   comment, a mechanical rename): the commit is enough. A work-item here is pure
   ceremony, and forcing one trains you to treat the ledger as noise.
 - **Substantive** — changes behavior, edits product source meaningfully, could
   collide with a peer, needs verification: **a work-item** (no plan needed).
-- **Big scope** — multi-file, architectural, multi-step, or the approach itself
-  needs review: **a plan**, before the first edit. A bound outside reference satisfies this tier.
+- **Plan changes** — record changed decisions, dependencies, coordination needs
+  or acceptance conditions in the shared plan. A bound outside reference satisfies this tier.
 - **Tie-breaker** — unsure which tier? File the item. An unneeded work-item costs
   almost nothing; an untracked substantive change is the failure this prevents.
   The asymmetry favors over-filing.

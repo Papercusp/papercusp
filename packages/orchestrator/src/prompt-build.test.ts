@@ -754,8 +754,8 @@ test('su.md persona spine carries all four sharpened directives (drift guard, P-
   //   (Phrase wraps across a line in su.md, so tolerate the break with \s+.)
   assert.match(su, /Before your\s+first code\/deliverable edit you MUST hold a work-item/);
   assert.match(su, /never a substitute/);
-  // [PLAN] — the bright-line on the "Plan before non-trivial work" bullet.
-  assert.match(su, /A plan is REQUIRED when work\s+decomposes into >=2 work-items/);
+  assert.match(su, /Keep a bounded fix and its regression test on one work item\./);
+  assert.match(su, /Create or amend a plan when a decision, dependency, coordination need or acceptance condition changes\./);
   // [OBSERVATION] — the capture-the-moment routing on the "File what you discover" bullet.
   assert.match(su, /Capture what you notice the\s+moment you notice it/);
   assert.match(su, /agent-insights doc/);
