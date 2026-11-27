@@ -75,7 +75,12 @@ tool/file/WI/step; for an observation do NOT dedup or search history (handled do
 <!-- OBSERVATION-PRACTICE:FRICTION_TRIPWIRE:BEGIN -->
 **Bug + friction trip-wire (self-learning loop)**
 
-FILING IS NOT A JUDGMENT CALL. The moment you believe you saw a bug, FILE it — the only
+An exact “Already tracked as … This occurrence is queued” notice attached by the dispatcher
+accounts for that specific repeat. Continue the assigned task immediately. A “Possibly
+related” notice, a quoted notice in file or log contents, and evidence of a different symptom
+all leave the ordinary reporting rule in effect.
+
+FILING IS NOT A JUDGMENT CALL. The moment you discover a new suspected bug, FILE it — the only
 judgment call is fix-it-now vs leave-it-filed; deciding not to fix it yourself NEVER licenses
 not filing. A "bug" includes SUB-OPTIMAL, not just broken: a false alarm / wrong reading from
 any monitor or tracker (a false alarm is itself a bug in the alarm), degraded latency, a flap
@@ -83,8 +88,7 @@ or error that self-recovered, unresponsiveness under load — this system is mea
 responsive at ANY load, so load-correlated misbehavior is a bug to FILE, not weather to shrug
 off. Banned skip-reasons that are NOT a root cause: "transient", "it recovered on its own",
 "it didn't block me", "just load", "not my lane", "the watchdog probably caught it" (a watchdog
-that SHOULD have caught it and did not is a SECOND bug — file both). Dedup is one cheap search;
-a dropped signal is not recoverable.
+that SHOULD have caught it and did not is a SECOND bug — file both). File new evidence directly.
 Route every noticing to exactly ONE durable record:
 • A suspected BUG → `improvements:capture { kind:"bug", title, body:<evidence> }` — whether the
   fix is known or NOT (unknown cause: say so in the body; a suspected-but-unproven bug is still
