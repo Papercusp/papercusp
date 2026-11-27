@@ -22,6 +22,7 @@
  * opens no connection (all pools are lazy).
  */
 import { readFileSync } from 'node:fs';
+import * as ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { endStalePool } from './connection';
 
@@ -167,41 +168,22 @@ const UNGUARDED_BY_DESIGN: Record<string, string> = {
     'settles, so it cannot survive one either.',
 };
 
-const isCommentLine = (line: string) => /^\s*(\*|\/\/|\/\*)/.test(line);
-
-/**
- * Every function in connection.ts that builds a cached pool, with its body
- * (comment lines stripped, so a doc-comment MENTION of endStalePool can never
- * masquerade as a call).
- */
-function poolBuildingFunctions(): Array<{ name: string; body: string }> {
-  const lines = CONNECTION_SRC.split('\n');
-  const declAt = (i: number) => /^(export\s+)?function\s+(\w+)/.exec(lines[i] ?? '');
-  const found = new Map<string, string>();
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (isCommentLine(line) || !line.includes('buildClient(')) continue;
-    if (/function\s+buildClient\s*\(/.test(line)) continue; // the definition itself
-
-    let start = i;
-    while (start >= 0 && !declAt(start)) start--;
-    if (start < 0) continue;
-    const name = declAt(start)![2]!;
-    if (found.has(name)) continue;
-
-    // Top-level declarations sit at column 0, so the next one delimits this body.
-    let end = start + 1;
-    while (end < lines.length && !declAt(end)) end++;
-    found.set(
-      name,
-      lines
-        .slice(start, end)
-        .filter((l) => !isCommentLine(l))
-        .join('\n'),
-    );
+function callsPoolBuilder(node: ts.Node): boolean {
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'buildClient') {
+    return true;
   }
-  return [...found].map(([name, body]) => ({ name, body }));
+  return ts.forEachChild(node, callsPoolBuilder) === true;
+}
+
+/** Use declaration boundaries so a neighboring async function cannot supply another getter's guard. */
+function poolBuildingFunctions(): Array<{ name: string; body: string }> {
+  const source = ts.createSourceFile('connection.ts', CONNECTION_SRC, ts.ScriptTarget.Latest);
+  const printer = ts.createPrinter({ removeComments: true });
+  return source.statements.filter(ts.isFunctionDeclaration).flatMap(declaration => {
+    const { name, body } = declaration;
+    if (!name || !body || !callsPoolBuilder(body)) return [];
+    return [{ name: name.text, body: printer.printNode(ts.EmitHint.Unspecified, body, source) }];
+  });
 }
 
 describe('the rebind guard is WIRED INTO every pool getter, not merely exported', () => {
@@ -212,11 +194,11 @@ describe('the rebind guard is WIRED INTO every pool getter, not merely exported'
     // reports clean. If the source shape drifts so the scan stops finding getters,
     // that must be a RED here rather than a silent green everywhere else.
     expect(getters.map((g) => g.name).sort()).toEqual(
-      ['createDedicatedOrgPg', 'getHarnessPg', 'getOrgPg', 'getOrgPgApp', 'getOrgPgLosslessBigint'].sort(),
+      ['createDedicatedOrgPg', 'getHarnessPg', 'getOrgPg', 'getOrgPgApp', 'getOrgPgLosslessBigint', 'withPriorityOrgPg'].sort(),
     );
   });
 
-  it.each(poolBuildingFunctions())(
+  it.each(getters)(
     '$name calls endStalePool, is guarded centrally, or is allowlisted with a reason',
     ({ name, body }) => {
       const central = GUARDED_CENTRALLY[name];
@@ -241,12 +223,19 @@ describe('the rebind guard is WIRED INTO every pool getter, not merely exported'
   );
 
   it.each(
-    poolBuildingFunctions().filter(
+    getters.filter(
       (g) => !(g.name in UNGUARDED_BY_DESIGN) && !(g.name in GUARDED_CENTRALLY),
     ),
   )(
     '$name compares against the URL IT records — not a sibling pool’s',
     ({ name, body }) => {
+      if (name === 'withPriorityOrgPg') {
+        expect(body).toContain('endStalePool(priorityOrgPg.client, priorityOrgPg.url, url,');
+        expect(body).toContain('priorityOrgPg.url = dedicated.url');
+        expect(body).toContain('endStalePool(priorityOrgPg.appClient, priorityOrgPg.appUrl, appTarget,');
+        expect(body).toContain('priorityOrgPg.appUrl = appTarget');
+        return;
+      }
       // Passing the wrong module var typechecks perfectly (they are all
       // `string | null`) and fails silently in one of two directions: a pool that
       // never rebinds, or one that rebinds on every call. Only the pairing catches it.
