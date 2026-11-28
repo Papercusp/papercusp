@@ -14,6 +14,8 @@
  * route would lose that capability.
  */
 import { spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
+import { withCodexStdout } from './codex-stdout';
 import {
   closeSync,
   constants as fsConstants,
@@ -3227,9 +3229,6 @@ export async function invoke(
   const fleetSrtBin =
     fleetSandboxForSpawn && backendUsesSrt(agentBackend) ? srtBinOnPath() : null;
   if (fleetSandboxForSpawn && backendUsesSrt(agentBackend) && !fleetSrtBin) {
-    // Keep this rejection outside the async spawn executor. A throw inside
-    // `new Promise(async (resolve) => ...)` becomes an unhandled rejection
-    // instead of the invoke() promise's failure result.
     throw new Error(
       `PAPERCUSP_FLEET_SANDBOX is set for a ${agentBackend} spawn but \`srt\` is not on PATH. ` +
         'Install @anthropic-ai/sandbox-runtime (npm i -g @anthropic-ai/sandbox-runtime) ' +
@@ -3967,7 +3966,48 @@ export async function invoke(
     appendChunkPgFn = (await import('./run-chunks-pg')).appendChunkPg;
   }
 
-  const outcome: SpawnOutcome = await new Promise(async (resolve) => {
+  // The outer driver updates its heartbeat from this marker on stderr.
+  let lastOuterActivityEchoAt: number | null = null;
+  const echoActivityToOuterProcess = () => {
+    const next = nextOuterActivityEchoAt(lastOuterActivityEchoAt, Date.now());
+    if (next === null) return;
+    lastOuterActivityEchoAt = next;
+    try { process.stderr.write(`${OUTER_ACTIVITY_ECHO_MARKER}\n`); } catch { /* best-effort */ }
+  };
+
+  const decoder = new StringDecoder('utf8');
+  const publishStdout = (data: string) => {
+    if (!data || (!harnessToken && !chunksPgCtx)) return;
+    const seq = chunkSeq++;
+    if (harnessToken) {
+      chunkPostQueue = chunkPostQueue.then(async () => {
+        try {
+          await fetch(`${operatorBase}/api/internal/run-chunk`, {
+            method: 'POST',
+            headers: {
+              'authorization': `Bearer ${harnessToken}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ runId, seq, chunk: data }),
+          });
+        } catch { /* The full run output is also archived at exit. */ }
+      });
+    }
+    if (chunksPgCtx && appendChunkPgFn) {
+      chunkPgQueue = chunkPgQueue.then(() => appendChunkPgFn!(chunksPgCtx!, runId, seq, data));
+    }
+  };
+
+  const receiveStdout = (chunk: Buffer) => {
+    echoActivityToOuterProcess();
+    if (retainReleaseFixerFiles) {
+      try { appendFileSync(outPath, chunk); } catch { /* best-effort diagnostic trail */ }
+    }
+    jsonlChunks.push(chunk);
+    publishStdout(decoder.write(chunk));
+  };
+
+  const runAgent = async (stdout: number | 'pipe', readFailure?: AbortSignal): Promise<SpawnOutcome> => {
     // Spawn env: defensively disable omp's autonomous memory backend
     // for harness invocations. The harness composes the prompt itself
     // (substrate + role + memory + identity + feature history) and
@@ -4250,7 +4290,7 @@ export async function invoke(
         settingsPath,
       }));
     }
-    const child = spawn(spawnCommand, spawnArgv, { cwd, env: spawnEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(spawnCommand, spawnArgv, { cwd, env: spawnEnv, stdio: ['pipe', stdout, 'pipe'] });
 
     // Write a row to harness_shared.harness_lanes so the operator UI's
     // "agents in flight" pill bar can subscribe to the live agent set.
@@ -4284,79 +4324,16 @@ export async function invoke(
       try { child.kill('SIGTERM'); } catch { /* ignore */ }
       setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* ignore */ } }, 2_000).unref();
     };
-    if (options.signal) {
-      if (options.signal.aborted) onAbort();
-      else options.signal.addEventListener('abort', onAbort, { once: true });
+    const signal = readFailure && options.signal
+      ? AbortSignal.any([readFailure, options.signal])
+      : readFailure ?? options.signal;
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    // WI-3302: this child is invoke.ts's OWN inner agent-CLI process — its
-    // stdout/stderr chunks are forwarded to the chunk-bus/PG below, but were
-    // never echoed back onto invoke.ts's own process.stdout/stderr. invoke.ts
-    // runs in the SAME OS process as invoke-once.ts (imported module, not a
-    // separate spawn), and orchestrator-runner.ts's `runChild` watches THAT
-    // outer process's stdout/stderr `data` events (`reportActivity()`) to stamp
-    // `spawned_agents.last_output_at` via `onOutputActivity`. Because nothing
-    // upstream ever wrote to the outer process's own streams mid-run (only a
-    // final summary at the very end — see invoke-once.ts), `last_output_at`
-    // stayed null for the entire run (0/1553 sampled — WI-3302). Fix: echo a
-    // tiny throttled marker to our OWN process.stderr (never stdout — several
-    // downstream consumers, e.g. classifyTurnError/rawStdoutTail, key off the
-    // exact stdout content, so polluting it would be riskier than necessary)
-    // whenever the inner child emits real output, capped well under
-    // SPAWN_HEARTBEAT_INTERVAL_MS (60s, spawn-reclaim.ts) so the heartbeat tick
-    // almost always has a fresh timestamp to promote. Throttle decision is the
-    // pure, unit-tested `nextOuterActivityEchoAt` above.
-    let lastOuterActivityEchoAt: number | null = null;
-    const echoActivityToOuterProcess = () => {
-      const next = nextOuterActivityEchoAt(lastOuterActivityEchoAt, Date.now());
-      if (next === null) return;
-      lastOuterActivityEchoAt = next;
-      try { process.stderr.write(`${OUTER_ACTIVITY_ECHO_MARKER}\n`); } catch { /* best-effort */ }
-    };
-
-    // Live streaming via the operator's chunk bus. POST each stdout
-    // chunk to /api/internal/run-chunk; the operator publishes to an
-    // in-process EventEmitter that the SSE handler subscribes to.
-    // Sub-ms latency end-to-end vs ~10-50ms via fs.watch. Best-effort:
-    // if the POST fails (operator down, network hiccup), the on-disk
-    // JSONL still has the chunk and Phase 4 ingest-at-exit + the SSE
-    // handler's fs.watch fallback keep the stream functional.
-    child.stdout.on('data', (chunk: Buffer) => {
-      echoActivityToOuterProcess();
-      if (retainReleaseFixerFiles) {
-        try { appendFileSync(outPath, chunk); } catch { /* best-effort diagnostic trail */ }
-      }
-      jsonlChunks.push(chunk);
-      const mySeq = chunkSeq;
-      const myData = chunk.toString('utf8');
-      let advancedSeq = false;
-      if (harnessToken) {
-        advancedSeq = true;
-        // Serialize POSTs via Promise chain so chunks land in arrival
-        // order at the bus even though fetch is async. Errors are
-        // swallowed — never break the stream.
-        chunkPostQueue = chunkPostQueue.then(async () => {
-          try {
-            await fetch(`${operatorBase}/api/internal/run-chunk`, {
-              method: 'POST',
-              headers: {
-                'authorization': `Bearer ${harnessToken}`,
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({ runId, seq: mySeq, chunk: myData }),
-            });
-          } catch { /* operator unreachable; in-memory accumulator + Phase 4 covers post-run replay */ }
-        });
-      }
-      // Optional: also persist to PG for archival per-chunk replay.
-      // Independent queue from the bus POST; both share the seq number.
-      if (chunksPgCtx && appendChunkPgFn) {
-        advancedSeq = true;
-        chunkPgQueue = chunkPgQueue.then(() => appendChunkPgFn!(chunksPgCtx!, runId, mySeq, myData));
-      }
-      if (advancedSeq) chunkSeq++;
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stdout?.on('data', receiveStdout);
+    child.stderr!.on('data', (chunk: Buffer) => {
       echoActivityToOuterProcess();
       if (retainReleaseFixerFiles) {
         try { appendFileSync(errPath, chunk); } catch { /* best-effort diagnostic trail */ }
@@ -4368,7 +4345,8 @@ export async function invoke(
     // (e.g. `true`, or a crashed claude binary), the write would throw an
     // unhandled EPIPE. Swallow it — the agent's exit code already tells
     // the caller something went wrong.
-    child.stdin.on('error', (err) => {
+    const stdin = child.stdin!; // configured as a pipe for both stdout transports
+    stdin.on('error', (err) => {
       if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
         ctx.log(`  stdin error: ${err.message}`);
       }
@@ -4379,11 +4357,11 @@ export async function invoke(
     // (e.g. claudeCmd='cat' in tests), feed the prompt via stdin like
     // claude-code does — that's the universal Unix interface.
     if (streamFormat === 'omp-json') {
-      try { child.stdin.end(); } catch { /* EPIPE-safe */ }
+      try { stdin.end(); } catch { /* EPIPE-safe */ }
     } else {
       try {
-        child.stdin.write(prompt);
-        child.stdin.end();
+        stdin.write(prompt);
+        stdin.end();
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'EPIPE') {
           ctx.log(`  stdin write error: ${(err as Error).message}`);
@@ -4391,39 +4369,31 @@ export async function invoke(
       }
     }
 
+    let spawnFailed = false;
     child.on('error', (err) => {
+      spawnFailed = true;
       ctx.log(`  spawn error: ${err.message}`);
-      if (timer) clearTimeout(timer);
-      // Skip the restore ONLY when the config was baked OUTSIDE cwd (the resume
-      // leg needs that one). A tracked launch whose config still lives at the
-      // shared `<cwd>/.mcp.json` MUST restore it.
-      if (mcpHandle && !mcpConfigPersistsOutsideCwd) restoreSpawnMcp(mcpHandle);
-      if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
-      if (codexHomeHandle) codexHomeHandle.cleanup();
-      if (ompHomeHandle) ompHomeHandle.cleanup();
-      if (ompCompactionOverlay) ompCompactionOverlay.cleanup();
-      if (claudeConfigHandle) claudeConfigHandle.cleanup();
-      void clearLane();
-      resolve({ exitCode: 127, durationMs: Date.now() - startedAt });
     });
+    // Node emits close after exit or a failed spawn, once piped stdio has drained.
+    const code = await new Promise<number | null>(resolve => child.once('close', resolve));
+    if (timer) clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+    if (mcpHandle && !mcpConfigPersistsOutsideCwd) restoreSpawnMcp(mcpHandle);
+    if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
+    codexHomeHandle?.cleanup();
+    ompHomeHandle?.cleanup();
+    ompCompactionOverlay?.cleanup();
+    claudeConfigHandle?.cleanup();
+    void clearLane();
+    const exitCode = spawnFailed ? 127 : timedOut ? 124 : (code ?? 0);
+    return { exitCode, durationMs: Date.now() - startedAt };
+  };
 
-    child.on('close', (code) => {
-      if (timer) clearTimeout(timer);
-      // Skip the restore ONLY when the config was baked OUTSIDE cwd (the resume
-      // leg needs that one). A tracked launch whose config still lives at the
-      // shared `<cwd>/.mcp.json` MUST restore it.
-      if (mcpHandle && !mcpConfigPersistsOutsideCwd) restoreSpawnMcp(mcpHandle);
-      if (mcpTempDir) { try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best-effort */ } }
-      if (codexHomeHandle) codexHomeHandle.cleanup();
-      if (ompHomeHandle) ompHomeHandle.cleanup();
-      if (ompCompactionOverlay) ompCompactionOverlay.cleanup();
-      if (claudeConfigHandle) claudeConfigHandle.cleanup();
-      void clearLane();
-      // bash uses exit 124 for timeout (matches `timeout` coreutil).
-      const exitCode = timedOut ? 124 : (code ?? 0);
-      resolve({ exitCode, durationMs: Date.now() - startedAt });
-    });
-  });
+  // A caller supplying --json selects its own flags and result parser, but uses
+  // the same native JSONL writer as a launcher-managed Codex command.
+  const codexJsonWriter = agentBackend === 'codex' && (streamFormat === 'codex-json' || argv.includes('--json'));
+  const outcome = codexJsonWriter ? await withCodexStdout(receiveStdout, runAgent) : await runAgent('pipe');
+  publishStdout(decoder.end());
 
   // Drain the live-streaming POST queue + send a final close signal
   // so subscribers know the run finished. Best-effort throughout.
