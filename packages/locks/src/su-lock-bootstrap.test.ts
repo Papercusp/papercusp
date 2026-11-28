@@ -19,7 +19,7 @@ function catalog(databaseExists: boolean, pauseFirstDdl = true) {
   const locks = new Map<string, Promise<void>>();
   const applied = new Set<string>();
   const events: string[] = [];
-  const admins: Array<{ database: string; end: ReturnType<typeof vi.fn> }> = [];
+  const admins: Array<{ database: string; release: ReturnType<typeof vi.fn>; end: ReturnType<typeof vi.fn> }> = [];
   let metaExists = false;
   let creatingDatabase = false;
   let creatingMeta = false;
@@ -42,6 +42,7 @@ function catalog(databaseExists: boolean, pauseFirstDdl = true) {
     const execute = async (statement: string, values: unknown[] = []) => {
       if (admin && number > 1) competing.resolve();
       if (statement.includes('pg_advisory_lock(')) {
+        if (failAt === 'lock') { failAt = ''; throw new Error('lock failure'); }
         const key = `${database}:${values[0]}:${statement.split('hashtext')[1]}`;
         const prior = locks.get(key) ?? Promise.resolve();
         const released = deferred();
@@ -86,20 +87,29 @@ function catalog(databaseExists: boolean, pauseFirstDdl = true) {
       }
       return [];
     };
+    const query = (strings: TemplateStringsArray, ...values: unknown[]) => execute(strings.join('?'), values);
+    const unsafe = (statement: string) => {
+      // Classify real migration scripts independently of their contents.
+      const promise = execute(admin ? statement : 'MIGRATION');
+      return Object.assign(promise, { simple: () => promise });
+    };
+    // Returning a reservation makes the connection available to the pool.
+    // PostgreSQL releases the session advisory lock when the backend closes.
+    const release = vi.fn(() => { events.push('returned'); });
+    const reserved = Object.assign(query.bind(null), { unsafe, release });
     const sql = Object.assign(
-      (strings: TemplateStringsArray, ...values: unknown[]) => execute(strings.join('?'), values),
+      query,
       {
-        reserve: vi.fn(async () => sql),
-        unsafe: (statement: string) => {
-          // Classify real migration scripts independently of their contents.
-          const promise = execute(admin ? statement : 'MIGRATION');
-          return Object.assign(promise, { simple: () => promise });
-        },
+        reserve: vi.fn(async () => {
+          if (failAt === 'reserve') { failAt = ''; throw new Error('reserve failure'); }
+          return reserved;
+        }),
+        unsafe,
         begin: async (run: (tx: unknown) => Promise<unknown>) => run(sql),
         end: vi.fn(async () => { events.push('closed'); unlock?.(); unlock = undefined; }),
       },
     );
-    if (admin) admins.push({ database, end: sql.end });
+    if (admin) admins.push({ database, release, end: sql.end });
     return sql;
   });
 
@@ -140,23 +150,37 @@ describe('SU-lock bootstrap catalog concurrency', () => {
     expect(whileFirstPaused.filter(event => event === (databaseExists ? 'create-meta' : 'create-database'))).toHaveLength(1);
     expect(cluster.admins.map(admin => admin.database)).toEqual(['postgres', 'postgres']);
     expect(cluster.events[0]).toBe('locked');
-    expect(cluster.events.lastIndexOf('migration')).toBeLessThan(cluster.events.indexOf('closed'));
+    expect(cluster.events.lastIndexOf('migration')).toBeLessThan(cluster.events.indexOf('returned'));
     expect(cluster.held()).toBe(0);
-    expect(cluster.admins.every(admin => admin.end.mock.calls.length === 1)).toBe(true);
+    for (const admin of cluster.admins) {
+      expect(admin.release).toHaveBeenCalledOnce();
+      expect(admin.release).toHaveBeenCalledBefore(admin.end);
+      expect(admin.end).toHaveBeenCalledOnce();
+    }
     await Promise.all([first._resetForTests(), second._resetForTests()]);
   });
 
-  it.each(['database', 'meta', 'migration'])('releases the bootstrap session after %s failure and allows retry', async phase => {
+  it.each(['reserve', 'lock', 'database', 'meta', 'migration'])('releases the bootstrap session after %s failure and allows retry', async phase => {
     const cluster = catalog(false, false);
     cluster.failNext(phase);
     const store = await caller('organization');
     await expect(store.ensureBootstrap()).rejects.toThrow(`${phase} failure`);
     expect(cluster.held()).toBe(0);
-    expect(cluster.admins[0].end).toHaveBeenCalledOnce();
+    const [failed] = cluster.admins;
+    expect(failed.end).toHaveBeenCalledOnce();
+    if (phase === 'reserve') {
+      expect(failed.release).not.toHaveBeenCalled();
+    } else {
+      expect(failed.release).toHaveBeenCalledOnce();
+      expect(failed.release).toHaveBeenCalledBefore(failed.end);
+    }
 
     await expect(store.ensureBootstrap()).resolves.toBeUndefined();
     expect(cluster.held()).toBe(0);
     expect(cluster.admins).toHaveLength(2);
+    const retried = cluster.admins[1];
+    expect(retried.release).toHaveBeenCalledOnce();
+    expect(retried.release).toHaveBeenCalledBefore(retried.end);
     await store.ensureBootstrap();
     expect(cluster.admins).toHaveLength(2); // Only success is memoized.
     await store._resetForTests();

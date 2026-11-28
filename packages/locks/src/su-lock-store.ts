@@ -21,7 +21,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import postgres, { type Sql, type TransactionSql } from 'postgres';
+import postgres, { type ReservedSql, type Sql, type TransactionSql } from 'postgres';
 import {
   beginAcquireDiagnostic,
   locksHost,
@@ -320,11 +320,12 @@ export async function ensureBootstrap(): Promise<void> {
   if (bootstrapped) return;
 
   const admin = postgres(bootstrapUrl(), { max: 1, prepare: false });
+  let main: ReservedSql | undefined;
   try {
     // Pin the session: a pool reconnect must not silently lose the lock and
     // continue bootstrap on another connection. CREATE DATABASE cannot use
     // a transaction advisory lock because it must run outside a transaction.
-    const main = await admin.reserve();
+    main = await admin.reserve();
     await main`SELECT pg_advisory_lock(${SU_LOCKS_FEATURE_KEY}, hashtext('su:bootstrap'))`;
 
     const rows = await main<Array<{ exists: boolean }>>`
@@ -388,13 +389,16 @@ export async function ensureBootstrap(): Promise<void> {
         `;
       }
     });
-
-    bootstrapped = true;
   } finally {
-    // Closing the dedicated reserved session releases the advisory lock on
-    // success and every failure path, including a rejected migration.
-    await admin.end({ timeout: 1 });
+    // postgres-js waits for reservations when draining a pool. The dedicated
+    // backend keeps its advisory lock until it closes, after migration work.
+    try {
+      main?.release();
+    } finally {
+      await admin.end({ timeout: 1 });
+    }
   }
+  bootstrapped = true;
   // The background expiry sweep (file-locking #4) is armed by
   // inWorkspaceTxn on the first mutating locks:* op — its timer lives
   // in workspace-listener.ts, the module that owns the locks
